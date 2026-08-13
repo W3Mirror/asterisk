@@ -31,7 +31,55 @@
 # matcher, so it's obvious per-block whether a route is gated. The
 # credential hash is injected via the {env.CADDY_ADMIN_HASH} placeholder --
 # see compose.yml's caddy service `environment:` for how it's set.
+#
+# Two site blocks below: an exact-host block for sip.w3.run (the public
+# hostname routed here by the cloudflared tunnel, see compose.yml's
+# cloudflared service) and a `:80` catch-all for everything else
+# (localhost, the tailscale IP, direct :7231 access). Caddy matches site
+# addresses by specificity, and an exact hostname always beats a bare-port
+# catch-all, so a request with `Host: sip.w3.run` is served by the first
+# block regardless of write order -- it never falls through to the second.
 
+# PUBLIC block -- reached from the internet via the cloudflared tunnel
+# (ingress configured in the Cloudflare Zero Trust dashboard to point at
+# http://caddy:80; Cloudflare preserves the original Host header, which is
+# what selects this block). Deliberately minimal: only the SIP/WebRTC/ARI
+# surface is reachable here, with NO basic_auth (same as the catch-all
+# below, but here it's the *only* thing exposed) -- portal, grafana, docs,
+# and /metrics are NOT reachable under this hostname; everything else 404s
+# rather than falling through, so there's no basic_auth prompt leaking that
+# those routes even exist.
+http://sip.w3.run {
+	encode gzip
+
+	log {
+		output stdout
+		format json
+	}
+
+	handle /ari* {
+		reverse_proxy asterisk:8088
+	}
+
+	handle /ws {
+		reverse_proxy asterisk:8088
+	}
+
+	handle /media/* {
+		reverse_proxy asterisk:8088
+	}
+
+	# Everything else under sip.w3.run is refused outright.
+	handle {
+		respond 404
+	}
+}
+
+# CATCH-ALL block -- everything that is NOT Host: sip.w3.run (localhost,
+# the tailscale IP, or any other Host header hitting :7231 directly).
+# Unchanged behavior from before host-scoping was added: portal, grafana,
+# docs, and /metrics are reachable here (behind basic_auth), plus the same
+# open /ari*, /ws, /media/* routes.
 :80 {
 	encode gzip
 

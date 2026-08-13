@@ -40,3 +40,9 @@ tests/CI/output
 .develvars
 .devcontainer/
 .claude/
+
+# aistack -- this branch diverges from upstream Asterisk to run the aistack
+# docker-compose stack (see compose.yml). Real credentials never get
+# committed; see docker/etc-asterisk/secrets/.gitignore for the asterisk
+# side.
+.env.aistack

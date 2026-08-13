@@ -42,31 +42,80 @@ Grafana's _own_ login is not required to view dashboards, because Caddy's `basic
 ## Default credentials that exist today
 
 <Warning>
-  All four of these are demo defaults committed to the repo (three in plaintext in tracked config files, one as a bcrypt hash). Change all of them before this stack is reachable from anything but a fully trusted network.
+  The PJSIP and ARI passwords have been rotated out of git entirely (see below); Grafana's admin password is still a committed plaintext default. Rotate it too before granting anyone edit/admin access beyond a trusted network.
 </Warning>
 
 | Credential | Where it's set | Default value | Notes |
 | --- | --- | --- | --- |
-| PJSIP endpoint `6001` password | `docker/etc-asterisk/pjsip.conf`, `[6001]` `type=auth` block | `changeme6001` | Change per-endpoint; add to every new endpoint you create too |
-| ARI user `aistack` password | `docker/etc-asterisk/ari.conf`, `[aistack]` | `changeme-ari` | Must also be updated in `compose.yml`'s `portal.environment.ARI_PASSWORD` or the dashboard breaks — see [Runbook: rotating ARI credentials](/operations/runbook#rotating-ari-credentials) |
-| Grafana admin password | `compose.yml`, `grafana.environment.GF_SECURITY_ADMIN_PASSWORD` | `changeme` | Only gates `/grafana/login` (editing); viewing is already behind Caddy's basic auth |
+| PJSIP endpoint `6001` password | `docker/etc-asterisk/secrets/pjsip_auth.conf` (gitignored, `#include`'d from `pjsip.conf`) | Rotated, not in git | Template: `secrets/pjsip_auth.conf.example`. Rotate by editing the secret file, then `docker compose exec asterisk asterisk -rx "module reload res_pjsip.so"` |
+| ARI user `aistack` password | `docker/etc-asterisk/secrets/ari_secret.conf` (gitignored, `#include`'d from `ari.conf`) | Rotated, not in git | Template: `secrets/ari_secret.conf.example`. Must be kept in sync with `.env.aistack`'s `ARI_PASSWORD` (portal reads it at runtime — see [Runbook: rotating ARI credentials](/operations/runbook#rotating-ari-credentials)) |
+| Grafana admin password | `compose.yml`, `grafana.environment.GF_SECURITY_ADMIN_PASSWORD` | `changeme` | Only gates `/grafana/login` (editing); viewing is already behind Caddy's basic auth. Not yet rotated. |
 | Caddy `admin` basic-auth password | `compose.yml`, `caddy.environment.CADDY_ADMIN_HASH` (bcrypt hash) | Generated with `openssl rand -base64 18`, then hashed | The **plaintext password is stored outside the repo** — only the bcrypt hash is committed. See [Runbook: rotating the Caddy basic-auth password](/operations/runbook#rotating-the-caddy-basic-auth-password) for regenerating it. |
+| Cloudflare Tunnel token (`cloudflared`) | `.env.aistack` (gitignored), `TUNNEL_TOKEN`, `env_file:` on `compose.yml`'s `cloudflared` service | Not in git | Template: `.env.aistack.example`. Must be named exactly `TUNNEL_TOKEN` — that's the env var `cloudflared` itself reads. |
 
-Nothing in this table is a secret an attacker would need to guess from outside the repo — the PJSIP, ARI, and Grafana values are plaintext in tracked files. Treat `docker/etc-asterisk/pjsip.conf`, `docker/etc-asterisk/ari.conf`, and `compose.yml` as needing an edit before any real exposure.
+### No-secrets-in-git pattern
 
-## Restricting network exposure: Tailscale-only binding
+Asterisk config files support `#include "path"` (resolved relative to the config directory, `/etc/asterisk` in this image — see `main/config.c`). Both `pjsip.conf` and `ari.conf` now `#include` a file under `docker/etc-asterisk/secrets/`, which holds the real `type=auth`/user credential block. That directory has its own `.gitignore` (`*`, `!.gitignore`, `!*.example`), so only the `.example` templates are tracked. Because `docker/etc-asterisk` is bind-mounted as a *directory* (not a single file — see `compose.yml`'s `asterisk.volumes`), new files placed under it (like `secrets/*.conf`) are visible inside the container immediately, no restart needed to see them; a config *reload* is still required for Asterisk to re-read `pjsip.conf`/`ari.conf` and pick up the changed `#include`.
 
-Caddy's `ports: ["7231:80"]` in `compose.yml` currently binds to all host interfaces (`0.0.0.0`). Because Docker's published-port DNAT happens ahead of the host firewall's `INPUT` chain, a host-level firewall like `ufw` with `default deny incoming` does **not** filter this — see [Lessons Learned: ufw does not filter Docker-published ports](/operations/lessons-learned#ufw-does-not-filter-docker-published-ports) for the full mechanism.
+The portal-side `ARI_PASSWORD` and the `cloudflared` `TUNNEL_TOKEN` follow the same pattern one level up: both are read from `.env.aistack` (repo root, gitignored, added to `.gitignore`'s `# aistack` section) via `env_file:` on their respective services in `compose.yml` — never inlined under `environment:`. `ARI_PASSWORD` is read server-side at runtime by `portal/lib/ari.ts` (not a `NEXT_PUBLIC_*` build-time var), so rotating it only needs `docker compose up -d portal`, no image rebuild. `env_file:` values are baked in at *container creation*, though — a plain `restart` does not pick up a changed `.env.aistack`; use `docker compose up -d <service>` (or `--force-recreate` if compose doesn't detect the change) after editing it.
 
-The mitigation that works _with_ Docker's networking instead of fighting it is to bind the published port to a specific host IP:
+Nothing above is a secret an attacker could recover from the repo itself anymore — the PJSIP and ARI values live only in gitignored files. Grafana's admin password is the one remaining plaintext default in `compose.yml`.
+
+## Restricting network exposure: loopback + Tailscale-only binding
+
+Caddy's `ports:` in `compose.yml` used to be `["7231:80"]`, which binds to all host interfaces (`0.0.0.0`). Because Docker's published-port DNAT happens ahead of the host firewall's `INPUT` chain, a host-level firewall like `ufw` with `default deny incoming` does **not** filter this — see [Lessons Learned: ufw does not filter Docker-published ports](/operations/lessons-learned#ufw-does-not-filter-docker-published-ports) for the full mechanism.
+
+The mitigation that works _with_ Docker's networking instead of fighting it is to bind the published port to specific host IPs:
 
 ```yaml
 # compose.yml, caddy service
 ports:
-  - "100.69.165.55:7231:80"   # Tailscale IP only, instead of 0.0.0.0:7231
+  - "127.0.0.1:7231:80"        # loopback
+  - "100.69.165.55:7231:80"    # Tailscale IP
 ```
 
-With this change, `7231` is only reachable through the Tailscale interface (`100.69.165.55`) — not from the host's public/LAN interface, regardless of `ufw` state. This is also called out in `portal/app/docs/page.tsx`'s security checklist as the recommended first hardening step.
+With this, `7231` is only reachable from the host itself and through the Tailscale interface (`100.69.165.55`) — not from the host's public/LAN interface, regardless of `ufw` state. This is also called out in `portal/app/docs/page.tsx`'s security checklist.
+
+## Public exposure via Cloudflare Tunnel (`sip.w3.run`)
+
+The published port above is intentionally *not* how the public hostname `sip.w3.run` gets exposed — it's for tailscale/local access only. Public exposure instead goes through a `cloudflared` service added to `compose.yml`:
+
+```yaml
+cloudflared:
+  image: cloudflare/cloudflared:latest
+  command: tunnel --no-autoupdate run
+  networks: [aistack]
+  env_file: .env.aistack   # TUNNEL_TOKEN
+  depends_on: [caddy]
+  restart: unless-stopped
+```
+
+`cloudflared` makes an *outbound* connection to Cloudflare's edge — no inbound port is published for it. `TUNNEL_TOKEN` comes from `.env.aistack` (gitignored; see `.env.aistack.example`) via `env_file:`; it must be named exactly `TUNNEL_TOKEN` — that's the env var `cloudflared` itself reads (`cloudflared tunnel run --help`: `--token value ... [$TUNNEL_TOKEN]`), not e.g. `CF_TUNNEL_TOKEN`.
+
+**Routing note — this is the part most likely to be configured wrong:** the tunnel's public hostname ingress, set in the Cloudflare Zero Trust dashboard (Networks → Tunnels → the tunnel → Public Hostname), must point `sip.w3.run` at **`http://caddy:80`** — the Caddy container's *internal* aistack-network address — **not** `localhost:7231` or the tailscale IP. `cloudflared` reaches Caddy over the same Docker network everything else uses; it never goes through the published port at all. Cloudflare preserves the original `Host` header end-to-end, which is what lets `docker/caddy/Caddyfile`'s host-scoped block (below) select the right routes.
+
+Until a real token is set, `cloudflared` crash-loops (`restart: unless-stopped` keeps retrying) — this is expected and does not affect any other service. Set `TUNNEL_TOKEN` in `.env.aistack`, then `docker compose up -d cloudflared`.
+
+### Host-scoped Caddyfile routes for `sip.w3.run`
+
+`docker/caddy/Caddyfile` now has two site blocks. Caddy matches site addresses by specificity, so a request with `Host: sip.w3.run` is always served by the exact-host block below, regardless of write order — it never falls through to the catch-all:
+
+```caddyfile
+http://sip.w3.run {
+    handle /ari* { reverse_proxy asterisk:8088 }
+    handle /ws   { reverse_proxy asterisk:8088 }
+    handle /media/* { reverse_proxy asterisk:8088 }
+    handle { respond 404 }   # everything else -- no portal, no grafana, no /metrics
+}
+
+:80 {
+    # unchanged catch-all: portal, /grafana/*, /metrics (basic auth) +
+    # the same open /ari*, /ws, /media/* -- reachable via localhost /
+    # the tailscale IP, or any Host header other than sip.w3.run
+}
+```
+
+`sip.w3.run` only ever reaches the SIP/WebRTC/ARI surface, with no `basic_auth` (unchanged from before — SIP/WebRTC clients can't attach an `Authorization` header, and ARI enforces its own). Everything else — the portal, `/docs`, `/grafana/*`, `/metrics` — 404s under that hostname instead of falling through to a `basic_auth` prompt, so there's no signal to a public scanner that those routes even exist. All other `Host` headers keep the pre-tunnel behavior unchanged.
 
 ## TLS / wss roadmap
 

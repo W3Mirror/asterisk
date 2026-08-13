@@ -7,25 +7,42 @@ description: Debug the AIStack Asterisk/SIP stack — where logs live, how to tr
 
 ## Stack map
 
-7 services on the `aistack` docker network (see `compose.yml`): `asterisk`,
-`prometheus`, `grafana`, `loki`, `promtail`, `portal`, `caddy`. **Only
-`caddy` publishes a host port** — `7231:80`, reachable at the tailscale IP
-`100.69.165.55:7231` (or `localhost:7231` from the host). Everything else
-is internal-only; reach it by exec'ing into a container or curling from
-one already on the network.
+8 services on the `aistack` docker network (see `compose.yml`): `asterisk`,
+`prometheus`, `grafana`, `loki`, `promtail`, `portal`, `caddy`,
+`cloudflared`. **Only `caddy` publishes a host port** — `7231:80`, bound
+explicitly to `127.0.0.1` and the tailscale IP (`100.69.165.55:7231`),
+*not* `0.0.0.0`. Everything else (including `cloudflared`, which makes an
+outbound-only connection to Cloudflare's edge) is internal-only; reach it
+by exec'ing into a container or curling from one already on the network.
+
+Public exposure for `sip.w3.run` goes through `cloudflared`, not the
+published port — its tunnel ingress (Cloudflare Zero Trust dashboard)
+points at `http://caddy:80` over the `aistack` network. `docker/caddy/Caddyfile`
+has a dedicated `http://sip.w3.run` site block that only proxies `/ws`,
+`/media/*`, `/ari*` (no basic auth); everything else 404s under that host.
+All other `Host` headers (localhost, tailscale IP) keep the full catch-all
+below. `cloudflared` reads its token from `TUNNEL_TOKEN` in `.env.aistack`
+(gitignored) — it crash-loops harmlessly until a real token is set.
 
 Auth layers:
 - **Basic auth** (`admin` / password stored outside repo, hash in
-  `CADDY_ADMIN_HASH` env var) gates every route through Caddy **except**
-  `/ari*`, `/ws`, `/media/*` (see `docker/caddy/Caddyfile`) — those are
-  left open because SIP/WebRTC clients and ARI can't attach an
-  `Authorization` header on their own auth layer.
+  `CADDY_ADMIN_HASH` env var) gates every route through Caddy's catch-all
+  site block **except** `/ari*`, `/ws`, `/media/*` (see
+  `docker/caddy/Caddyfile`) — those are left open because SIP/WebRTC
+  clients and ARI can't attach an `Authorization` header on their own auth
+  layer. None of it applies under `Host: sip.w3.run` — that block only
+  ever exposes the open `/ari*`/`/ws`/`/media/*` routes and 404s everything
+  else.
 - **ARI** has its own basic auth inside Asterisk: user `aistack` (see
-  `docker/etc-asterisk/ari.conf`), password in compose.yml's portal env.
+  `docker/etc-asterisk/ari.conf`, which `#include`s
+  `secrets/ari_secret.conf` — gitignored, not committed). Password kept in
+  sync with `.env.aistack`'s `ARI_PASSWORD` (read by the portal at
+  runtime, `env_file:` on compose.yml's portal service).
 - **SIP endpoint 6001** — the one configured extension in
-  `docker/etc-asterisk/pjsip.conf` (`auth=6001`, password in that file).
-  Dialplan context `from-internal`; only extension 100 does anything live
-  (plays hello-world for an audio/RTP smoke test).
+  `docker/etc-asterisk/pjsip.conf` (`auth=6001`; the `type=auth` block
+  `#include`s `secrets/pjsip_auth.conf`, gitignored). Dialplan context
+  `from-internal`; only extension 100 does anything live (plays
+  hello-world for an audio/RTP smoke test).
 
 ## Log locations
 

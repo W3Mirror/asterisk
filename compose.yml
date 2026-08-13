@@ -136,10 +136,15 @@ services:
     environment:
       ARI_BASE_URL: http://asterisk:8088/ari
       ARI_USERNAME: aistack
-      ARI_PASSWORD: changeme-ari
+      # ARI_PASSWORD comes from env_file below (gitignored .env.aistack) --
+      # NOT hardcoded here since this file is committed. Read at runtime by
+      # portal/lib/ari.ts (not a NEXT_PUBLIC_* build-time var), so rotating
+      # it only needs `docker compose up -d portal`, no rebuild. Keep it in
+      # sync with docker/etc-asterisk/secrets/ari_secret.conf.
       # Kept in sync with build.args above for documentation purposes --
       # this env var itself is NOT read at runtime by the prerendered page.
       NEXT_PUBLIC_GRAFANA_URL: http://100.69.165.55:7231/grafana
+    env_file: .env.aistack
     depends_on:
       - asterisk
     restart: unless-stopped
@@ -155,8 +160,17 @@ services:
     # THE ONLY published port in this compose file -- single entrypoint for
     # the whole stack (portal, grafana under /grafana, asterisk's ARI/ws/
     # metrics routes). See docker/caddy/Caddyfile for routing.
+    #
+    # Bound explicitly to loopback + the tailscale interface only (NOT
+    # 0.0.0.0) so :7231 is unreachable from the host's public/LAN
+    # interface -- ufw does not filter Docker's DNAT'd published ports (see
+    # docs-internal/security.mdx), so interface-scoped binding is the
+    # mitigation that actually works. Public exposure for sip.w3.run goes
+    # through the cloudflared service instead (see below), which reaches
+    # Caddy over the internal aistack network, not through this port.
     ports:
-      - "7231:80"
+      - "127.0.0.1:7231:80"
+      - "100.69.165.55:7231:80"
     environment:
       # bcrypt hash of the HTTP Basic Auth password for the `admin` user
       # (see docker/caddy/Caddyfile's basic_auth blocks). Generated with:
@@ -175,6 +189,34 @@ services:
       - asterisk
       - grafana
     restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    hostname: cloudflared
+    command: tunnel --no-autoupdate run
+    networks:
+      - aistack
+    # TUNNEL_TOKEN comes from env_file (gitignored .env.aistack) -- never
+    # hardcode a real token here, this file is committed.
+    env_file: .env.aistack
+    depends_on:
+      - caddy
+    restart: unless-stopped
+    # No ports: -- cloudflared makes an OUTBOUND connection to Cloudflare's
+    # edge, no inbound port needs publishing. In the Cloudflare Zero Trust
+    # dashboard, this tunnel's public hostname ingress (sip.w3.run) must
+    # point at http://caddy:80 -- NOT localhost:7231 -- since cloudflared
+    # reaches Caddy over this same aistack docker network. Cloudflare
+    # preserves the original Host header, so docker/caddy/Caddyfile's
+    # host-scoped sip.w3.run block (SIP/WS/media/ARI only, no basic auth,
+    # everything else 404) is what actually gets served.
+    #
+    # NOTE: .env.aistack ships with an empty TUNNEL_TOKEN placeholder.
+    # Until a real token is set, this container will crash-loop on start
+    # (restart: unless-stopped keeps retrying) -- that's expected and does
+    # NOT affect any other service. Set the token, then:
+    #   docker compose up -d cloudflared
 
 networks:
   aistack:

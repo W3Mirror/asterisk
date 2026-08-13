@@ -443,45 +443,80 @@ exten => 100,1,Answer()
             sign in at <code>/grafana/login</code> for editing.
           </div>
           <div className="callout">
-            <strong>Change all three default passwords:</strong>
+            <strong>SIP and ARI passwords are rotated and no longer live in
+            git.</strong>
             <ul>
               <li>
                 <code>docker/etc-asterisk/pjsip.conf</code> &mdash; endpoint{" "}
-                <code>6001</code>&apos;s <code>password=changeme6001</code>{" "}
-                (and any endpoints you add).
+                <code>6001</code>&apos;s auth section now lives in{" "}
+                <code>docker/etc-asterisk/secrets/pjsip_auth.conf</code>{" "}
+                (gitignored, <code>#include</code>&apos;d), rotated via a real
+                password. See{" "}
+                <code>secrets/pjsip_auth.conf.example</code> for the
+                template.
               </li>
               <li>
                 <code>docker/etc-asterisk/ari.conf</code> &mdash; the{" "}
-                <code>aistack</code> user&apos;s{" "}
-                <code>password = changeme-ari</code> (also update{" "}
-                <code>ARI_PASSWORD</code> in <code>compose.yml</code>&apos;s{" "}
-                <code>portal</code> service so the dashboard keeps working).
+                <code>aistack</code> user&apos;s section now lives in{" "}
+                <code>docker/etc-asterisk/secrets/ari_secret.conf</code>{" "}
+                (gitignored, <code>#include</code>&apos;d). The portal reads
+                the matching password from <code>ARI_PASSWORD</code> in{" "}
+                <code>.env.aistack</code> (gitignored,{" "}
+                <code>env_file:</code> on the <code>portal</code> service in{" "}
+                <code>compose.yml</code>) &mdash; see{" "}
+                <code>.env.aistack.example</code> for the template. Rotating
+                either just needs a config reload/restart, no image rebuild.
               </li>
               <li>
                 <code>compose.yml</code> &mdash; Grafana&apos;s{" "}
-                <code>GF_SECURITY_ADMIN_PASSWORD=changeme</code>.
+                <code>GF_SECURITY_ADMIN_PASSWORD=changeme</code> is still a
+                committed default (view access is gated by Caddy&apos;s
+                basic auth regardless); rotate it the same way if you also
+                expose Grafana editing beyond a trusted network.
               </li>
             </ul>
           </div>
           <ul>
             <li>
-              <strong>Restrict network exposure.</strong> Caddy is the only
-              published port. Consider binding it to a specific interface
-              (e.g. the tailscale IP) instead of all interfaces &mdash; change{" "}
-              <code>ports: ["7231:80"]</code> to{" "}
-              <code>ports: ["100.69.165.55:7231:80"]</code> in{" "}
-              <code>compose.yml</code> so the stack is unreachable from other
-              interfaces on the host.
+              <strong>Network exposure is now interface-restricted.</strong>{" "}
+              <code>compose.yml</code>&apos;s <code>caddy</code> service
+              publishes <code>7231</code> bound explicitly to{" "}
+              <code>127.0.0.1</code> and the tailscale IP (
+              <code>100.69.165.55</code>) only &mdash; not{" "}
+              <code>0.0.0.0</code> &mdash; so it&apos;s unreachable from the
+              host&apos;s public/LAN interface.
             </li>
             <li>
-              <strong>Use TLS in production.</strong> Everything here runs
-              over plain <code>ws://</code>/<code>http://</code>. Terminate
-              TLS at Caddy (it can provision certs automatically for a real
-              domain) or enable Asterisk&apos;s own{" "}
-              <code>tlsenable</code>/<code>tlsbindaddr</code>/
-              <code>tlscertfile</code>/<code>tlsprivatekey</code> in{" "}
-              <code>http.conf</code>, and switch clients to{" "}
-              <code>wss://</code>.
+              <strong>Public exposure goes through a Cloudflare Tunnel, not
+              the published port.</strong> The <code>cloudflared</code>{" "}
+              service in <code>compose.yml</code> connects outbound to
+              Cloudflare and, once a public hostname is configured for it in
+              the Cloudflare Zero Trust dashboard, routes{" "}
+              <code>sip.w3.run</code> to <code>http://caddy:80</code> over
+              the internal <code>aistack</code> network (not{" "}
+              <code>localhost:7231</code>). <code>docker/caddy/Caddyfile</code>{" "}
+              has a dedicated <code>http://sip.w3.run</code> site block that
+              only proxies <code>/ws</code>, <code>/media/*</code>, and{" "}
+              <code>/ari*</code> (no basic auth, same as today) &mdash;
+              everything else under that hostname (portal, <code>/docs</code>
+              , <code>/grafana</code>, <code>/metrics</code>) 404s. Every
+              other <code>Host</code> header (localhost, the tailscale IP)
+              keeps the full catch-all behavior described above. Paste a
+              real tunnel token into <code>TUNNEL_TOKEN</code> in{" "}
+              <code>.env.aistack</code> (gitignored) and run{" "}
+              <code>docker compose up -d cloudflared</code> to activate it;
+              until then the container crash-loops harmlessly.
+            </li>
+            <li>
+              <strong>Use TLS in production.</strong> Everything inside the{" "}
+              <code>aistack</code> network still runs over plain{" "}
+              <code>ws://</code>/<code>http://</code>; TLS for{" "}
+              <code>sip.w3.run</code> is terminated at Cloudflare&apos;s edge
+              by the tunnel. For the tailscale/localhost path, Caddy can also
+              provision certs automatically for a real domain, or enable
+              Asterisk&apos;s own <code>tlsenable</code>/
+              <code>tlsbindaddr</code>/<code>tlscertfile</code>/
+              <code>tlsprivatekey</code> in <code>http.conf</code>.
             </li>
             <li>
               <strong>Lock down <code>/metrics</code>.</strong>{" "}
@@ -489,13 +524,15 @@ exten => 100,1,Answer()
               it&apos;s reachable from outside the docker network (via
               Caddy) with no auth by default; uncomment{" "}
               <code>auth_username</code>/<code>auth_password</code> there
-              once Prometheus is updated to send them.
+              once Prometheus is updated to send them. It is not reachable
+              at all under the <code>sip.w3.run</code> host.
             </li>
             <li>
               <strong>The portal has no login of its own.</strong> It&apos;s
               read-only today, but treat it (and Grafana) as trusted-network
               tools, or put an auth proxy in front, before exposing them
-              further.
+              further. Neither is reachable under <code>sip.w3.run</code>{" "}
+              at all.
             </li>
           </ul>
         </section>
