@@ -57,6 +57,39 @@ services:
       - prometheus-data:/prometheus
     restart: unless-stopped
 
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    hostname: loki
+    networks:
+      - aistack
+    # Not published -- only reachable at http://loki:3100 from promtail
+    # (pushing logs) and Grafana (querying via the provisioned datasource,
+    # see docker/grafana/provisioning/datasources/datasource.yml).
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./docker/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki-data:/loki
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:latest
+    container_name: promtail
+    hostname: promtail
+    networks:
+      - aistack
+    command: -config.file=/etc/promtail/promtail.yml
+    volumes:
+      - ./docker/promtail/promtail.yml:/etc/promtail/promtail.yml:ro
+      # Needed for promtail's docker_sd_configs to discover containers and
+      # fetch their logs via the Docker API -- no host log-file mounts
+      # required. Read-only.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+    restart: unless-stopped
+    # No ports: -- internal only.
+
   grafana:
     image: grafana/grafana-oss:latest
     container_name: grafana
@@ -82,6 +115,7 @@ services:
       - grafana-data:/var/lib/grafana
     depends_on:
       - prometheus
+      - loki
     restart: unless-stopped
 
   portal:
@@ -153,3 +187,4 @@ volumes:
   grafana-data:
   caddy_data:
   caddy_config:
+  loki-data:

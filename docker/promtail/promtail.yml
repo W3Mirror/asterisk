@@ -1,0 +1,46 @@
+# Promtail config for the aistack observability stack.
+#
+# Discovers containers via the Docker API (docker_sd_configs against the
+# host's Docker socket, mounted read-only in compose.yml) rather than
+# tailing /var/lib/docker/containers directly -- this is the standard
+# promtail pattern and means no host log-file mounts are needed. Promtail
+# fetches each discovered container's logs straight from the Docker API.
+#
+# Only containers belonging to this compose project ("asterisk", i.e. this
+# checkout's directory name -- see the com.docker.compose.project label)
+# are kept, so promtail doesn't pick up unrelated containers on the host.
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+        # Filter at the Docker API level (like `docker ps --filter`) so
+        # only this compose project's containers are ever discovered --
+        # this host also runs unrelated containers (e.g. gh-runner-*) that
+        # must not get pulled into Loki. NOTE: a relabel_configs
+        # source_labels/regex/action:keep on
+        # __meta_docker_container_label_com_docker_compose_project was
+        # tried first and did NOT drop non-matching targets on
+        # grafana/promtail:latest (3.6.8) -- this label filter is the
+        # reliable equivalent.
+        filters:
+          - name: label
+            values: ["com.docker.compose.project=asterisk"]
+    relabel_configs:
+      # Container name (strip leading '/' that the Docker API includes).
+      - source_labels: ["__meta_docker_container_name"]
+        regex: "/(.*)"
+        target_label: "container"
+      - source_labels: ["__meta_docker_container_label_com_docker_compose_service"]
+        target_label: "service"

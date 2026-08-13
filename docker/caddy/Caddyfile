@@ -34,7 +34,16 @@
 
 :80 {
 	encode gzip
-	log
+
+	# Structured JSON access log to stdout -- captures every request that
+	# hits this server block (including 401s from the basic_auth blocks
+	# below and websocket upgrade requests on /ws, /media/*, /ari*), so it
+	# can be scraped by promtail (see docker/promtail/promtail.yml) and
+	# queried centrally in Grafana via the Loki datasource.
+	log {
+		output stdout
+		format json
+	}
 
 	# Asterisk's built-in HTTP server: ARI REST + websocket events, the
 	# chan_websocket SIP signalling websocket, and per-call media websockets.
