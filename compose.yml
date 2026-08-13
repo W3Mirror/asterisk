@@ -1,0 +1,138 @@
+services:
+  asterisk:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: asterisk:22.10.1-aistack
+    container_name: asterisk
+    hostname: asterisk
+    networks:
+      - aistack
+
+    # Bridge networking (not network_mode: host): asterisk, prometheus,
+    # grafana, portal and caddy all talk to each other by service name over
+    # the aistack network (e.g. Prometheus scrapes http://asterisk:8088/metrics,
+    # Grafana queries http://prometheus:9090). Caddy is the only service that
+    # publishes a port to the host; it fronts asterisk's websocket-based
+    # stack (PJSIP transport-ws, chan_websocket media/control, ARI, and the
+    # Prometheus /metrics route from docker/etc-asterisk/prometheus.conf) at
+    # /ws, /media/*, /ari*, and /metrics.
+    #
+    # ports:
+    #   - "8088:8088/tcp"  # uncomment for direct websocket access bypassing caddy
+
+    # --- Classic SIP/RTP clients (not needed for the websocket stack) ---
+    # Uncomment if you need plain UDP SIP phones/trunks or WebRTC/native
+    # RTP media to reach this container. The RTP range MUST match
+    # docker/etc-asterisk/rtp.conf's rtpstart/rtpend.
+    #
+    # ports:
+    #   - "5060:5060/udp"
+    #   - "10000-10100:10000-10100/udp"
+
+    volumes:
+      - ./docker/etc-asterisk:/etc/asterisk:ro
+      - asterisk-spool:/var/spool/asterisk
+      - asterisk-log:/var/log/asterisk
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "asterisk", "-rx", "core show uptime"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    hostname: prometheus
+    networks:
+      - aistack
+    # Deliberately NOT published to the host -- only Grafana (and anything
+    # else on the aistack network) can reach it, at http://prometheus:9090.
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: grafana
+    hostname: grafana
+    networks:
+      - aistack
+    environment:
+      # CHANGE THIS for anything beyond local dev/demo.
+      - GF_SECURITY_ADMIN_PASSWORD=changeme
+      # Served behind caddy under /grafana -- see docker/caddy/Caddyfile.
+      - GF_SERVER_ROOT_URL=http://100.69.165.55:7231/grafana
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+    volumes:
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  portal:
+    build:
+      context: ./portal
+      dockerfile: Dockerfile
+      # NEXT_PUBLIC_* vars are inlined by Next.js at `next build` time (this
+      # page is statically prerendered -- app/page.tsx has no dynamic APIs),
+      # so setting NEXT_PUBLIC_GRAFANA_URL only under `environment:` below
+      # has NO effect on the already-built image. It must also be passed
+      # here as a build arg and the image rebuilt whenever this URL changes.
+      args:
+        NEXT_PUBLIC_GRAFANA_URL: http://100.69.165.55:7231/grafana
+    container_name: portal
+    hostname: portal
+    networks:
+      - aistack
+    environment:
+      ARI_BASE_URL: http://asterisk:8088/ari
+      ARI_USERNAME: aistack
+      ARI_PASSWORD: changeme-ari
+      # Kept in sync with build.args above for documentation purposes --
+      # this env var itself is NOT read at runtime by the prerendered page.
+      NEXT_PUBLIC_GRAFANA_URL: http://100.69.165.55:7231/grafana
+    depends_on:
+      - asterisk
+    restart: unless-stopped
+    # No ports: -- only reachable via the caddy edge proxy on the aistack
+    # network.
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    hostname: caddy
+    networks:
+      - aistack
+    # THE ONLY published port in this compose file -- single entrypoint for
+    # the whole stack (portal, grafana under /grafana, asterisk's ARI/ws/
+    # metrics routes). See docker/caddy/Caddyfile for routing.
+    ports:
+      - "7231:80"
+    volumes:
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - portal
+      - asterisk
+      - grafana
+    restart: unless-stopped
+
+networks:
+  aistack:
+    driver: bridge
+
+volumes:
+  asterisk-spool:
+  asterisk-log:
+  prometheus-data:
+  grafana-data:
+  caddy_data:
+  caddy_config:

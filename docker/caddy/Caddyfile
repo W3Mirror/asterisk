@@ -1,0 +1,76 @@
+# Caddyfile for the aistack edge proxy.
+#
+# This is the ONLY service in the stack that publishes a host port
+# (see compose.yml — caddy: 7231:80). Everything else — portal,
+# asterisk's HTTP server, grafana — stays on the internal `aistack` network.
+#
+# Caddy's reverse_proxy natively supports WebSocket upgrades (it forwards the
+# Connection/Upgrade headers transparently), so no special config is needed
+# for /ws, /media/*, or the ARI events websocket under /ari/*.
+#
+# All routes below use `handle`/`handle_path`, which are mutually exclusive
+# (first match wins, evaluated in the order written here) and are grouped
+# together regardless of Caddy's normal automatic directive sorting. The
+# original scaffold mixed a bare top-level `reverse_proxy / portal:3000`
+# with these handle blocks: a bare path matcher of "/" only matches the
+# literal root path (not a prefix), so every other portal route/asset would
+# have fallen through unhandled. Fixed by making the portal proxy a
+# no-matcher `handle {}` block placed last, so it acts as the default/
+# catch-all for everything not claimed by a more specific block above it.
+
+:80 {
+	encode gzip
+	log
+
+	# Asterisk's built-in HTTP server: ARI REST + websocket events, the
+	# chan_websocket SIP signalling websocket, and per-call media websockets.
+	# reverse_proxy upgrades these to websockets automatically.
+	handle /ari* {
+		reverse_proxy asterisk:8088
+	}
+
+	handle /ws {
+		reverse_proxy asterisk:8088
+	}
+
+	handle /media/* {
+		reverse_proxy asterisk:8088
+	}
+
+	# Prometheus/Asterisk metrics — proxied too in case something outside the
+	# docker network needs to scrape via the edge (otherwise Prometheus
+	# should just reach asterisk:8088/metrics directly over the aistack
+	# network).
+	handle /metrics {
+		reverse_proxy asterisk:8088
+	}
+
+	# handle_path /grafana/* below only matches /grafana/ and deeper -- the
+	# bare /grafana (no trailing slash) doesn't match and would otherwise
+	# fall through to the portal catch-all below, yielding a Next.js 404.
+	# Redirect it to the trailing-slash form first.
+	redir /grafana /grafana/ 308
+
+	# Grafana, mounted under /grafana. IMPORTANT: Grafana is configured with:
+	#   GF_SERVER_ROOT_URL=http://<host>/grafana
+	#   GF_SERVER_SERVE_FROM_SUB_PATH=true
+	# When serve_from_sub_path is true, Grafana itself serves and expects
+	# requests AT the /grafana prefix (it does its own internal routing
+	# under that path) -- the reverse proxy must NOT strip the prefix.
+	# Using handle_path here (which strips /grafana before proxying) causes
+	# Grafana to see requests at "/", which it then 301-redirects back to
+	# "/grafana/" (per root_url) -- and since Caddy strips the prefix again
+	# on the next hop, that's an infinite redirect loop. `handle` (not
+	# handle_path) forwards the path unchanged, matching what
+	# serve_from_sub_path expects.
+	handle /grafana/* {
+		reverse_proxy grafana:3000
+	}
+
+	# Next.js management portal (dashboard UI + its own /api/* BFF routes) —
+	# catch-all fallback. Must be last: handle blocks are evaluated in the
+	# order written and the first match wins.
+	handle {
+		reverse_proxy portal:3000
+	}
+}
