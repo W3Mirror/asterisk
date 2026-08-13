@@ -17,6 +17,20 @@
 # have fallen through unhandled. Fixed by making the portal proxy a
 # no-matcher `handle {}` block placed last, so it acts as the default/
 # catch-all for everything not claimed by a more specific block above it.
+#
+# HTTP Basic Auth: everything reachable through this proxy is protected
+# EXCEPT /ari*, /ws, and /media/* -- those are deliberately left open:
+#   - /ws and /media/* are consumed by SIP/WebRTC clients (chan_websocket
+#     signalling + per-call media) that have no way to attach an
+#     Authorization header.
+#   - /ari* already enforces its own HTTP Basic Auth inside Asterisk
+#     (ARI_USERNAME/ARI_PASSWORD, see portal's compose env), so a second
+#     layer here would just be redundant.
+# The `basic_auth` directive (Caddy 2.8+; older releases used `basicauth`)
+# is placed inside each protected `handle` block rather than as one global
+# matcher, so it's obvious per-block whether a route is gated. The
+# credential hash is injected via the {env.CADDY_ADMIN_HASH} placeholder --
+# see compose.yml's caddy service `environment:` for how it's set.
 
 :80 {
 	encode gzip
@@ -40,15 +54,21 @@
 	# Prometheus/Asterisk metrics — proxied too in case something outside the
 	# docker network needs to scrape via the edge (otherwise Prometheus
 	# should just reach asterisk:8088/metrics directly over the aistack
-	# network).
+	# network). Protected: metrics can leak call/system details.
 	handle /metrics {
+		basic_auth {
+			admin {env.CADDY_ADMIN_HASH}
+		}
 		reverse_proxy asterisk:8088
 	}
 
 	# handle_path /grafana/* below only matches /grafana/ and deeper -- the
 	# bare /grafana (no trailing slash) doesn't match and would otherwise
 	# fall through to the portal catch-all below, yielding a Next.js 404.
-	# Redirect it to the trailing-slash form first.
+	# Redirect it to the trailing-slash form first. This redirect itself
+	# carries no content (just a Location header) and fires before auth is
+	# evaluated -- that's fine, the actual /grafana/* target below is
+	# protected, so nothing is exposed.
 	redir /grafana /grafana/ 308
 
 	# Grafana, mounted under /grafana. IMPORTANT: Grafana is configured with:
@@ -63,7 +83,15 @@
 	# on the next hop, that's an infinite redirect loop. `handle` (not
 	# handle_path) forwards the path unchanged, matching what
 	# serve_from_sub_path expects.
+	# Grafana itself is left with anonymous Viewer access enabled
+	# (GF_AUTH_ANONYMOUS_ENABLED=true, see compose.yml) so authenticating
+	# here once via basic_auth doesn't force a second Grafana login just to
+	# view dashboards; admin login for editing is still available at
+	# /grafana/login.
 	handle /grafana/* {
+		basic_auth {
+			admin {env.CADDY_ADMIN_HASH}
+		}
 		reverse_proxy grafana:3000
 	}
 
@@ -71,6 +99,9 @@
 	# catch-all fallback. Must be last: handle blocks are evaluated in the
 	# order written and the first match wins.
 	handle {
+		basic_auth {
+			admin {env.CADDY_ADMIN_HASH}
+		}
 		reverse_proxy portal:3000
 	}
 }

@@ -428,6 +428,21 @@ exten => 100,1,Answer()
             at minimum:
           </p>
           <div className="callout">
+            <strong>HTTP Basic Auth is enabled at the edge.</strong> Caddy
+            (<code>docker/caddy/Caddyfile</code>) protects the portal (
+            <code>/</code>, <code>/docs</code>, <code>/api/*</code>),{" "}
+            <code>/grafana</code>/<code>/grafana/*</code>, and{" "}
+            <code>/metrics</code> with a single <code>admin</code> account
+            (bcrypt hash in <code>compose.yml</code>&apos;s{" "}
+            <code>CADDY_ADMIN_HASH</code>). <code>/ws</code>,{" "}
+            <code>/media/*</code>, and <code>/ari/*</code> are intentionally
+            left out of this gate &mdash; SIP/WebRTC clients can&apos;t send
+            extra auth headers, and ARI already enforces its own credentials.
+            Grafana has <code>GF_AUTH_ANONYMOUS_ENABLED=true</code> (Viewer
+            role) so the single Caddy login is enough to view dashboards;
+            sign in at <code>/grafana/login</code> for editing.
+          </div>
+          <div className="callout">
             <strong>Change all three default passwords:</strong>
             <ul>
               <li>

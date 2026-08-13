@@ -69,6 +69,14 @@ services:
       # Served behind caddy under /grafana -- see docker/caddy/Caddyfile.
       - GF_SERVER_ROOT_URL=http://100.69.165.55:7231/grafana
       - GF_SERVER_SERVE_FROM_SUB_PATH=true
+      # Caddy's basic_auth already gates the whole /grafana/* path (see
+      # docker/caddy/Caddyfile), so requiring a *second*, separate Grafana
+      # login on top of that would be redundant friction for viewers.
+      # Anonymous access here is scoped to Viewer only -- editing/admin
+      # still requires signing in at /grafana/login with the real Grafana
+      # admin credentials (GF_SECURITY_ADMIN_PASSWORD above).
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
     volumes:
       - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana-data:/var/lib/grafana
@@ -115,6 +123,15 @@ services:
     # metrics routes). See docker/caddy/Caddyfile for routing.
     ports:
       - "7231:80"
+    environment:
+      # bcrypt hash of the HTTP Basic Auth password for the `admin` user
+      # (see docker/caddy/Caddyfile's basic_auth blocks). Generated with:
+      #   docker compose exec caddy caddy hash-password --plaintext '<pw>'
+      # NOTE the doubled `$$`: docker compose interpolates single `$` in
+      # this file itself before the value ever reaches the container, and
+      # bcrypt hashes are full of literal `$` separators (e.g.
+      # $2a$14$...) -- `$$` is how compose escapes a literal `$`.
+      - CADDY_ADMIN_HASH=$$2a$$14$$Uyqh/Ix0RNcz81k/tc6RfOTEFCpEaPJ1nDekWfjgApjATOgCsUv3O
     volumes:
       - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
