@@ -1,0 +1,77 @@
+# NOT a runnable compose file on its own.
+#
+# These are the service blocks to merge into the top-level compose.yml
+# (owned by another agent). Paste `portal` and `caddy` in under the existing
+# `services:` key, and add `aistack` to each service's `networks:` list if
+# it isn't already using the shared external/bridge network.
+#
+# Notes for whoever merges this in:
+#   - The Caddyfile lives at portal/caddy/Caddyfile in this scaffold; move it
+#     to docker/caddy/Caddyfile (or wherever the docker/ conventions expect
+#     compose-adjacent config) and update the bind mount path below to match.
+#   - `caddy` is intentionally the ONLY service here that publishes a host
+#     port. `portal` never has (this scaffold never gives it a `ports:`
+#     block). The existing `asterisk` (8088:8088) and `grafana` (3000:3000)
+#     services in compose.yml currently DO publish host ports — remove those
+#     `ports:` blocks when wiring Caddy in, so caddy's published port (7231
+#     in the top-level compose.yml) becomes the single entrypoint, per the
+#     task's "caddy is the only published port" goal.
+#   - Grafana needs two extra env vars so it works correctly behind the
+#     /grafana/* sub-path — see the comment on the `grafana` service below.
+#     Add them to the existing `grafana` service definition; it is not
+#     redefined here.
+#   - ARI_PASSWORD below is the same "changeme-ari" default baked into the
+#     Asterisk config elsewhere in this repo — swap both together if you
+#     rotate it, and prefer an .env file / secret over a literal in compose
+#     for anything beyond local dev.
+
+services:
+  portal:
+    build:
+      context: ./portal
+      dockerfile: Dockerfile
+    networks:
+      - aistack
+    environment:
+      ARI_BASE_URL: http://asterisk:8088/ari
+      ARI_USERNAME: aistack
+      ARI_PASSWORD: changeme-ari
+      NEXT_PUBLIC_GRAFANA_URL: http://localhost:7231/grafana
+    depends_on:
+      - asterisk
+    restart: unless-stopped
+    # No ports: — only reachable via the caddy edge proxy on the aistack
+    # network.
+
+  caddy:
+    image: caddy:2-alpine
+    networks:
+      - aistack
+    ports:
+      - "7231:80"
+    volumes:
+      # Path to update once the Caddyfile is moved into docker/caddy/.
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - portal
+      - asterisk
+      - grafana
+    restart: unless-stopped
+
+# Add these to the existing `grafana` service's `environment:` so it renders
+# correctly under the /grafana/* sub-path Caddy proxies it at:
+#   GF_SERVER_ROOT_URL: http://localhost:7231/grafana
+#   GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+
+# Add to the top-level `volumes:` key if not already present:
+# volumes:
+#   caddy_data:
+#   caddy_config:
+
+# `aistack` is already defined in the main compose.yml as:
+#   networks:
+#     aistack:
+#       driver: bridge
+# — reuse it as-is, no changes needed there.

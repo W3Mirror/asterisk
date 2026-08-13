@@ -1,0 +1,13 @@
+node_modules
+.next
+out
+.git
+.gitignore
+.dockerignore
+Dockerfile
+npm-debug.log*
+*.md
+.env
+.env.*
+caddy
+compose.snippet.yml
