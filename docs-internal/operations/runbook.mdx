@@ -128,6 +128,24 @@ docker compose exec asterisk asterisk -rx "module reload res_pjsip.so"
 
 Registered clients using the old password will fail their next REGISTER refresh and need updating with the new credential.
 
+## Meta SIP trunk: cert issuance and allowlist refresh
+
+See [Meta WhatsApp trunk](/reference/meta-trunk) for the full picture. Quick reference:
+
+```bash
+# Issue (once DNS is live) or renew the sip-trunk.w3.run cert and reload Asterisk
+sudo docker/scripts/issue-cert.sh
+
+# Refresh the AS32934 firewall allowlist on demand (also runs weekly + @reboot via cron)
+sudo docker/scripts/meta-allowlist.sh
+
+# Inspect current state
+iptables -L META-SIP -n -v
+ipset list meta-wa-v4 | head
+crontab -l   # weekly + @reboot meta-allowlist.sh entries
+systemctl list-timers | grep certbot   # snap.certbot.renew.timer — renewal automation
+```
+
 ## Health checks
 
 ```bash

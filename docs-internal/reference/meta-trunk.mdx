@@ -1,0 +1,177 @@
+---
+title: Meta WhatsApp Trunk
+description: "Direct public SIP-TLS exposure for Meta WhatsApp Business Calling — sip-trunk.w3.run:5061, cert issuance, endpoint identification, and the firewall allowlist"
+icon: phone
+---
+
+<Info>
+  This is "Option 3": Meta connects **directly** to this Asterisk instance over SIP-TLS on `sip-trunk.w3.run:5061` — no SBC, no third-party trunking provider. It is a second, independent public entry point from the `sip.w3.run` websocket/ARI path documented in [Security](/security) — different hostname, different port, different transport, and governed by a different access-control mechanism (network-level firewall allowlist instead of Cloudflare Tunnel).
+</Info>
+
+## Status as of implementation (2026-08-13)
+
+| Item | Status |
+| --- | --- |
+| Host public IP | `195.201.246.125` — bound directly to `enp98s0f0` (a real `/32`, not behind an additional upstream NAT). Verify with `curl -4 -s ifconfig.me`. |
+| DNS: `sip-trunk.w3.run` | **Not live yet.** The whole `w3.run` zone currently answers every subdomain (including a random nonexistent one) with the same IP, `65.1.135.111` — this looks like a wildcard/parking record, not a real entry for this hostname. It does **not** point at this host. Confirm with `dig +short sip-trunk.w3.run @1.1.1.1` once the real DNS-only (grey-cloud) A record is added — it should return `195.201.246.125`. |
+| TLS certificate | **Self-signed placeholder** (`CN=sip-trunk.w3.run`, 90-day validity) at `docker/etc-asterisk/secrets/tls/{fullchain,privkey}.pem`. `docker/scripts/issue-cert.sh` was run once already and failed exactly as expected (`Timeout during connect` — certbot's HTTP-01 challenge can't reach a host that DNS doesn't point at yet). Re-run it once DNS resolves to `195.201.246.125`; no other config changes are needed afterward. |
+| PJSIP transport / endpoint / firewall | Live. `pjsip show transports` shows `transport-tls` bound on `0.0.0.0:5061`; the `META-SIP` iptables chain is allowlisting AS32934. |
+
+## Certificate issuance and renewal
+
+```bash
+sudo docker/scripts/issue-cert.sh
+```
+
+<Steps>
+  <Step title="First run, once DNS is live">
+    Requests a cert via `certbot certonly --standalone -d sip-trunk.w3.run` (uses port 80, which is otherwise unused on this host — Caddy only publishes 7231). Installs the result into `docker/etc-asterisk/secrets/tls/` and reloads `res_pjsip.so`.
+  </Step>
+  <Step title="Automatic renewal">
+    The first successful run registers a `--deploy-hook` (`issue-cert.sh --deploy-only`) in `/etc/letsencrypt/renewal/sip-trunk.w3.run.conf` — this is what certbot invokes after a renewal to copy the fresh cert into place and reload Asterisk. The snap-packaged certbot's own timer (`snap.certbot.renew.timer`) has been enabled (`systemctl enable --now snap.certbot.renew.timer`) so `certbot renew` actually runs on a schedule — it was previously installed but disabled on this host.
+  </Step>
+  <Step title="Why no allow_reload=yes was needed">
+    Asterisk 22's PJSIP transport reload logic (`res/res_pjsip/config_transport.c`) special-cases TLS transports: even with a transport's `allow_reload` left at its default `no`, a `module reload res_pjsip.so` still detects that the cert/key *file's mtime* changed (same path, new content) and restarts just that transport in place. `[transport-tls]` in `pjsip.conf` does not need `allow_reload=yes` for renewals to take effect.
+  </Step>
+</Steps>
+
+Placeholder-vs-real cert is entirely a file-content swap — nothing in `pjsip.conf` changes either way, since both live at the same path (`secrets/tls/fullchain.pem` / `secrets/tls/privkey.pem`).
+
+## PJSIP configuration decisions
+
+All of this lives in `docker/etc-asterisk/pjsip.conf`; the comments there are the primary source of truth, this page is the narrative version.
+
+### Transport: `[transport-tls]`
+
+```ini
+[transport-tls]
+type=transport
+protocol=tls
+bind=0.0.0.0:5061
+cert_file=/etc/asterisk/secrets/tls/fullchain.pem
+priv_key_file=/etc/asterisk/secrets/tls/privkey.pem
+method=tlsv1_2
+verify_client=no
+require_client_cert=no
+external_signaling_address=195.201.246.125
+external_media_address=195.201.246.125
+```
+
+- **`verify_client=no` / `require_client_cert=no`, deliberately.** Meta does not support mTLS — the security boundary here is the network-level firewall allowlist (below), not certificate-based client auth.
+- **`external_signaling_address`/`external_media_address`.** The container sits behind Docker's own bridge-network NAT even though the host itself has no additional upstream NAT — without these, SDP/Contact headers would advertise the container's private `172.x` address. **Update these if the host's public IP ever changes** — they are not auto-detected.
+- **Prerequisites confirmed in the image** before any of this was written: `res_srtp.so` is loaded (`module show like res_srtp`), and `libasteriskpj.so` (the bundled pjproject) links against `libssl`/`libcrypto`, confirming TLS support was compiled in — Asterisk 22 has no separate `res_pjsip_transport_tls.so` module to check for; TLS transport support lives inside `res_pjsip.so` + pjproject itself.
+
+### Endpoint identification: `match_header`, not source IP
+
+Meta's calling IPs rotate within AS32934, so the *usual* trunk-identification mechanism — a source-IP `identify` object — would need constant upkeep to stay correct. This build has no `res_pjsip_endpoint_identifier_header` module (checked: `module show like endpoint_identifier` lists only `_ip`, `_user`, and `_anonymous`).
+
+What **does** exist, and is what's used here, is a header-matching mode built into `res_pjsip_endpoint_identifier_ip.so` itself: the `identify` object's `match_header` option (added upstream in 13.15.0/14.4.0, confirmed still present by reading `res/res_pjsip_endpoint_identifier_ip.c`'s `header_identify_match_check()`). It matches a named SIP header's value against a plain string or, wrapped in slashes, a regex — independent of source IP:
+
+```ini
+[meta-wa-identify]
+type=identify
+endpoint=meta-wa
+match_header=From: /wa\.meta\.vc/
+```
+
+Meta's INVITEs present calls from the `wa.meta.vc` domain (per Meta's WhatsApp Business Calling docs), which shows up in the `From` header — this rule routes any INVITE claiming that domain to the `[meta-wa]` endpoint, regardless of which AS32934 IP it arrived from.
+
+**This alone is not an authentication mechanism** — header values are trivially spoofable by anyone who can reach port 5061 at all. It's paired with the `META-SIP` iptables allowlist (below), which restricts who can reach port 5061 in the first place to AS32934's published ranges. Network-level restriction + header-based routing together is the most correct mechanism available in this Asterisk build; routing all unauthenticated INVITEs on this transport to `[meta-wa]` via `res_pjsip_endpoint_identifier_anonymous.so` was considered and rejected as strictly less specific for no operational benefit, given `match_header` was available.
+
+### Media encryption: DTLS-SRTP, not `webrtc=yes`
+
+```ini
+media_encryption=dtls
+media_encryption_optimistic=no
+dtls_auto_generate_cert=yes
+dtls_verify=no
+dtls_setup=actpass
+```
+
+- **Mandatory, not optimistic** (`media_encryption_optimistic=no`, the default) — Meta requires SRTP, so a call that can't negotiate it should fail outright rather than silently falling back to plain RTP.
+- **`dtls_auto_generate_cert=yes`, no real PKI cert needed for DTLS.** Meta's DTLS handshake validates the SDP `a=fingerprint` exchanged in signaling, not a CA chain — this is unrelated to the SIP-TLS cert above.
+- **Deliberately not `webrtc=yes`.** That shortcut also force-enables `ice_support`, `use_avpf`, and `rtcp_mux` (`res/res_pjsip/pjsip_configuration.c`: `endpoint->media.rtcp_mux |= endpoint->media.webrtc`, etc.) — none of which apply to a plain SIP-TLS trunk. `res_pjsip_sdp_rtp.c`'s DTLS-SRTP negotiation (`setup_media_encryption()`) is independent of the ICE/WebRTC path, so `media_encryption=dtls` alone is sufficient and correct here.
+- **SDES fallback** (acceptable per Meta's spec, DTLS-SRTP preferred) is left as a commented-out alternative (`;media_encryption=sdes`) in `pjsip.conf` — the two are mutually exclusive, not layered.
+
+### Codec / transcoding caveat
+
+`res_format_attr_opus.so` is loaded (opus attribute/fmtp negotiation) but there is **no `codec_opus.so`** in this build — confirmed via `find /usr/lib/asterisk/modules -iname '*opus*'`. This means Asterisk can pass opus through unmodified between two opus-speaking legs, but **cannot transcode** opus to/from anything else. `allow=opus` is listed last (after `ulaw`/`alaw`/`g722`) in `[meta-wa]` so Asterisk prefers a transcodable codec when it has a choice; anything that unconditionally needs a non-opus codec on this leg (e.g. `Playback()` of a raw ulaw/alaw sound straight to a WhatsApp caller with no other codec in common) will fail to negotiate. Not fixed as part of this change — flagging for whoever builds the real call-handling path.
+
+### Capacity
+
+`docker/etc-asterisk/rtp.conf` keeps `rtpstart=10000`/`rtpend=10100` (101 ports) — roughly 25-50 simultaneous calls depending on whether RTCP gets its own port or is muxed. Fine for the current pilot scale; widen the range (and `compose.yml`'s matching `ports:` entry) if concurrency needs grow.
+
+## Firewall allowlist
+
+`compose.yml` publishes `5061:5061/tcp` and `10000-10100:10000-10100/udp` bound to `0.0.0.0` — deliberately, unlike Caddy's `7231` which is scoped to loopback + Tailscale. This is a genuinely public trunk endpoint; Meta connects from AS32934, not Tailscale. Access control is enforced at the firewall instead of by interface binding.
+
+<Warning>
+  As covered in [Security](/security) and [Lessons Learned](/operations/lessons-learned): **ufw does not filter Docker's DNAT'd published ports.** The chain that actually sees this traffic, after Docker's own DNAT, is `DOCKER-USER` in the `filter` table — Docker guarantees it never overwrites rules placed there.
+</Warning>
+
+```bash
+sudo docker/scripts/meta-allowlist.sh
+```
+
+What it does, every run (idempotent, safe to re-run any time):
+
+1. Fetches AS32934's current IPv4 prefixes from RADB (`whois -h whois.radb.net -- '-i origin AS32934'`, filtered to `route:` lines) — 416 unique prefixes as of writing.
+2. Loads them into an `ipset` (`hash:net`, named `meta-wa-v4`) via a `swap`, so there's never a window with a partial/empty set live.
+3. Ensures a dedicated `META-SIP` iptables chain exists, jumped to from `DOCKER-USER`, with (in order): ACCEPT tcp/5061 and udp/10000-10100 from `meta-wa-v4` sources, DROP tcp/5061 and udp/10000-10100 from everyone else, RETURN for everything else (so no other Docker-forwarded traffic on the host is affected).
+
+Verify:
+
+```bash
+iptables -L META-SIP -n -v
+ipset list meta-wa-v4 | head
+```
+
+**IPv6**: AS32934 also announces IPv6 (`route6:` objects), but this host's `ip6tables` is non-functional (`Incompatible with this kernel` — nf_tables backend mismatch) and the `aistack` Docker network has IPv6 disabled, so nothing is published on IPv6 for this service — no gap to close. Extend `meta-allowlist.sh` with the same `ip6tables`/`ipset ... inet6` pattern if that ever changes.
+
+**Persistence**: iptables/ipset state does not survive a reboot on its own. Rather than snapshotting today's AS32934 ranges (which would go stale the moment they rotate), this is re-run from cron:
+
+```
+0 5 * * 1 docker/scripts/meta-allowlist.sh       # weekly refresh
+@reboot   docker/scripts/meta-allowlist.sh       # rebuild from scratch after a reboot
+```
+
+(installed in root's crontab — `crontab -l` to see it, `crontab -e` to change it). This was chosen over `iptables-persistent`/`netfilter-persistent` specifically because a static save-file would freeze the allowlist at whatever AS32934 looked like at save time; re-fetching from RADB on every boot keeps it current instead.
+
+**Testing note**: a self-test from this host to its own public IP on 5061 does *not* reliably exercise the `DOCKER-USER` path — connections a Docker host makes to its own public IP frequently take a local-delivery shortcut that bypasses the `FORWARD` chain entirely (confirmed empirically: `META-SIP`'s port-5061 rule counters did not move during a local `openssl s_client` test against the public IP). Trust the `iptables -L META-SIP -n -v` rule structure/counters and a genuine external test (e.g. Meta's own onboarding test call, once DNS+cert are live) over a same-host test.
+
+## What to enter in Meta's dashboard
+
+| Field | Value |
+| --- | --- |
+| SIP server hostname | `sip-trunk.w3.run` |
+| Port | `5061` |
+| Transport | TLS |
+| Media | SRTP mandatory, DTLS-SRTP preferred (SDES acceptable, not both) |
+
+Do this only after DNS resolves correctly and `docker/scripts/issue-cert.sh` has installed a real (non-self-signed) certificate — Meta does not support mTLS and will not trust a self-signed leaf.
+
+## Verification
+
+```bash
+# Transport bound
+docker compose exec asterisk asterisk -rx "pjsip show transports"
+
+# Endpoint + identify wired up
+docker compose exec asterisk asterisk -rx "pjsip show endpoints"
+docker compose exec asterisk asterisk -rx "pjsip show identifies"
+
+# TLS handshake works (self-signed placeholder OK pre-DNS; expect a real
+# CA chain once issue-cert.sh has run)
+openssl s_client -connect 195.201.246.125:5061 -servername sip-trunk.w3.run </dev/null
+
+# Firewall allowlist
+iptables -L META-SIP -n -v
+ipset list meta-wa-v4 | head
+
+# Live-call debugging
+docker compose exec asterisk asterisk -rx "pjsip set logger on"
+```
+
+<Card title="Debugging a live call" icon="bug" href="/operations/runbook">
+  See the runbook and the `debug-asterisk` Claude skill for the full symptom → tool mapping, extended for this trunk.
+</Card>

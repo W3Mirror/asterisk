@@ -14,6 +14,7 @@ const TOC = [
   { href: "#chan-websocket", label: "6. chan_websocket usage" },
   { href: "#ari", label: "7. ARI" },
   { href: "#security", label: "8. Security checklist" },
+  { href: "#meta-trunk", label: "9. Meta WhatsApp trunk" },
 ];
 
 export default function DocsPage() {
@@ -535,6 +536,29 @@ exten => 100,1,Answer()
               at all.
             </li>
           </ul>
+        </section>
+
+        <section id="meta-trunk">
+          <h2>9. Meta WhatsApp trunk</h2>
+          <p>
+            A second, independent public entry point exists for Meta
+            WhatsApp Business Calling: direct SIP-TLS on{" "}
+            <code>sip-trunk.w3.run:5061</code>, unrelated to the Caddy/
+            <code>sip.w3.run</code> path above (different hostname, port,
+            transport, and access-control mechanism). PJSIP&apos;s{" "}
+            <code>[transport-tls]</code> and <code>[meta-wa]</code>{" "}
+            endpoint live in <code>docker/etc-asterisk/pjsip.conf</code>;
+            inbound calls are routed by a <code>match_header</code> rule on
+            the <code>From</code> domain (<code>wa.meta.vc</code>), and
+            network-level access is restricted to Meta&apos;s published
+            AS32934 ranges via a <code>DOCKER-USER</code>/iptables
+            allowlist (<code>docker/scripts/meta-allowlist.sh</code>,
+            refreshed weekly since those ranges rotate). TLS certs come
+            from Let&apos;s Encrypt (<code>docker/scripts/issue-cert.sh</code>
+            ); mTLS is intentionally not used since Meta doesn&apos;t
+            support presenting a client certificate. Full internal writeup:
+            docs-internal&apos;s <em>Meta WhatsApp trunk</em> reference page.
+          </p>
         </section>
       </div>
     </main>

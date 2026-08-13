@@ -13,10 +13,11 @@ services:
     # grafana, portal and caddy all talk to each other by service name over
     # the aistack network (e.g. Prometheus scrapes http://asterisk:8088/metrics,
     # Grafana queries http://prometheus:9090). Caddy is the only service that
-    # publishes a port to the host; it fronts asterisk's websocket-based
-    # stack (PJSIP transport-ws, chan_websocket media/control, ARI, and the
-    # Prometheus /metrics route from docker/etc-asterisk/prometheus.conf) at
-    # /ws, /media/*, /ari*, and /metrics.
+    # publishes a websocket-facing port to the host; it fronts asterisk's
+    # websocket-based stack (PJSIP transport-ws, chan_websocket media/
+    # control, ARI, and the Prometheus /metrics route from
+    # docker/etc-asterisk/prometheus.conf) at /ws, /media/*, /ari*, and
+    # /metrics.
     #
     # ports:
     #   - "8088:8088/tcp"  # uncomment for direct websocket access bypassing caddy
@@ -29,6 +30,23 @@ services:
     # ports:
     #   - "5060:5060/udp"
     #   - "10000-10100:10000-10100/udp"
+
+    # --- Meta WhatsApp Business Calling trunk (direct public SIP-TLS) ---
+    # Unlike Caddy's 7231 (deliberately bound to loopback + tailscale
+    # only, see docs-internal/security.mdx), these two ARE bound to
+    # 0.0.0.0 -- deliberately, since sip-trunk.w3.run:5061 is a public
+    # SIP trunk endpoint Meta connects to directly from AS32934 IPs, not
+    # something reachable via Tailscale or a tunnel. The actual access
+    # control is the DOCKER-USER/META-SIP iptables allowlist set up by
+    # docker/scripts/meta-allowlist.sh (ufw does NOT filter Docker's
+    # DNAT'd published ports -- see docs-internal/operations/
+    # lessons-learned.mdx), not interface binding. 5061 is PJSIP's
+    # [transport-tls] (see pjsip.conf); the RTP range is shared with the
+    # commented native-RTP block above and MUST stay in sync with
+    # docker/etc-asterisk/rtp.conf's rtpstart/rtpend.
+    ports:
+      - "5061:5061/tcp"
+      - "10000-10100:10000-10100/udp"
 
     volumes:
       - ./docker/etc-asterisk:/etc/asterisk:ro

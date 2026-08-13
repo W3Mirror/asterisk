@@ -117,6 +117,17 @@ http://sip.w3.run {
 
 `sip.w3.run` only ever reaches the SIP/WebRTC/ARI surface, with no `basic_auth` (unchanged from before — SIP/WebRTC clients can't attach an `Authorization` header, and ARI enforces its own). Everything else — the portal, `/docs`, `/grafana/*`, `/metrics` — 404s under that hostname instead of falling through to a `basic_auth` prompt, so there's no signal to a public scanner that those routes even exist. All other `Host` headers keep the pre-tunnel behavior unchanged.
 
+## Public exposure via direct SIP-TLS (`sip-trunk.w3.run:5061`)
+
+A second, independent public entry point exists alongside the Cloudflare Tunnel above: `compose.yml`'s `asterisk` service publishes `5061:5061/tcp` and `10000-10100:10000-10100/udp` bound to `0.0.0.0` (not loopback/Tailscale-scoped like `7231`) for Meta WhatsApp Business Calling to connect to directly over SIP-TLS. This is deliberate — Meta connects from its own network (AS32934), not Tailscale — but it means the access-control model is different from everything else in this doc: no Caddy, no basic auth, no Cloudflare Tunnel. Instead:
+
+- **Network layer**: `docker/scripts/meta-allowlist.sh` programs a `DOCKER-USER`-jumped `META-SIP` iptables chain (backed by an `ipset` of AS32934's published ranges) that drops everything on 5061/tcp and the RTP range except traffic from those ranges. Refreshed weekly + on boot via cron (AS32934's ranges rotate; see below for why this isn't a static rule set).
+- **SIP layer**: PJSIP's `[meta-wa-identify]` object routes only INVITEs presenting a `From` header on the `wa.meta.vc` domain to the `[meta-wa]` endpoint (`match_header` — see `res_pjsip_endpoint_identifier_ip.c`). This is routing, not authentication (header values are spoofable) — the firewall allowlist above is the actual access-control boundary.
+- **Transport layer**: TLS with a CA-valid cert (Let's Encrypt, via `docker/scripts/issue-cert.sh`) — no mTLS, since Meta does not support presenting a client certificate.
+- **Media layer**: mandatory SRTP (`media_encryption_optimistic=no`), DTLS-SRTP preferred, SDES as an alternative (not both at once).
+
+Full writeup — DNS/cert status, config rationale, allowlist mechanics, capacity — in [Meta WhatsApp trunk](/reference/meta-trunk).
+
 ## TLS / wss roadmap
 
 Everything in this stack runs over plain `http://`/`ws://` today:

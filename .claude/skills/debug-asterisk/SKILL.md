@@ -9,11 +9,15 @@ description: Debug the AIStack Asterisk/SIP stack — where logs live, how to tr
 
 8 services on the `aistack` docker network (see `compose.yml`): `asterisk`,
 `prometheus`, `grafana`, `loki`, `promtail`, `portal`, `caddy`,
-`cloudflared`. **Only `caddy` publishes a host port** — `7231:80`, bound
-explicitly to `127.0.0.1` and the tailscale IP (`100.69.165.55:7231`),
-*not* `0.0.0.0`. Everything else (including `cloudflared`, which makes an
-outbound-only connection to Cloudflare's edge) is internal-only; reach it
-by exec'ing into a container or curling from one already on the network.
+`cloudflared`. `caddy` publishes `7231:80`, bound explicitly to
+`127.0.0.1` and the tailscale IP (`100.69.165.55:7231`), *not* `0.0.0.0`.
+`asterisk` ALSO publishes two ports, deliberately to `0.0.0.0` (unlike
+caddy) — `5061:5061/tcp` and `10000-10100:10000-10100/udp` — for the
+public Meta WhatsApp SIP-TLS trunk (see below); access control there is
+an iptables allowlist, not interface binding. Everything else (including
+`cloudflared`, which makes an outbound-only connection to Cloudflare's
+edge) is internal-only; reach it by exec'ing into a container or curling
+from one already on the network.
 
 Public exposure for `sip.w3.run` goes through `cloudflared`, not the
 published port — its tunnel ingress (Cloudflare Zero Trust dashboard)
@@ -114,6 +118,49 @@ Then check Prometheus's own view of the scrape target:
 `docker compose exec prometheus wget -qO- http://localhost:9090/api/v1/targets`
 (`docker/etc-asterisk/prometheus.conf` exposes `/metrics` on 8088, with
 auth commented out there — Caddy is what actually gates it externally.)
+
+**Meta WhatsApp SIP-TLS trunk (`sip-trunk.w3.run:5061`)**
+- Full writeup: `docs-internal/reference/meta-trunk.mdx`.
+- This is a SEPARATE public entry point from `sip.w3.run` above -- different
+  hostname, port (5061 not 80/443), transport (raw SIP-TLS not WebSocket),
+  and access control (iptables allowlist, not Caddy basic auth/tunnel).
+  Don't confuse the two when debugging.
+```
+docker compose exec asterisk asterisk -rx "pjsip show transports"   # transport-tls bound on 0.0.0.0:5061?
+docker compose exec asterisk asterisk -rx "pjsip show endpoints"    # meta-wa present, Identify: meta-wa-identify/meta-wa
+docker compose exec asterisk asterisk -rx "pjsip show identifies"   # match_header=From: /wa\.meta\.vc/
+docker compose exec asterisk asterisk -rx "pjsip set logger on"     # trace the actual INVITE -- confirms whether match_header matched
+```
+- **Call never arrives at all**: check the firewall allowlist first, before
+  touching Asterisk config -- a genuinely-Meta call from an IP not yet in
+  the allowlist (AS32934 ranges rotate) looks identical to "nothing
+  happened" from Asterisk's side, because it's dropped before reaching the
+  container:
+  ```
+  iptables -L META-SIP -n -v          # counters on the DROP rules moving = something is being blocked
+  ipset list meta-wa-v4 | grep <ip>   # is this specific source IP currently allowlisted?
+  sudo docker/scripts/meta-allowlist.sh   # force a refresh (safe, idempotent, also runs weekly + @reboot via cron)
+  ```
+- **Call arrives but gets no endpoint / ends up on `s`/default context**:
+  the `From` header didn't match `wa.meta.vc` via the `[meta-wa-identify]`
+  regex -- `pjsip set logger on` and inspect the actual `From:` line Meta
+  sent.
+- **TLS handshake fails**: check which cert is currently installed --
+  `openssl x509 -in docker/etc-asterisk/secrets/tls/fullchain.pem -noout -subject -issuer -dates`.
+  A self-signed placeholder (`issuer == subject`) means
+  `docker/scripts/issue-cert.sh` either hasn't been run yet or failed
+  (commonly: DNS for `sip-trunk.w3.run` not resolving to this host's
+  public IP yet -- certbot's HTTP-01 challenge can't complete).
+- **Media negotiation fails (SRTP/DTLS)**: `pjsip set logger on` and check
+  the SDP for `a=crypto`/`a=fingerprint` lines; `media_encryption_optimistic=no`
+  on `[meta-wa]` means a failed SRTP negotiation rejects the call outright
+  rather than falling back to plain RTP -- that's intentional, not a bug.
+- **Codec negotiation fails on an opus-only leg**: this build has
+  `res_format_attr_opus.so` (passthrough negotiation) but no
+  `codec_opus.so` (no transcoding) -- confirmed via
+  `docker compose exec asterisk asterisk -rx "module show like opus"`.
+  A call that needs opus transcoded to/from something else will fail;
+  this is a known gap, not something to "fix" via config.
 
 **Container-level**
 ```

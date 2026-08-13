@@ -31,7 +31,8 @@
           "reference/asterisk-config",
           "reference/websocket",
           "reference/portal",
-          "reference/observability"
+          "reference/observability",
+          "reference/meta-trunk"
         ]
       },
       {
