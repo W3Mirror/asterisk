@@ -1,0 +1,201 @@
+---
+title: Docker Stack
+description: "compose.yml services, the aistack network, volumes, the single-port design, and how to operate the stack"
+icon: docker
+---
+
+## Services
+
+`compose.yml` at the repo root defines seven services on one user-defined bridge network, `aistack`. Service names double as DNS names on that network (Docker's embedded DNS), which is how e.g. Prometheus reaches `http://asterisk:8088/metrics` without any published ports.
+
+<Tabs>
+  <Tab title="asterisk">
+    ```yaml
+    build: { context: ., dockerfile: Dockerfile }
+    image: asterisk:22.10.1-aistack
+    volumes:
+      - ./docker/etc-asterisk:/etc/asterisk:ro
+      - asterisk-spool:/var/spool/asterisk
+      - asterisk-log:/var/log/asterisk
+    healthcheck:
+      test: ["CMD", "asterisk", "-rx", "core show uptime"]
+    ```
+
+    Config directory is bind-mounted **read-only** straight from the repo (`docker/etc-asterisk/`) — edit those files on the host, then reload the relevant module (see [Runbook](/operations/runbook)). No host ports published by default; see [the commented SIP/RTP block](#classic-sip-rtp-ports) below.
+  </Tab>
+  <Tab title="prometheus">
+    ```yaml
+    image: prom/prometheus:latest
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ```
+
+    Deliberately **not** published to the host — only reachable at `http://prometheus:9090` from other containers on `aistack` (Grafana, or Caddy's `/metrics` passthrough only proxies to Asterisk, not to Prometheus itself).
+  </Tab>
+  <Tab title="loki">
+    ```yaml
+    image: grafana/loki:latest
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./docker/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki-data:/loki
+    ```
+
+    Log storage backend for the stack — single-binary mode, local filesystem storage (`loki-data` volume), 7-day retention (`docker/loki/loki-config.yml`). Not published; only reachable at `http://loki:3100` from Promtail (pushing) and Grafana (querying, via the provisioned datasource).
+  </Tab>
+  <Tab title="promtail">
+    ```yaml
+    image: grafana/promtail:latest
+    command: -config.file=/etc/promtail/promtail.yml
+    volumes:
+      - ./docker/promtail/promtail.yml:/etc/promtail/promtail.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on: [loki]
+    ```
+
+    Ships every container's logs to Loki. Uses `docker_sd_configs` against the mounted Docker socket to discover containers and fetch their logs straight from the Docker API — no host log-file mounts needed. `docker/promtail/promtail.yml` filters to only this compose project's containers (`com.docker.compose.project=asterisk`) so it doesn't pick up unrelated containers on the host. Not published.
+  </Tab>
+  <Tab title="grafana">
+    ```yaml
+    image: grafana/grafana-oss:latest
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=changeme
+      - GF_SERVER_ROOT_URL=http://100.69.165.55:7231/grafana
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+    volumes:
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    depends_on: [prometheus, loki]
+    ```
+
+    `SERVE_FROM_SUB_PATH` and `ROOT_URL` must agree with how Caddy proxies it — see the [Caddy sub-path gotcha in Lessons Learned](/operations/lessons-learned#grafana-sub-path-redirect-loop). Anonymous **Viewer** role means Caddy's single basic-auth login is enough to view dashboards; editing still needs `/grafana/login` with the real admin password. Provisioned with two datasources (Prometheus, Loki) and two dashboards (Asterisk Overview, Logs) — see [Observability](/reference/observability).
+  </Tab>
+  <Tab title="portal">
+    ```yaml
+    build:
+      context: ./portal
+      args:
+        NEXT_PUBLIC_GRAFANA_URL: http://100.69.165.55:7231/grafana
+    environment:
+      ARI_BASE_URL: http://asterisk:8088/ari
+      ARI_USERNAME: aistack
+      ARI_PASSWORD: changeme-ari
+      NEXT_PUBLIC_GRAFANA_URL: http://100.69.165.55:7231/grafana
+    depends_on: [asterisk]
+    ```
+
+    No `ports:` — only reachable through Caddy or from other containers at `portal:3000`. See the [`NEXT_PUBLIC_*` build-arg gotcha](/reference/portal) — the `environment:` copy of `NEXT_PUBLIC_GRAFANA_URL` here is for documentation/consistency only; it has no runtime effect on the already-built image.
+  </Tab>
+  <Tab title="caddy">
+    ```yaml
+    image: caddy:2-alpine
+    ports:
+      - "7231:80"
+    environment:
+      - CADDY_ADMIN_HASH=$$2a$$14$$Uyqh/Ix0RNcz81k/tc6RfOTEFCpEaPJ1nDekWfjgApjATOgCsUv3O
+    volumes:
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [portal, asterisk, grafana]
+    ```
+
+    The **only** service with a `ports:` mapping in the whole file. Everything the outside world can reach goes through here. See [Asterisk config reference](/reference/asterisk-config) and [Websocket reference](/reference/websocket) for what's behind `/ari*`, `/ws`, `/media/*`.
+
+    The Caddyfile's top-level `log { output stdout; format json }` block emits structured JSON access logs (every request, including 401s from the `basic_auth` blocks and websocket upgrades) to stdout, which Promtail picks up and ships to Loki for querying in Grafana's Logs dashboard — see [Observability](/reference/observability).
+  </Tab>
+</Tabs>
+
+## Network and volumes
+
+```yaml
+networks:
+  aistack:
+    driver: bridge
+
+volumes:
+  asterisk-spool:
+  asterisk-log:
+  prometheus-data:
+  grafana-data:
+  caddy_data:
+  caddy_config:
+  loki-data:
+```
+
+- **`aistack`** is a plain bridge network (not `network_mode: host`) — every inter-service call in the stack (Prometheus → Asterisk, Grafana → Prometheus/Loki, Promtail → Loki, Portal → Asterisk, Caddy → everything) is a DNS-resolved container-to-container call, not localhost.
+- Named volumes persist Asterisk's spool/log, Prometheus's TSDB, Grafana's SQLite state, Loki's chunks/index, and Caddy's on-disk TLS/data directories across `docker compose down` (but not `down -v`).
+- `docker/etc-asterisk`, `docker/prometheus/prometheus.yml`, `docker/grafana/provisioning`, `docker/loki/loki-config.yml`, `docker/promtail/promtail.yml`, and `docker/caddy/Caddyfile` are **bind mounts**, not volumes — they're read directly from the repo checkout, `:ro`.
+- Promtail also bind-mounts `/var/run/docker.sock` read-only, to discover and read other containers' logs via the Docker API rather than tailing host log files directly.
+
+## Single-port design
+
+Only Caddy publishes a port. This is intentional layering, not an accident of default `ports:` omission — every other service's compose block is commented to say so explicitly. The point: one thing to firewall, one TLS termination point (if/when TLS is added), one auth choke point.
+
+```yaml
+# asterisk service, commented out by default:
+# ports:
+#   - "8088:8088/tcp"  # uncomment for direct websocket access bypassing caddy
+```
+
+### Classic SIP/RTP ports
+
+Also commented out, because the primary access pattern for this stack is WebSocket-based SIP \+ media (see [Websocket reference](/reference/websocket)), which rides entirely over Caddy's one published port. If you need plain UDP SIP phones/trunks or native (non-WebSocket) RTP media to reach the container, uncomment:
+
+```yaml
+# ports:
+#   - "5060:5060/udp"
+#   - "10000-10100:10000-10100/udp"
+```
+
+The RTP range **must** stay in sync with `docker/etc-asterisk/rtp.conf`'s `rtpstart`/`rtpend` (currently `10000`–`10100`) and the Dockerfile's `EXPOSE 10000-10100/udp`.
+
+<Warning>
+  Publishing UDP ports with `docker-proxy`/iptables DNAT bypasses the host firewall's `INPUT` chain (e.g. `ufw default deny incoming` does **not** block them). See [Lessons Learned: ufw does not filter published Docker ports](/operations/lessons-learned#ufw-does-not-filter-docker-published-ports) before uncommenting this in anything but a fully trusted network.
+</Warning>
+
+## Starting, stopping, rebuilding
+
+```bash
+# Build images and start everything in the background
+docker compose up -d --build
+
+# Rebuild just one service after editing its Dockerfile/source
+docker compose build asterisk
+docker compose up -d asterisk
+
+# Recreate a service after a compose.yml or bind-mounted config change
+docker compose up -d asterisk   # picks up new ports:, env:, etc.
+
+# Tail logs
+docker compose logs -f asterisk
+docker compose logs -f caddy
+
+# Stop everything, keep volumes
+docker compose down
+
+# Stop everything and delete volumes (spool/log/prometheus/grafana/loki data — destructive)
+docker compose down -v
+```
+
+<Note>
+  `docker compose up -d asterisk` after only editing a file _inside_ `docker/etc-asterisk/` is **not** enough by itself in every case — bind mounts of a single file (not a directory) can go stale if the file is replaced via an atomic rename (most editors do this). See [Lessons Learned: bind-mounted single file doesn't propagate](/operations/lessons-learned#bind-mounted-single-file-edits-dont-propagate). Editing files inside a directory bind mount (like `docker/etc-asterisk/`, which is mounted as a whole directory) is safe — only single-file mounts like the Caddyfile are worth double-checking after edits.
+</Note>
+
+## Port and access summary
+
+| What | Where |
+| --- | --- |
+| Published port | `7231` → caddy container port `80` |
+| Tailscale access | `http://100.69.165.55:7231` |
+| Local access (on the Docker host) | `http://localhost:7231` |
+| Internal Asterisk HTTP server | `asterisk:8088` (not published unless uncommented) |
+| Internal Grafana | `grafana:3000` (not published; reached via `/grafana/*`) |
+| Internal Prometheus | `prometheus:9090` (never published) |
+| Internal Loki | `loki:3100` (never published) |
+| Internal portal | `portal:3000` (not published; reached via `/`, `/docs`, `/api/*`) |
+
+See [Security](/security) for the auth layers sitting in front of these paths, and [Docker stack lessons](/operations/lessons-learned) for the discovered host-port-3000 conflict and other real gotchas hit while building this out.

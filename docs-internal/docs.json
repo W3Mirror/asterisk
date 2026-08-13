@@ -1,0 +1,57 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "AIStack SIP Server",
+  "description": "Internal documentation for the aistack/main Asterisk 22.10.1 build and its Docker Compose stack (Asterisk, Prometheus, Grafana, Next.js portal, Caddy).",
+  "colors": {
+    "primary": "#16A34A",
+    "light": "#4ADE80",
+    "dark": "#15803D"
+  },
+  "favicon": "/favicon.svg",
+  "navigation": {
+    "groups": [
+      {
+        "group": "Get Started",
+        "pages": [
+          "overview",
+          "security"
+        ]
+      },
+      {
+        "group": "Setup",
+        "pages": [
+          "setup/build-from-source",
+          "setup/docker-stack"
+        ]
+      },
+      {
+        "group": "Reference",
+        "pages": [
+          "reference/asterisk-config",
+          "reference/websocket",
+          "reference/portal",
+          "reference/observability"
+        ]
+      },
+      {
+        "group": "Operations",
+        "pages": [
+          "operations/runbook",
+          "operations/lessons-learned"
+        ]
+      }
+    ]
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "Live stack (Tailscale)",
+        "href": "http://100.69.165.55:7231"
+      }
+    ]
+  },
+  "footer": {
+    "socials": {}
+  }
+}

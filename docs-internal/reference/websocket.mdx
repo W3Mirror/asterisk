@@ -1,0 +1,119 @@
+---
+title: WebSocket Transports
+description: "Two distinct WebSocket paths — PJSIP signalling over /ws, and chan_websocket media/control over /media/*"
+icon: plug
+---
+
+This stack has **two independent WebSocket mechanisms**, both riding on Asterisk's built-in HTTP server (`http.conf`, port `8088`) and both proxied by Caddy — but they solve different problems and must not be confused.
+
+|  | SIP over WebSocket | chan\_websocket |
+| --- | --- | --- |
+| Purpose | SIP **signalling** (REGISTER/INVITE/etc.) | Per-call **media/control** |
+| Config | `pjsip.conf` → `[transport-ws]` | `chan_websocket.conf` |
+| Path through Caddy | `/ws` | `/media/<connection_id>` |
+| WebSocket subprotocol | `sip` | `media` |
+| Typical client | JsSIP / SIP.js softphone | A custom app bridged in via dialplan |
+
+## SIP over WebSocket (`/ws`)
+
+Defined once in `pjsip.conf`:
+
+```ini
+[transport-ws]
+type=transport
+protocol=ws
+bind=0.0.0.0
+```
+
+This transport rides on the same HTTP server as ARI and `/metrics` (`http.conf`, `bindport=8088`); Caddy proxies plain WebSocket connections at `/ws` straight through with no path rewriting (`reverse_proxy` upgrades transparently). The demo endpoint `6001` in `pjsip.conf` will register and place calls over either `transport-ws` or `transport-udp` — PJSIP picks the transport automatically based on how the client connects.
+
+### JsSIP example
+
+```javascript
+const ua = new JsSIP.UA({
+  sockets: [new JsSIP.WebSocketInterface('ws://100.69.165.55:7231/ws')],
+  uri: 'sip:6001@100.69.165.55',
+  authorization_user: '6001',
+  password: 'changeme6001',
+  register: true,
+});
+ua.start();
+```
+
+<Note>
+  Sourced verbatim from `portal/app/docs/page.tsx` (section 3, "Registering a SIP client"), which also has a SIP.js equivalent.
+</Note>
+
+<Warning>
+  `ws://` is plain-text — matches this stack's default of no TLS configured (`http.conf`'s `tlsenable` is commented out). For anything beyond local dev, terminate TLS at Caddy or enable Asterisk's own TLS listener and switch to `wss://`. See [Security: TLS/wss roadmap](/security#tls-wss-roadmap).
+</Warning>
+
+## chan\_websocket (media/control)
+
+`chan_websocket` is a **separate, native WebSocket channel driver** — distinct from `transport-ws` above. It carries a call's media and control frames directly over a WebSocket, independent of SIP entirely. Dial string:
+
+```text
+Dial(WebSocket/<connection_id>[/options])
+```
+
+### Inbound pattern: `WebSocket/INCOMING`
+
+The literal connection id `INCOMING` tells Asterisk to _wait_ for an inbound WebSocket connection rather than opening an outbound one — this is the pattern used by the commented-out demo extension in `extensions.conf`:
+
+```ini
+;exten => 200,1,Answer()
+; same => n,Dial(WebSocket/INCOMING/c(ulaw))
+; same => n,Hangup()
+```
+
+<Steps>
+  <Step title="Call reaches extension 200">
+    Dialplan runs `Answer()` then `Dial(WebSocket/INCOMING/c(ulaw))`.
+  </Step>
+  <Step title="Asterisk generates a connection id">
+    Exposed on the channel as the `MEDIA_WEBSOCKET_CONNECTION_ID` channel variable.
+  </Step>
+  <Step title="External client connects">
+    Your client opens a WebSocket to `/media/<connection_id>` — through Caddy: `ws://100.69.165.55:7231/media/<connection_id>` — using the `media` subprotocol.
+  </Step>
+  <Step title="Asterisk bridges it in">
+    Once the client connects, `chan_websocket` bridges the media/control frames into the call.
+  </Step>
+</Steps>
+
+### Dialstring options
+
+| Option | Meaning |
+| --- | --- |
+| `c(codec)` | Codec to use on the channel, e.g. `c(ulaw)`. Defaults to the caller channel's first codec if omitted. |
+| `f(format)` | Control-message format for this call — `plain-text` (default) or `json`. Overrides the global `control_message_format` in `chan_websocket.conf` per-call. |
+| `d(direction)` | Media direction from the app's perspective: `both` (default), `in` (app receives only), `out` (app sends only). |
+| `n` | (See `chan_websocket` module docs for the full option reference — not exercised by the demo dialplan in this tree.) |
+| `v` | Verbose/debug control-frame logging toggle. |
+| `p` | Ping/keepalive-related option. |
+
+<Note>
+  The dialstring options table above documents `c`, `f`, and `d` directly against what `chan_websocket.conf` and `portal/app/docs/page.tsx` describe from this tree. `n`, `v`, and `p` are part of the module's broader option set (`core show application Dial` / `chan_websocket` source) but aren't demonstrated anywhere in this repo's config — check `asterisk -rx "core show application Dial"` and the `chan_websocket` channel driver docs on a live system before relying on them.
+</Note>
+
+### Global control-message format
+
+```ini
+;[global]
+;control_message_format = json  ; plain-text (default) or json
+```
+
+`docker/etc-asterisk/chan_websocket.conf` is left at its defaults (plain-text). Uncomment `control_message_format = json` under `[global]` to switch every call to JSON control messages instead of choosing it per-call with the `f()` dialstring option.
+
+## Outbound mode: websocket\_client.conf
+
+For **outbound** `chan_websocket` connections (Asterisk initiating the WebSocket to an external endpoint, rather than waiting for `INCOMING`), the connection is configured as a named client in `websocket_client.conf` and referenced by name instead of `INCOMING` in the `Dial(WebSocket/<name>/...)` string.
+
+<Warning>
+  This repo's `docker/etc-asterisk/` does **not** ship a `websocket_client.conf` — only the inbound (`INCOMING`) pattern is configured/demoed in this tree. If you need outbound `chan_websocket` connections, add `websocket_client.conf` to `docker/etc-asterisk/` (it will be picked up automatically since the whole directory is bind-mounted to `/etc/asterisk`) and consult `res_websocket_client`'s sample config (`configs/samples/websocket_client.conf.sample` in the source tree) for the exact syntax.
+</Warning>
+
+## Reference
+
+- [Asterisk configuration reference](/reference/asterisk-config) for the `pjsip.conf` transport definitions
+- `docker/caddy/Caddyfile` → `/ws` and `/media/*` are both proxied with no path stripping and are exempt from Caddy's basic auth, since SIP/WebRTC clients can't attach an `Authorization` header — see [Security](/security)

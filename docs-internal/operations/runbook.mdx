@@ -1,0 +1,186 @@
+---
+title: Runbook
+description: "Common day-to-day operations — reloads, adding endpoints, rotating credentials, health checks, logs, compose lifecycle"
+icon: clipboard-list
+---
+
+All `asterisk -rx` commands below can be run either directly on the host (native build, `/usr/sbin/asterisk`) or inside the container:
+
+```bash
+docker compose exec asterisk asterisk -rx "<command>"
+```
+
+## Reloading configuration
+
+<Warning>
+  There is **no** standalone `pjsip reload` CLI command in this build — only narrower ones like `pjsip reload qualify endpoint`. A full PJSIP config reload goes through the module reload below. This is called out explicitly in `portal/app/docs/page.tsx` section 4.
+</Warning>
+
+```bash
+# Reload PJSIP config (endpoints, auths, aors, transports) after editing pjsip.conf
+docker compose exec asterisk asterisk -rx "module reload res_pjsip.so"
+
+# Reload the dialplan after editing extensions.conf
+docker compose exec asterisk asterisk -rx "dialplan reload"
+
+# Reload ARI config after editing ari.conf
+docker compose exec asterisk asterisk -rx "module reload res_ari.so"
+
+# Reload logging config after editing logger.conf
+docker compose exec asterisk asterisk -rx "logger reload"
+```
+
+`docker/etc-asterisk/` is bind-mounted read-only as a whole directory, so edits to files inside it are visible in the container immediately — no restart needed, just the relevant reload command above.
+
+## Adding a PJSIP endpoint
+
+Copy the `[6001]` triplet in `docker/etc-asterisk/pjsip.conf`, rename the section, and pick a new password:
+
+```ini
+[6002]
+type=endpoint
+context=from-internal
+disallow=all
+allow=ulaw
+allow=alaw
+auth=6002
+aors=6002
+direct_media=no
+
+[6002]
+type=auth
+auth_type=userpass
+username=6002
+password=<new-strong-password>
+
+[6002]
+type=aor
+max_contacts=5
+remove_existing=yes
+```
+
+Then reload and confirm:
+
+```bash
+docker compose exec asterisk asterisk -rx "module reload res_pjsip.so"
+docker compose exec asterisk asterisk -rx "pjsip show endpoints"
+docker compose exec asterisk asterisk -rx "pjsip show endpoint 6002"
+```
+
+See [PJSIP endpoint anatomy](/reference/asterisk-config) for what each field does.
+
+## Rotating the Caddy basic-auth password
+
+The hash lives in `compose.yml` as `CADDY_ADMIN_HASH`, escaped for Compose's own `$` interpolation.
+
+<Steps>
+  <Step title="Generate a new password and hash it">
+    ```bash
+    NEWPW=$(openssl rand -base64 18)
+    docker compose exec caddy caddy hash-password --plaintext "$NEWPW"
+    echo "$NEWPW"   # save this somewhere outside the repo — it's the operator's copy
+    ```
+  </Step>
+  <Step title="Escape the hash for compose.yml">
+    bcrypt hashes are full of literal `$` (e.g. `$2a$14$...`). Compose interpolates single `$` characters in `compose.yml` itself before the value reaches the container, so every `$` in the hash must be doubled to `$$`:
+
+    ```yaml
+    environment:
+      - CADDY_ADMIN_HASH=$$2a$$14$$<rest-of-hash>
+    ```
+  </Step>
+  <Step title="Recreate the caddy service">
+    ```bash
+    docker compose up -d caddy
+    ```
+
+    Env var changes require recreation, not just a config reload — `docker compose up -d caddy` handles this since the `environment:` block changed relative to the running container.
+  </Step>
+</Steps>
+
+## Rotating ARI credentials
+
+<Steps>
+  <Step title="Update ari.conf">
+    Edit `docker/etc-asterisk/ari.conf`'s `password = changeme-ari` line under `[aistack]`.
+  </Step>
+  <Step title="Reload ARI">
+    ```bash
+    docker compose exec asterisk asterisk -rx "module reload res_ari.so"
+    ```
+  </Step>
+  <Step title="Update the portal's copy">
+    `compose.yml`'s `portal.environment.ARI_PASSWORD` must match, or the dashboard starts showing "Unreachable". This one **is** read at runtime (unlike `NEXT_PUBLIC_GRAFANA_URL` — see [the portal build-time gotcha](/reference/portal)), so a recreate is enough, no rebuild needed:
+
+    ```bash
+    docker compose up -d portal
+    ```
+  </Step>
+</Steps>
+
+## Rotating SIP credentials
+
+Edit the relevant endpoint's `[type=auth]` block in `docker/etc-asterisk/pjsip.conf` (e.g. `6001`'s `password=changeme6001`), then:
+
+```bash
+docker compose exec asterisk asterisk -rx "module reload res_pjsip.so"
+```
+
+Registered clients using the old password will fail their next REGISTER refresh and need updating with the new credential.
+
+## Health checks
+
+```bash
+# Overall uptime / is it even up (this is also the compose healthcheck command)
+asterisk -rx "core show uptime"
+
+# PJSIP transports bound and listening
+asterisk -rx "pjsip show transports"
+
+# All configured endpoints and their registration/contact state
+asterisk -rx "pjsip show endpoints"
+
+# Is the HTTP server (backs ARI, transport-ws, /metrics) up
+asterisk -rx "http show status"
+
+# Confirm a specific module loaded (e.g. after a build change)
+asterisk -rx "module show like websocket"
+asterisk -rx "module show like res_prometheus"
+asterisk -rx "module show like res_ari"
+
+# Active channels right now
+asterisk -rx "core show channels"
+```
+
+The `asterisk` service's Compose healthcheck runs `asterisk -rx "core show uptime"` every 30s (10s timeout, 5 retries, 20s start period) — `docker compose ps` reflects this as `(healthy)`/`(unhealthy)`.
+
+## Logs
+
+```bash
+# Live container logs (stdout — verbose console output per asterisk.conf/ENTRYPOINT)
+docker compose logs -f asterisk
+
+# Full debug log on the asterisk-log volume (mounted at /var/log/asterisk/full)
+docker compose exec asterisk tail -f /var/log/asterisk/full
+
+# Just notices/warnings/errors
+docker compose exec asterisk tail -f /var/log/asterisk/messages
+
+# Caddy access/error logs (the Caddyfile's top-level `log` directive)
+docker compose logs -f caddy
+```
+
+## Compose lifecycle
+
+```bash
+docker compose up -d --build      # build + start everything
+docker compose ps                 # status/health of all 5 services
+docker compose logs -f <service>  # tail one service
+docker compose restart <service>  # restart without rebuilding
+docker compose up -d <service>    # recreate one service (env/port/volume changes)
+docker compose build <service>    # rebuild one image (Dockerfile/source changes)
+docker compose down               # stop everything, keep volumes
+docker compose down -v            # stop everything, DELETE volumes (destructive — spool/log/prometheus/grafana data)
+```
+
+See [Docker stack](/setup/docker-stack) for what each service and volume is, and [Lessons Learned](/operations/lessons-learned) for gotchas that have already burned this build once each.

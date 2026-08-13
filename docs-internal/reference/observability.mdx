@@ -1,0 +1,215 @@
+---
+title: Observability
+description: "res_prometheus metrics, log aggregation with Loki/Promtail, Grafana provisioning, and HOMER/res_hep as a future option"
+icon: chart-line
+---
+
+## res\_prometheus
+
+Asterisk's `res_prometheus` module serves metrics in Prometheus text exposition format directly from the built-in HTTP server — no separate exporter process. Configured in `docker/etc-asterisk/prometheus.conf`:
+
+```ini
+[general]
+enabled = yes
+core_metrics_enabled = yes
+uri = metrics                     ; -> http://asterisk:8088/metrics
+```
+
+Two things both have to be true for this to work, and the config file comments call both out: `res_prometheus.so` must be loaded (it is, via `modules.conf`'s `autoload=yes`), and Asterisk's HTTP server must be enabled (`http.conf`, which it is — same server that backs ARI and `transport-ws`).
+
+`core_metrics_enabled = yes` turns on Asterisk's core metric set — uptime, last-reload time, scrape duration, etc. (Additional per-module metric families, e.g. PJSIP-specific counters, are governed by whether the relevant `res_*` module registers its own Prometheus metrics; this minimal config doesn't enumerate them individually.)
+
+Auth is off by default:
+
+```ini
+;auth_username = Asterisk
+;auth_password = changeme-prometheus
+```
+
+The file's own comment flags the risk directly: port `8088` isn't published to the host in this stack's default `compose.yml`, but `/metrics` **is** reachable externally through Caddy's `/metrics` route. Caddy does put basic auth in front of that route (see [Security](/security)), so as configured it isn't wide open — but if `8088` is ever uncommented in `compose.yml`'s `ports:` block, `/metrics` becomes reachable with zero auth. Uncomment `auth_username`/`auth_password` here (and configure Prometheus's scrape config to send them) to close that gap regardless of how the port is exposed.
+
+## Prometheus scrape config
+
+`docker/prometheus/prometheus.yml`, mounted read-only into the `prometheus` container:
+
+```yaml
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: asterisk
+    scrape_interval: 10s
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["asterisk:8088"]
+```
+
+One job, scraping `asterisk:8088/metrics` every 10s (overriding the 15s global default) over the internal `aistack` network — Prometheus never goes through Caddy to reach Asterisk. The `prometheus` service itself is never published to the host (see [Docker stack](/setup/docker-stack)); only Grafana and, incidentally, Caddy's own `/metrics` passthrough (which proxies straight to Asterisk, not to Prometheus) can reach metrics data.
+
+## Grafana provisioning
+
+`docker/grafana/provisioning/` is bind-mounted to `/etc/grafana/provisioning`, auto-provisioning Grafana on every container start with zero manual UI setup.
+
+### Datasources
+
+`provisioning/datasources/datasource.yml` provisions two datasources — Prometheus (metrics) and Loki (logs, see [Log aggregation](#log-aggregation-loki-and-promtail) below):
+
+```yaml
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+
+  - name: Loki
+    type: loki
+    uid: loki
+    access: proxy
+    url: http://loki:3100
+    editable: true
+```
+
+### Dashboard provider
+
+`provisioning/dashboards/dashboards.yml`:
+
+```yaml
+apiVersion: 1
+providers:
+  - name: aistack
+    orgId: 1
+    folder: ""
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false
+```
+
+Polls the same directory every 30s for `.json` dashboard files, so editing `asterisk-overview.json` on the host and waiting up to 30s (or restarting Grafana) picks up changes without touching the UI. `allowUiUpdates: true` also permits editing the dashboard live in Grafana — those edits are stored in Grafana's own SQLite state (`grafana-data` volume), not written back to the JSON file on disk.
+
+### Dashboard: Asterisk Overview
+
+`provisioning/dashboards/asterisk-overview.json` — four panels, all querying the `Prometheus` datasource by name, refreshing every 10s over a 1-hour rolling window:
+
+| Panel | Type | Query |
+| --- | --- | --- |
+| Core Uptime | stat (seconds) | `asterisk_core_uptime_seconds` |
+| Seconds Since Last Reload | stat (seconds) | `asterisk_core_last_reload_seconds` |
+| Prometheus Scrape Duration | timeseries (ms) | `asterisk_core_scrape_time_ms` |
+| Up (1 = Prometheus reached Asterisk) | stat (0/1 gauge) | `up{job="asterisk"}` |
+
+<Note>
+  This is deliberately minimal — a scrape/reachability sanity dashboard, not a full call-quality/CDR dashboard. It's the right starting point to extend once specific PJSIP/channel metrics matter for a given deployment (registered endpoints, active channels, codec usage, etc. — check `asterisk -rx "core show settings"` output and `res_prometheus`'s per-module metric registration for what else is exposed).
+</Note>
+
+## Log aggregation: Loki and Promtail
+
+Two additional services collect and centralize every container's logs alongside the metrics pipeline above.
+
+### Promtail: log shipping
+
+`docker/promtail/promtail.yml`, bind-mounted into the `promtail` container:
+
+```yaml
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      - source_labels: ["__meta_docker_container_label_com_docker_compose_project"]
+        regex: "asterisk"
+        action: keep
+      - source_labels: ["__meta_docker_container_name"]
+        regex: "/(.*)"
+        target_label: "container"
+      - source_labels: ["__meta_docker_container_label_com_docker_compose_service"]
+        target_label: "service"
+```
+
+Promtail discovers containers via `docker_sd_configs` against the Docker socket (mounted read-only) rather than tailing `/var/lib/docker/containers/*/*.log` directly — the standard container-native pattern, and it means no host log-file paths need to be known or mounted. Every 5 seconds it re-polls the Docker API for the current container list. The `relabel_configs` block does two things: keeps only containers whose `com.docker.compose.project` label is `asterisk` (this compose project — so Promtail doesn't slurp logs from unrelated containers on the same Docker host), and attaches `container`/`service` labels derived from Docker's own container name and Compose service label, which is what the Grafana Logs dashboard queries against (e.g. `{container="caddy"}`).
+
+### Loki: log storage
+
+`docker/loki/loki-config.yml`:
+
+```yaml
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+
+common:
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+
+limits_config:
+  retention_period: 168h
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h
+```
+
+Single-binary Loki (no separate read/write/backend components — appropriate for this single-node stack), filesystem-backed storage on the `loki-data` named volume, and a 168-hour (7-day) retention window enforced by the `compactor` so log volume doesn't grow unbounded on a long-running dev/demo deployment. Not published to the host — reachable only at `http://loki:3100` from Promtail (pushing) and Grafana (querying).
+
+### Grafana: Loki datasource and Logs dashboard
+
+`docker/grafana/provisioning/datasources/datasource.yml` provisions a second datasource alongside Prometheus:
+
+```yaml
+  - name: Loki
+    type: loki
+    uid: loki
+    access: proxy
+    url: http://loki:3100
+    editable: true
+```
+
+And `docker/grafana/provisioning/dashboards/logs.json` (picked up automatically by the same [dashboard provider](#dashboard-provider) described above) ships a two-panel **Logs** dashboard, both panels using LogQL queries against the `loki` datasource UID:
+
+| Panel | Query |
+| --- | --- |
+| Caddy Access Log | `{container="caddy"}` |
+| Asterisk Log | `{container="asterisk"}` |
+
+Since Caddy's access log is JSON (`docker/caddy/Caddyfile`'s `log { output stdout; format json }` block — see [Docker stack](/setup/docker-stack)), every proxied request — including 401s from the `basic_auth` blocks and websocket upgrade requests on `/ws`, `/media/*`, `/ari*` — lands in this panel queryable by field, not just full-text search.
+
+<Tip>
+  To add a log panel for another service (e.g. `grafana` or `prometheus` itself), duplicate one of the two panels in `logs.json` and change the `expr` to `{container="<service-name>"}` — Promtail is already shipping every compose-project container's logs, so no Promtail config change is needed, just the new panel.
+</Tip>
+
+## HOMER / res\_hep — a future option
+
+`menuselect.makeopts` (see [Build from source](/setup/build-from-source)) shows `res_hep` listed under `MENUSELECT_BUILD_DEPS`, meaning the module the host build depends on for HEP (Homer Encapsulation Protocol) capture support is present in the build dependency chain, but there is **no `res_hep.conf`** in `docker/etc-asterisk/` and no HOMER/Homer-capture service in `compose.yml` today.
+
+HEP/HOMER gives full SIP-message-level capture and correlation (call flow diagrams, timing, retransmissions) that Prometheus's aggregate counters don't — useful for debugging individual call setup failures rather than fleet-level health. If deeper SIP-level tracing becomes necessary:
+
+1. Add a `homer5`/`heplify-server` service to `compose.yml` on the `aistack` network.
+2. Configure `res_hep.conf` in `docker/etc-asterisk/` to point `capture_address` at that service.
+3. Optionally proxy Homer's UI through Caddy the same way Grafana is, behind the same basic-auth gate.
+
+This is scoped as a deliberate non-goal for the current stack, not an oversight — call volumes in local dev/demo use don't need per-packet capture, and Prometheus \+ Grafana already cover the "is it healthy" question this stack was built to answer.
+
+<Card title="Runbook" icon="book" href="/operations/runbook">
+  CLI commands for checking Asterisk's live health (`core show uptime`, `http show status`, etc.) alongside the metrics endpoint.
+</Card>

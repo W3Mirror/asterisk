@@ -1,0 +1,188 @@
+---
+title: Asterisk Configuration
+description: "What every file in docker/etc-asterisk/ does, and how PJSIP's endpoint/auth/aor triplet fits together"
+icon: gear
+---
+
+`docker/etc-asterisk/` is bind-mounted read-only to `/etc/asterisk` inside the `asterisk` container (see [Docker stack](/setup/docker-stack)). It replaces the full interactive sample config set that `make install` would otherwise ship, with ten purpose-built minimal files.
+
+## File-by-file
+
+### asterisk.conf
+
+Sets `[directories]` explicitly to match what `make install` puts under `DESTDIR=/opt/asterisk-install` in the Dockerfile — spelled out rather than left to compiled-in defaults, so paths don't silently drift across a build upgrade. In `[options]`, `nofork = yes` is set; `runuser`/`rungroup` are deliberately left **unset** because the container already starts as the non-root `asterisk` user (Dockerfile's `USER asterisk`) — there's no root process to drop privileges from. `-f` and console verbosity are passed on the `ENTRYPOINT` command line instead, so they stay visible in `docker logs` regardless of what's in this file.
+
+### logger.conf
+
+Sends `notice,warning,error,verbose` to the console (captured by `docker compose logs`) and to `/var/log/asterisk/messages`, plus full `debug,verbose` output to `/var/log/asterisk/full`. Logs land on the `asterisk-log` named volume.
+
+### modules.conf
+
+`autoload=yes` — loads every module that was actually built (see [Build from source](/setup/build-from-source) for what didn't build and why) without enumerating them. A `noload =>` line is available as a template for excluding a specific built module (e.g. `chan_console.so`, which makes no sense in a container with no local console).
+
+### http.conf
+
+```ini
+[general]
+enabled=yes
+bindaddr=0.0.0.0
+bindport=8088
+```
+
+Backs _three_ different things on the same port: the ARI REST/AMI-over-HTTP interface, PJSIP's `transport-ws` (SIP-over-WebSocket, defined in `pjsip.conf`), and `res_prometheus`'s `/metrics` endpoint. TLS (`tlsenable`/`tlsbindaddr`/`tlscertfile`/`tlsprivatekey`) is present but commented out — see [Security: TLS/wss roadmap](/security#tls-wss-roadmap).
+
+### rtp.conf
+
+```ini
+[general]
+rtpstart=10000
+rtpend=10100
+```
+
+Only relevant if you dial out with native RTP (see the commented `ports:` block in `compose.yml`); the WebSocket-based media path (`chan_websocket`) doesn't use this range. Must stay in sync with the Dockerfile's `EXPOSE 10000-10100/udp` and the commented Compose ports block.
+
+### chan\_websocket.conf
+
+```ini
+;[global]
+;control_message_format = json  ; plain-text (default) or json
+```
+
+Left at defaults (plain-text control messages). `chan_websocket` is the **native WebSocket media/control channel driver** (`Dial(WebSocket/...)`) — distinct from PJSIP's `transport-ws` signalling transport below. Full usage in [Websocket reference](/reference/websocket).
+
+### ari.conf
+
+```ini
+[general]
+enabled = yes
+
+[aistack]
+type = user
+read_only = no
+password = changeme-ari
+```
+
+One ARI user, `aistack`, with read/write access. Served over the same HTTP server as `/metrics` and `transport-ws` (port 8088), reached externally through Caddy at `/ari/*`. See [Security](/security) for why this route is exempt from Caddy's basic auth (ARI enforces its own).
+
+### prometheus.conf
+
+```ini
+[general]
+enabled = yes
+core_metrics_enabled = yes
+uri = metrics                     ; -> http://asterisk:8088/metrics
+```
+
+Requires both `res_prometheus.so` loaded (it is, via `modules.conf` autoload) and the HTTP server enabled (`http.conf`). Auth is off here by default (`auth_username`/`auth_password` commented) — see [Observability](/reference/observability) and the [Security](/security) checklist for locking this down.
+
+### extensions.conf
+
+```ini
+[general]
+static=yes
+writeprotect=no
+clearglobalvars=no
+
+[globals]
+
+[from-internal]
+exten => 100,1,Answer()
+ same => n,Playback(hello-world)
+ same => n,Hangup()
+
+;exten => 200,1,Answer()
+; same => n,Dial(WebSocket/INCOMING/c(ulaw))
+; same => n,Hangup()
+```
+
+One context, `from-internal`, used by every demo endpoint. Extension `100` is the "did audio/RTP/PJSIP actually work" smoke test — answers and plays `hello-world`. Extension `200` (commented) is a template for bridging into a `chan_websocket` client; see [Websocket reference](/reference/websocket).
+
+### pjsip.conf
+
+```ini
+[transport-udp]
+type=transport
+protocol=udp
+bind=0.0.0.0:5060
+
+[transport-ws]
+type=transport
+protocol=ws
+bind=0.0.0.0
+
+;===================== Demo extension 6001 =====================
+
+[6001]
+type=endpoint
+context=from-internal
+disallow=all
+allow=ulaw
+allow=alaw
+auth=6001
+aors=6001
+direct_media=no
+
+[6001]
+type=auth
+auth_type=userpass
+username=6001
+password=changeme6001
+
+[6001]
+type=aor
+max_contacts=5
+remove_existing=yes
+```
+
+## Anatomy of the endpoint / auth / aor triplet
+
+PJSIP in Asterisk models a "phone line" as **three separate sorcery objects that share a section name** (`[6001]` here, three times, each with a different `type=`). This is the pattern every new endpoint in this stack follows:
+
+<Steps>
+  <Step title="endpoint — the call-handling identity">
+    ```ini
+    [6001]
+    type=endpoint
+    context=from-internal   ; dialplan context calls from this endpoint enter
+    disallow=all
+    allow=ulaw
+    allow=alaw               ; codec allow-list, order = preference
+    auth=6001                 ; which [type=auth] section to use for inbound auth
+    aors=6001                 ; which [type=aor] section(s) hold its registered contacts
+    direct_media=no            ; keep media flowing through Asterisk (needed for chan_websocket/WS clients)
+    ```
+
+    This is the object everything else (dialplan, CDR, channel state) refers to by name. `disallow=all` \+ explicit `allow=` lines is the standard "deny everything, then opt back in" codec pattern.
+  </Step>
+  <Step title="auth — the credentials">
+    ```ini
+    [6001]
+    type=auth
+    auth_type=userpass
+    username=6001
+    password=changeme6001
+    ```
+
+    A separate object so multiple endpoints can reference the same credentials, or one endpoint can reference multiple auth objects (e.g. different creds for inbound vs. outbound registration). Referenced by the endpoint's `auth=` field.
+  </Step>
+  <Step title="aor — the address of record">
+    ```ini
+    [6001]
+    type=aor
+    max_contacts=5
+    remove_existing=yes
+    ```
+
+    Where the endpoint's registered contacts (its "where do I currently send calls for this user" bindings) live. `max_contacts=5` allows up to 5 simultaneous registrations (e.g. a phone plus a browser tab); `remove_existing=yes` evicts the oldest contact once the limit is hit rather than rejecting the new registration.
+  </Step>
+</Steps>
+
+Two transports are defined once, at the top of the file, and are matched automatically per-connection (not referenced per-endpoint in this minimal config): `transport-udp` for classic SIP over UDP on `5060`, and `transport-ws` for SIP-over-WebSocket riding on the `http.conf` server (`8088`), reached externally through Caddy at `/ws`. See [Websocket reference](/reference/websocket) for client examples against `transport-ws`.
+
+<Tip>
+  To add a second endpoint, copy the three `[6001]` blocks, rename the section (e.g. `[6002]`), and pick a new password — see [Runbook: adding endpoints](/operations/runbook#adding-a-pjsip-endpoint).
+</Tip>
+
+<Card title="Next: reload and verify" icon="rotate" href="/operations/runbook">
+  How to reload PJSIP/dialplan config after an edit, and the CLI commands to confirm it took.
+</Card>

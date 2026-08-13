@@ -1,0 +1,142 @@
+---
+title: Lessons Learned
+description: "Real gotchas hit while building this stack — symptom, cause, fix"
+icon: lightbulb
+---
+
+Every item below was an actual problem encountered while building this stack, not a hypothetical. Grouped as symptom → cause → fix.
+
+## /var/run symlink vs DESTDIR copy in the Docker build
+
+**Symptom:** `COPY --from=builder /opt/asterisk-install/ /` in the runtime stage failed with `cannot copy to non-directory: .../var/run`.
+
+**Cause:** On Debian/Ubuntu base images, `/var/run` is a symlink to `/run`. But `make install`'s `bininstall` target creates `DESTDIR/var/run/asterisk` as a **real directory** under the staging root. Copying a real directory over a path that's a symlink in the destination fails.
+
+**Fix (Dockerfile, builder stage):**
+
+```dockerfile
+RUN rm -rf /opt/asterisk-install/var/run \
+    && mkdir -p \
+        /opt/asterisk-install/var/lib/asterisk \
+        /opt/asterisk-install/var/log/asterisk \
+        /opt/asterisk-install/var/log/asterisk/cdr-csv \
+        /opt/asterisk-install/var/spool/asterisk \
+        /opt/asterisk-install/var/spool/asterisk/voicemail \
+        /opt/asterisk-install/etc/asterisk
+```
+
+`var/run` is dropped entirely from the builder's output before the runtime stage's `COPY`. The runtime stage then creates `/var/run/asterisk` itself, through the base image's live symlink, with a plain `mkdir -p` — no collision.
+
+## Grafana sub-path redirect loop
+
+**Symptom:** Visiting `/grafana/*` through Caddy produced an infinite redirect loop (browser eventually gives up with `ERR_TOO_MANY_REDIRECTS`).
+
+**Cause:** Grafana was configured with:
+
+```yaml
+GF_SERVER_ROOT_URL=http://100.69.165.55:7231/grafana
+GF_SERVER_SERVE_FROM_SUB_PATH=true
+```
+
+`SERVE_FROM_SUB_PATH=true` means Grafana itself expects to see and handle the `/grafana` prefix on every request — it does its own internal routing under that path. The Caddyfile originally used `handle_path /grafana/*`, which **strips** the `/grafana` prefix before forwarding. Grafana then saw requests arrive at `/`, and — per its own `root_url` — 301-redirected back to `/grafana/`. Caddy stripped the prefix again on the next hop. Infinite loop.
+
+A second, related issue: `handle_path` only matches paths **at or below** the trailing slash — a bare `/grafana` (no trailing slash) didn't match `/grafana/*` at all, so it fell through to the portal catch-all and produced a Next.js 404 instead of reaching Grafana.
+
+**Fix (`docker/caddy/Caddyfile`):**
+
+```caddyfile
+# Bare /grafana (no trailing slash) doesn't match /grafana/* below — redirect
+# it to the trailing-slash form first.
+redir /grafana /grafana/ 308
+
+# handle (NOT handle_path) — forwards the path unchanged, matching what
+# GF_SERVER_SERVE_FROM_SUB_PATH expects.
+handle /grafana/* {
+	basic_auth {
+		admin {env.CADDY_ADMIN_HASH}
+	}
+	reverse_proxy grafana:3000
+}
+```
+
+Two fixes bundled together: `handle` instead of `handle_path` (no prefix stripping), plus an explicit `redir` for the bare-path case so it doesn't fall through to the wrong catch-all.
+
+## NEXT\_PUBLIC\_\* env vars are build-time-baked
+
+**Symptom:** Changing `NEXT_PUBLIC_GRAFANA_URL` in `compose.yml`'s `environment:` block and running `docker compose up -d portal` had **no effect** — the "Open Grafana" link in the running portal kept pointing at the old URL.
+
+**Cause:** Next.js inlines every `NEXT_PUBLIC_*` variable into the client (and prerendered server) bundle at `next build` time. `portal/app/page.tsx` has no dynamic APIs and is statically prerendered, so the value is baked into the compiled output — a runtime `environment:` entry in Compose is invisible to code that already ran at build time.
+
+**Fix:** Pass it as a Docker **build arg**, not just a runtime env var, and rebuild the image whenever it changes:
+
+```yaml
+# compose.yml
+build:
+  context: ./portal
+  args:
+    NEXT_PUBLIC_GRAFANA_URL: http://100.69.165.55:7231/grafana
+```
+
+```dockerfile
+# portal/Dockerfile — build stage
+ARG NEXT_PUBLIC_GRAFANA_URL
+ENV NEXT_PUBLIC_GRAFANA_URL=$NEXT_PUBLIC_GRAFANA_URL
+RUN npm run build
+```
+
+```bash
+docker compose build portal && docker compose up -d portal
+```
+
+The `environment:` copy of the same variable is kept in `compose.yml` purely for documentation/consistency — it does nothing at runtime. See [Portal reference](/reference/portal) for the full wiring.
+
+## Bind-mounted single file edits don't propagate
+
+**Symptom:** Editing `docker/caddy/Caddyfile` on the host and expecting Caddy to pick it up (even after an explicit config reload) sometimes didn't take effect — the running container kept serving the old routing rules.
+
+**Cause:** Many editors and deploy tools don't edit a file in place — they write a new temp file and **atomically rename** it over the original. That rename changes the file's inode. A Docker bind mount of a single file (as opposed to a directory) can end up holding a reference to the **old inode**, so the container keeps seeing stale content even though `docker/caddy/Caddyfile` on the host looks correct.
+
+**Fix:** Restart (recreate) the container so it re-resolves the bind mount, rather than relying on an in-place config reload:
+
+```bash
+docker compose up -d caddy   # recreates the container, re-attaches the bind mount fresh
+```
+
+If Caddy's own `caddy reload` (a live config reload without recreating the container) is used instead, verify it actually reflects the new content — with a stale-inode bind mount, `caddy reload` will happily reload the **old** file it still has open.
+
+<Note>
+  Directory bind mounts (like `docker/etc-asterisk/:/etc/asterisk:ro`) don't have this problem the same way — the directory entry itself doesn't get swapped out from under the mount when an individual file inside it is replaced, because the mount is on the directory, not the file. This bit specifically the single-file `Caddyfile` mount.
+</Note>
+
+## Host port 3000 conflict
+
+**Symptom:** During early portal development, running the Next.js dev server directly on the host (`npm run dev`, default port 3000) failed to bind, or collided with another local service already listening on 3000.
+
+**Cause:** Port 3000 is an extremely common default for Node/React dev servers — a generic conflict, not specific to this stack, but worth recording because it's exactly the kind of thing that wastes 10 minutes of "why won't this start" before you check `lsof -i :3000` / `ss -ltnp | grep 3000`.
+
+**Fix / takeaway:** The containerized `portal` service in `compose.yml` deliberately does **not** publish port 3000 to the host at all — it's only reachable at `portal:3000` on the internal `aistack` network, proxied out through Caddy's `7231`. This sidesteps the conflict entirely in the Compose workflow; it only bites during local (non-containerized) `npm run dev` iteration, where `PORT=3100 npm run dev` (or similar) is the workaround.
+
+## ufw does not filter Docker-published ports
+
+**Symptom:** A host firewall configured with `ufw default deny incoming` was expected to block all inbound traffic except explicitly allowed rules — but ports published by `docker compose` (e.g. Caddy's `7231:80`, or the commented-out `5060:5060/udp` / `10000-10100:10000-10100/udp` block) remained reachable from outside regardless of `ufw` rules.
+
+**Cause:** Docker manages port publishing with its own `iptables` rules (`DOCKER` chain, DNAT), which are inserted **ahead of** the `INPUT` chain that `ufw` (a wrapper around `iptables`/`nftables`) filters. Traffic destined for a published container port is DNAT'd and forwarded before `ufw`'s `INPUT` rules ever get a say — `ufw default deny incoming` simply does not apply to it.
+
+**Security implication:** Any `ports:` entry in `compose.yml` is exposed to the network the host's primary interface is on, `ufw` notwithstanding, unless something else (a separate `iptables`/`nftables` rule targeting the `DOCKER`/`DOCKER-USER` chain specifically, or binding to a narrower interface) is used instead.
+
+**Mitigation used in this stack:** Bind the published port to a specific host IP rather than `0.0.0.0`. `compose.yml`'s Caddy service currently publishes `"7231:80"` (all interfaces); the recommended hardening step — also documented in `portal/app/docs/page.tsx`'s security checklist — is:
+
+```yaml
+ports:
+  - "100.69.165.55:7231:80"   # Tailscale IP only, not 0.0.0.0
+```
+
+This makes the published port reachable only via the interface with that specific IP (the Tailscale interface), rather than every interface on the host — a mitigation that works _with_ Docker's DNAT behavior instead of fighting `ufw` against it. See [Security](/security) for the full write-up.
+
+## contrib/docker in the upstream tree is obsolete
+
+**Symptom:** The upstream Asterisk source tree already ships a `contrib/docker/` directory — worth checking before building a new one from scratch.
+
+**Cause/finding:** `contrib/docker/` in this tree (`Dockerfile.packager` FROM `alanfranz/fwd-centos-7:latest`, `Dockerfile.asterisk` FROM `centos:7`, `ENV REFRESHED_AT 2016-02-25`) is an **RPM-packaging workflow for CentOS 7**, targeting Asterisk 13.6.0 per its own README example. CentOS 7 reached end-of-life and is unsuitable as a modern base image (mismatched against the `ubuntu:24.04` base used everywhere else in this stack's tooling). It predates `chan_websocket`, `res_prometheus`'s current config shape, and PJSIP's now-standard endpoint/auth/aor triplet model as used elsewhere in this tree, and its approach (build an RPM with FPM, then `yum install` it into a second image) doesn't fit a `docker compose`-driven, bind-mount-configured stack like this one.
+
+**Fix / takeaway:** `Dockerfile` and `compose.yml` at the repo root were written from scratch rather than adapted from `contrib/docker/`. If upstream ever refreshes `contrib/docker/` to a current base image, it's worth diffing against this stack's `Dockerfile` for anything worth adopting, but as it stands `contrib/docker/` should not be used as a starting point for this kind of deployment.
