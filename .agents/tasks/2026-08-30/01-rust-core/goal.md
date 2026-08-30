@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-068 — Transfer and reclamation published as PR #27
-**Last checkpoint (UTC):** 2026-08-30T21:38:13Z
+**Current checkpoint:** CP-069 — PR #27 hosted validation green
+**Last checkpoint (UTC):** 2026-08-30T21:42:25Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Offline deterministic verification foundation across Milestones 2–5<br>
-**Next resume action:** Verify all hosted Rust quality gates on PR #27, then design the bounded multi-leg bridge state model before adding bridge failure scenarios
+**Next resume action:** Create the next tracked stacked-PR worktree from `origin/sip-scenario-transfer-reclamation` and design the bounded multi-leg bridge/leg state model with failure and cleanup invariants
 **Active PR:** [#27](https://github.com/W3Mirror/asterisk/pull/27); branch `sip-scenario-transfer-reclamation` targets `sip-scenario-faults`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-27`
@@ -3564,6 +3564,27 @@ blockers: Hosted PR #27 checks are pending; multi-leg human bridging still requi
 next_action: Push this reconciliation commit and verify all three hosted Rust quality gates on the final PR #27 head, then design the bridge state model as a separate incremental slice
 rollback: Keep all call routing and media on Asterisk; do not enable Rust traffic; close PR #27 if the reclamation contract is superseded
 notes: No provider credentials, runtime configuration, production routing, or live traffic changed. PR tests and `aistack/main` pushes continue to run the full repository suite rather than affected-module selection.
+~~~
+
+### CP-069 — PR #27 hosted validation green
+
+~~~yaml
+checkpoint_id: CP-069
+recorded_at_utc: 2026-08-30T21:42:25Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Offline deterministic verification foundation across Milestones 2–5
+scope: Verify the final published transfer/reclamation slice through all repository-hosted Rust quality gates before beginning bridge-model design
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-27
+branch: sip-scenario-transfer-reclamation
+base_branch: sip-scenario-faults
+pr: https://github.com/W3Mirror/asterisk/pull/27
+head_sha: 900885b26dc84b2c3606baac0e289fb0afc0cd35 before this green-check reconciliation commit
+evidence: PR #27 is OPEN/non-draft/CLEAN with local, origin, and GitHub head parity and exact stacked base `sip-scenario-faults` at `08093ff2e`; hosted run `33336997916` passed Workspace checks in 16 seconds (formatting, 139 tests, workspace Clippy), Protocol fuzz checks in 50 seconds (all six address-sanitizer targets), and Dependency audit in 3 minutes 18 seconds
+blockers: Multi-leg human bridging still requires a bounded bridge/leg state model; provider/Asterisk evidence remains mandatory before Rust traffic enablement but does not block offline bridge modeling and tests; Asterisk routing remains the fallback
+next_action: Push this green-check reconciliation commit, verify the final head, then create the next tracked worktree/branch from `origin/sip-scenario-transfer-reclamation` for the bounded bridge/leg model
+rollback: Keep all call routing and media on Asterisk; do not enable Rust traffic; close PR #27 if the reclamation contract is superseded
+notes: Only known non-blocking action-runtime deprecation annotations remain. Property tests, local SIPp, differential replay, load, soak, and real provider interoperability remain active follow-up layers.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
