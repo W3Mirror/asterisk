@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-052 — Protocol parser fuzz harnesses
-**Last checkpoint (UTC):** 2026-08-30T17:07:09Z
+**Current checkpoint:** CP-053 — PR21 publication and remote-parity verification
+**Last checkpoint (UTC):** 2026-08-30T17:08:27Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Milestone 4 — Dialog + SDP + Basic Calls<br>
 **Next resume action:** Obtain read-only access to the actual Asterisk/provider host or sanitized captures, then record successful and failed interoperability fixtures before enabling any Rust route
@@ -1915,7 +1915,7 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 | Workstream | Status | Evidence / checkpoint | PR | Next action |
 | --- | --- | --- | --- | --- |
 | Phase 0 — current Asterisk surface | in_progress | CP-004/CP-010/CP-045/CP-051; `docs/current-asterisk-surface.md` (commit `edba8386c` plus 2026-08-30 rechecks); no Asterisk runtime, target SIP/RTP/8088 listeners, `.env.aistack`, or sanitized capture corpus; DNS/config/host address drift remains | #1 | Obtain provider/runtime access and sanitized successful/failed fixtures |
-| Phase 1 — Rust media engine | in_progress | CP-005/CP-008/CP-019/CP-042/CP-047/CP-048/CP-049/CP-050/CP-051/CP-052; PR #2 safe protocol/media foundation, PR #8 bounded RTP↔AI media session/DTMF/PCM recorder, PR #18 bounded WebSocket adapter, PR #19 stream driver, PR #20 UDP RTP/RTCP runtime, and PR #21 parser fuzz harnesses; focused tests, formatting, fuzz checks, and sanitizer smoke passes green | [#21](https://github.com/W3Mirror/asterisk/pull/21) pending | Publish the fuzz harness PR, then obtain provider/runtime access and sanitized media fixtures before enabling Rust traffic |
+| Phase 1 — Rust media engine | in_progress | CP-005/CP-008/CP-019/CP-042/CP-047/CP-048/CP-049/CP-050/CP-051/CP-052/CP-053; PR #2 safe protocol/media foundation, PR #8 bounded RTP↔AI media session/DTMF/PCM recorder, PR #18 bounded WebSocket adapter, PR #19 stream driver, PR #20 UDP RTP/RTCP runtime, and PR #21 parser fuzz harnesses; focused tests, formatting, fuzz checks, and sanitizer smoke passes green | [#21](https://github.com/W3Mirror/asterisk/pull/21) | Obtain provider/runtime access and sanitized media fixtures, then validate the transport without enabling Rust traffic |
 | Phase 2 — SIP edge shadow mode | not_started | — | — | Build sanitized replay and comparison fixtures |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
 | Phase 4 — expanded provider coverage | not_started | — | — | Add one provider compatibility suite per rollout target |
@@ -2574,7 +2574,7 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 18 | [#18](https://github.com/W3Mirror/asterisk/pull/18) | `media-websocket` | `sip-media-rtcp` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-18-media-websocket` | Milestone 2/4 AI media transport: add bounded RFC 6455 WebSocket framing, Asterisk plain-text `chan_websocket` controls, and raw PCMU/PCMA bridging to `MediaSession` without enabling Rust traffic | in_progress | `3fb9d638b` | implementation 89b47610b plus ledger commits; local HEAD equals origin/media-websocket at 3fb9d638b before this ledger-only reconciliation; PR #18 is OPEN/non-draft against sip-media-rtcp at 9f4b65287 with matching head; `gh pr checks 18` reports no checks; workspace tests, formatting, and diff checks pass; no provider/runtime or live-call evidence; Asterisk fallback remains active | Collect sanitized provider interoperability/runtime evidence before enabling any Rust route, then add the next bounded security or media-interop slice |
 | 19 | [#19](https://github.com/W3Mirror/asterisk/pull/19) | `media-websocket-transport` | `media-websocket` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-19-media-websocket-transport` | Milestone 2/4 AI media transport: drive the bounded WebSocket adapter over a generic `Read + Write` stream with bounded reads/writes, masking, and close handling | in_progress | `35f50e1a8` | implementation 91566d260 plus checkpoint commit; local HEAD equals origin/media-websocket-transport at 35f50e1a8; PR #19 is OPEN/non-draft against media-websocket at 039f143d0 with CLEAN merge state; focused and workspace tests, formatting, diff, and clippy checks pass; no provider/runtime or live-call evidence | Publish PR20 from `media-udp-runtime`, then collect sanitized provider interoperability/runtime evidence before enabling any Rust route |
 | 20 | [#20](https://github.com/W3Mirror/asterisk/pull/20) | `media-udp-runtime` | `media-websocket-transport` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-20-media-udp-runtime` | Milestone 2/4 media-plane runtime: bounded UDP RTP/RTCP ingress and egress, source-policy enforcement, symmetric endpoint learning, and DTMF/report delivery around `MediaSession` | in_progress | `6c3628e91` | implementation f04b1ff2c plus checkpoint commit; local HEAD equals origin/media-udp-runtime at 6c3628e91; PR #20 is OPEN/non-draft against media-websocket-transport at 35f50e1a8 with CLEAN merge state and no configured checks; focused/workspace tests, formatting, diff, and package clippy pass; no provider/runtime or live-call evidence | Obtain read-only provider/runtime access or sanitized captures before enabling any Rust route |
-| 21 | pending | `protocol-fuzz` | `media-udp-runtime` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-21-protocol-fuzz` | Milestone 3/4 safety acceptance: isolated `cargo-fuzz` targets for the safe SIP, SDP, RTP, RTCP, DTMF, and WebSocket parsers | in_progress | `0ed88d0f6` | `cargo +nightly fuzz check --fuzz-dir fuzz --sanitizer address --no-cfg-fuzzing` passes all six targets; 100-run address-sanitizer smoke passes for each target; stable no-sanitizer check, fuzz formatting, workspace tests, and diff checks pass; no provider/runtime or live-call evidence | Publish PR21 against `media-udp-runtime`, then collect provider/runtime evidence before enabling any Rust route |
+| 21 | [#21](https://github.com/W3Mirror/asterisk/pull/21) | `protocol-fuzz` | `media-udp-runtime` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-21-protocol-fuzz` | Milestone 3/4 safety acceptance: isolated `cargo-fuzz` targets for the safe SIP, SDP, RTP, RTCP, DTMF, and WebSocket parsers | in_progress | `b67c7cd7b` | PR21 is OPEN/non-draft/CLEAN against `media-udp-runtime` at `4e6d7dde`; local HEAD equals `origin/protocol-fuzz` at `b67c7cd7`; `gh pr checks 21` reports no configured checks; sanitizer-backed six-target fuzz checks and smoke passes, workspace tests, formatting, clippy, and diff checks pass; no provider/runtime or live-call evidence | Obtain provider/runtime access and sanitized media fixtures before enabling any Rust route |
 
 ### CP-026 — PR10 published and stacked remote parity verified
 
@@ -3141,6 +3141,27 @@ blockers: No Asterisk binary, provider credentials/runtime, SIPp/live-call path,
 next_action: Publish PR21 against `media-udp-runtime`, verify exact branch/base/head/worktree/CI state, then obtain read-only provider/runtime access or sanitized captures before enabling any Rust route
 rollback: Keep all call routing and media on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
 notes: `fuzz/Cargo.toml` is a separate cargo-fuzz workspace; generated target, corpus, and artifact directories are ignored. The harnesses pass arbitrary bounded input only to parser entry points and remain offline/provider-neutral. No provider credentials, runtime configuration, or live traffic were modified; sanitizer-backed coverage is local evidence, not provider interoperability or load/soak evidence
+~~~
+
+### CP-053 — PR21 publication and remote-parity verification
+
+~~~yaml
+checkpoint_id: CP-053
+recorded_at_utc: 2026-08-30T17:08:27Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Milestone 2 — Rust RTP Core / Milestone 3 — SIP Parser + Transactions / Milestone 4 — Dialog + SDP + Basic Calls
+scope: Publish the parser fuzz harnesses and reconcile the stacked PR metadata with the exact pushed head
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-21-protocol-fuzz
+branch: protocol-fuzz
+base_branch: media-udp-runtime
+pr: https://github.com/W3Mirror/asterisk/pull/21
+head_sha: b67c7cd7baf80318d473c06f5436488560b12a65
+evidence: PR21 is OPEN, non-draft, and CLEAN with base `media-udp-runtime` at `4e6d7ddebd894395b459c856132d7963449c1b26`; local `HEAD` and `origin/protocol-fuzz` both resolve to `b67c7cd7baf80318d473c06f5436488560b12a65`; `gh pr checks 21` reports no configured checks; sanitizer-backed six-target fuzz checks and 100-run smoke passes, workspace tests, fuzz formatting, clippy, and diff checks pass
+blockers: No Asterisk binary, provider credentials/runtime, SIPp/live-call path, sanitized SIP/SDP/RTP/RTCP/WebSocket fixtures, provider dashboard access, or valid load/memory baseline are available from this host; provider interoperability and live routing remain evidence-gated; Asterisk routing remains the fallback
+next_action: Obtain read-only access to the actual Asterisk/provider host or sanitized captures, then record successful and failed interoperability fixtures before enabling any Rust route
+rollback: Keep all call routing and media on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
+notes: No provider credentials, runtime configuration, provider dashboard, or live traffic were inspected or modified. PR21 supplies local parser-safety evidence only; provider interoperability, DTLS-SRTP/TLS, load, soak, and production evidence remain follow-up work
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
