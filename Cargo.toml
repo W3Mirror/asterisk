@@ -11,6 +11,7 @@ members = [
   "crates/media-websocket",
   "crates/media-runtime",
   "crates/call-core",
+  "crates/call-bridge",
   "crates/sip-transaction",
   "crates/sip-transport",
   "crates/sip-dialog",
