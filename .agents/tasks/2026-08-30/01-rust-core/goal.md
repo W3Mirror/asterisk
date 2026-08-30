@@ -1,12 +1,12 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-073 — deterministic bridge replay locally green
-**Last checkpoint (UTC):** 2026-08-30T22:07:27Z
+**Current checkpoint:** CP-074 — PR #29 published with hosted validation running
+**Last checkpoint (UTC):** 2026-08-30T22:08:29Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Deterministic multi-leg bridge replay and failure verification<br>
-**Next resume action:** Publish `call-bridge-scenario-replay` against `call-bridge-core`, verify all hosted checks, then implement the next offline bridge/runtime composition slice
-**Active PR:** Pending publication for branch `call-bridge-scenario-replay` targeting `call-bridge-core`
+**Next resume action:** Verify all hosted checks on PR #29's final checkpoint head, then implement the next offline bridge/runtime composition slice
+**Active PR:** [#29](https://github.com/W3Mirror/asterisk/pull/29); branch `call-bridge-scenario-replay` targets `call-bridge-core`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-29`
 **Primary language:** Rust  
@@ -3669,6 +3669,27 @@ blockers: This replay layer does not originate the runtime human SIP transaction
 next_action: Commit and publish this replay integration as a stacked PR against `call-bridge-core`, verify hosted Workspace, Protocol fuzz, and Dependency audit checks on its final head, then select the next smallest offline bridge/runtime composition slice
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the replay PR if the scenario contract is superseded
 notes: Tests ship in the same branch as the relevant replay code. Current hosted CI remains intentionally stronger than affected-module selection: every pull request and every push to `aistack/main` runs the complete locked workspace tests, formatting, workspace Clippy/all targets, dependency audit, and all six fuzz-target checks. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-074 — PR #29 published with hosted validation running
+
+~~~yaml
+checkpoint_id: CP-074
+recorded_at_utc: 2026-08-30T22:08:29Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Deterministic multi-leg bridge replay and failure verification
+scope: Publish the locally green bridge replay integration as a stacked PR and reconcile exact worktree, branch, base, head, and hosted-check state
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-29
+branch: call-bridge-scenario-replay
+base_branch: call-bridge-core
+pr: https://github.com/W3Mirror/asterisk/pull/29
+head_sha: 26ebcdc4c5beaa80d126eda277e00916140a028a before this publication checkpoint commit
+evidence: Implementation commit `26ebcdc4c` was pushed normally with local and `origin/call-bridge-scenario-replay` parity; PR #29 is OPEN/non-draft against exact base `call-bridge-core` at `564f04beb`; GitHub assigned predicted #29, so the required worktree path already matches; hosted run `33338321632` started Workspace checks, Protocol fuzz checks, and Dependency audit
+blockers: Hosted validation is pending on the publication checkpoint's final head; runtime human SIP origination and RTP-to-RTP composition remain incomplete; real Asterisk/provider evidence remains mandatory before enabling Rust traffic; Asterisk remains the fallback
+next_action: Push this publication checkpoint, verify all three hosted Rust quality gates on the final PR #29 head, then select the next bounded offline bridge/runtime composition slice
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #29 if the replay contract is superseded
+notes: PR #29 contains all three relevant bridge replay tests and GitHub runs the complete repository suite on the PR, not an affected-module-only subset. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
