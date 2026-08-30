@@ -8,6 +8,7 @@ members = [
   "crates/rtcp",
   "crates/dtmf",
   "crates/media-core",
+  "crates/media-websocket",
   "crates/call-core",
   "crates/sip-transaction",
   "crates/sip-transport",

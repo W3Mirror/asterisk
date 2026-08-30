@@ -202,6 +202,13 @@ impl AudioBridge {
         self.to_ai.pop()
     }
 
+    /// Borrows the oldest frame waiting for the AI application without
+    /// removing it from the bounded queue.
+    #[must_use]
+    pub fn peek_for_ai(&self) -> Option<&AudioFrame> {
+        self.to_ai.front()
+    }
+
     pub fn push_from_ai(&mut self, frame: AudioFrame) -> PushOutcome {
         self.from_ai.push(frame)
     }
