@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: Proposed**  
-**Current checkpoint:** CP-018 — PR7 ledger reconciliation published
-**Last checkpoint (UTC):** 2026-08-30T13:36:16Z
+**Current checkpoint:** CP-019 — bounded RTP/AI media session and recorder committed; PR8 publication pending
+**Last checkpoint (UTC):** 2026-08-30T13:48:38Z
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
 **Active milestone:** Milestone 4 — Dialog + SDP + Basic Calls<br>
-**Next resume action:** Collect redacted runtime/provider evidence and sanitized SIP/SDP/RTP fixtures on the actual Asterisk host
-**Active PR:** [#7](https://github.com/W3Mirror/asterisk/pull/7); branch `call-engine-core` targets `sdp-media-core`
+**Next resume action:** Publish PR8 from `media-session-core`, verify stacked remote parity, then collect redacted runtime/provider evidence and sanitized SIP/SDP/RTP fixtures on the actual Asterisk host
+**Active PR:** [#8](https://github.com/W3Mirror/asterisk/pull/8); branch `media-session-core` targets `call-engine-core`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-7-call-engine`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-8-media-session`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -1915,7 +1915,7 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 | Workstream | Status | Evidence / checkpoint | PR | Next action |
 | --- | --- | --- | --- | --- |
 | Phase 0 — current Asterisk surface | in_progress | CP-004/CP-010; `docs/current-asterisk-surface.md` (commit `edba8386c`); fresh read-only probe again found no runtime, no SIP/RTP/8088 listeners, missing `.env.aistack`, and DNS/config address drift | #1 | Collect provider/runtime evidence and sanitized fixtures |
-| Phase 1 — Rust media engine | in_progress | CP-005/CP-008; PR #2 safe protocol/media foundation, RTP session, and bounded audio bridge; workspace tests and clippy green | [#2](https://github.com/W3Mirror/asterisk/pull/2) | Add a concrete AI transport and recording adapter after provider fixtures |
+| Phase 1 — Rust media engine | in_progress | CP-005/CP-008/CP-019; PR #2 safe protocol/media foundation plus PR #8 bounded RTP↔AI media session, DTMF bridge, and PCM recorder; workspace tests and clippy green | [#8](https://github.com/W3Mirror/asterisk/pull/8) | Add a concrete network AI transport and validate against provider media fixtures |
 | Phase 2 — SIP edge shadow mode | not_started | — | — | Build sanitized replay and comparison fixtures |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
 | Phase 4 — expanded provider coverage | not_started | — | — | Add one provider compatibility suite per rollout target |
@@ -2325,6 +2325,27 @@ rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain 
 notes: All existing migration worktrees and the root checkout are clean; PR7 remains independently reviewable and unmerged
 ```
 
+### CP-019 — Bounded RTP/AI media session and recorder committed
+
+```yaml
+checkpoint_id: CP-019
+recorded_at_utc: 2026-08-30T13:48:38Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Milestone 2 — Rust RTP Core
+scope: Add a bounded RTP↔AI media session with G.711 decode/encode, RFC 4733 DTMF detection/generation, shared RTP quality accounting, and a non-blocking PCM/WAV recording sink
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-8-media-session
+branch: media-session-core
+base_branch: call-engine-core
+pr: https://github.com/W3Mirror/asterisk/pull/8
+head_sha: 4eab767fd269eee77482d2df376629785463a622
+evidence: `cargo fmt --all`; `cargo test -p media-core -p rtp` passed (8 media-core and 6 RTP tests); `cargo test --workspace` passed; `cargo clippy --workspace --all-targets` exited 0 with existing documentation/pedantic warnings; `git diff --check` passed; implementation commit adds `MediaSession`, `AudioRecorder`, alternate RTP payload support, queue front/iteration, and `docs/rust-media-session.md`
+blockers: No Asterisk binary, provider credentials/runtime, SIPp/live-call path, or sanitized SIP/SDP/RTP fixtures are available from this host; Asterisk routing remains the fallback
+next_action: Publish PR #8 from media-session-core and verify stacked remote parity
+rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
+notes: The media session and recorder are transport-agnostic; network WebSocket framing, persistence, call binding, and live-provider validation remain follow-up slices
+```
+
 ### Checkpoint template
 
 Copy this template, assign the next checkpoint ID, fill every field, and append it after each meaningful state change:
@@ -2413,6 +2434,7 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 5 | [#5](https://github.com/W3Mirror/asterisk/pull/5) | `call-api-core` | `sip-dialog-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-5-call-api` | Milestone 4 call-control/API boundary: bounded call registry, validated lifecycle commands, stable IDs/events, dialog binding, deterministic snapshots, and terminal reclamation | in_progress | `10b5a8c72` | workspace format/tests/clippy green; `git diff --check` passes; remote parity verified; PR open with no configured checks; no provider/runtime or live-call evidence; Asterisk fallback remains active | Collect redacted provider/runtime evidence and sanitized SIP/SDP/RTP fixtures before SDP/basic call integration |
 | 6 | [#6](https://github.com/W3Mirror/asterisk/pull/6) | `sdp-media-core` | `call-api-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-6-sdp-media` | Milestone 4 SDP/media binding: retain negotiated audio codec mappings, direction, remote RTP endpoint, and safe SDP update replacement in `call-api` | in_progress | `c983cb86f` | workspace format/tests/clippy green; `git diff --check` passes; remote parity verified; PR open with no configured checks; no provider/runtime or live-call evidence; Asterisk fallback remains active | Collect redacted provider/runtime evidence and sanitized SIP/SDP/RTP fixtures before basic call transport/orchestration |
 | 7 | [#7](https://github.com/W3Mirror/asterisk/pull/7) | `call-engine-core` | `sdp-media-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-7-call-engine` | Milestone 4 provider-neutral call engine: bounded registry/dialog/transaction orchestration, INVITE/ACK/BYE/CANCEL/OPTIONS handling, retransmission, and deterministic timeout polling | in_progress | `32c5fb5a9` | workspace format/tests/clippy green; `git diff --check` passes; local HEAD equals origin/call-engine-core; PR #7 is OPEN against sdp-media-core with matching head/base; no provider/runtime or live-call evidence; Asterisk fallback remains active | Collect redacted runtime/provider evidence and sanitized SIP/SDP/RTP fixtures on the actual Asterisk host |
+| 8 | [#8](https://github.com/W3Mirror/asterisk/pull/8) | `media-session-core` | `call-engine-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-8-media-session` | Milestone 2 media-plane integration: bounded RTP↔AI audio session, RFC 4733 DTMF handling, and non-blocking PCM/WAV recording sink | in_progress | `4eab767fd` | focused media/RTP tests green; workspace tests and clippy green; implementation committed locally; PR publication pending; no provider/runtime or live-call evidence; Asterisk fallback remains active | Publish PR #8, verify stacked remote parity, then collect redacted runtime/provider evidence and sanitized SIP/SDP/RTP fixtures |
 
 ## 59.4 Stacked-PR Checkpoints
 
