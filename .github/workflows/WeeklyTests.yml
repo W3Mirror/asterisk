@@ -18,7 +18,7 @@ on:
 jobs:
   WeeklyTests:
     name: WeeklyTests
-    uses: asterisk/asterisk-ci-actions/.github/workflows/AsteriskNightlyTest.yml@main
+    uses: W3Mirror/asterisk-ci-actions/.github/workflows/AsteriskNightlyTest.yml@main
     with:
       branches:   ${{ inputs.branches || vars.NIGHTLYTEST_BRANCHES }}
       group_list: ${{ inputs.group_list || vars.NIGHTLYTEST_LIST }}

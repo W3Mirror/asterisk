@@ -6,6 +6,6 @@ on:
 
 jobs:
   NightlyAdmin:
-    uses: asterisk/asterisk-ci-actions/.github/workflows/AsteriskNightlyAdmin.yml@main
+    uses: W3Mirror/asterisk-ci-actions/.github/workflows/AsteriskNightlyAdmin.yml@main
     secrets:
       ASTERISKTEAM_PAT: ${{ secrets.ASTERISKTEAM_PAT }}
