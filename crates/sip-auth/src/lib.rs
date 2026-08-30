@@ -436,6 +436,19 @@ impl DigestAuthorization {
         constant_time_hex_eq(&expected, &self.response)
     }
 
+    /// Verifies this authorization and binds it to the request URI supplied
+    /// by the transport/parser boundary.
+    #[must_use]
+    pub fn verify_request(
+        &self,
+        credentials: &DigestCredentials,
+        method: &str,
+        uri: &str,
+        body: &[u8],
+    ) -> bool {
+        self.uri == uri && self.verify(credentials, method, body)
+    }
+
     /// Verifies this authorization against a specific challenge, credentials,
     /// and SIP request. This additionally binds the response to the challenge
     /// realm, nonce, opaque value, algorithm, and qop.
@@ -943,7 +956,7 @@ fn parse_qop(value: Option<&String>) -> Result<Option<DigestQop>, DigestError> {
             if selected.is_none() || candidate == DigestQop::Auth {
                 selected = Some(candidate);
             }
-        } else if !token.is_empty() {
+        } else if token.is_empty() {
             return Err(DigestError::UnsupportedAlgorithm);
         }
     }
@@ -1080,6 +1093,8 @@ mod tests {
         .unwrap();
         assert_eq!(authorization.response(), "6629fae49393a05397450978507c4ef1");
         assert!(authorization.verify(&credentials, "GET", b""));
+        assert!(authorization.verify_request(&credentials, "GET", "/dir/index.html", b""));
+        assert!(!authorization.verify_request(&credentials, "GET", "/other", b""));
         assert!(authorization.verify_against(&challenge, &credentials, "GET", b""));
         assert!(!authorization.verify(
             &DigestCredentials::new("other-user", "Circle Of Life"),
@@ -1121,6 +1136,14 @@ mod tests {
                 .unwrap()
                 .realm(),
             "example"
+        );
+        assert_eq!(
+            DigestChallenge::parse(
+                "Digest realm=example, nonce=nonce, qop=\"auth,unknown-extension\""
+            )
+            .unwrap()
+            .qop(),
+            Some(DigestQop::Auth)
         );
         assert!(matches!(
             DigestChallenge::parse_with_config(
