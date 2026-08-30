@@ -1,0 +1,73 @@
+[package]
+name = "asterisk-protocol-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.media-websocket]
+path = "../crates/media-websocket"
+
+[dependencies.dtmf]
+path = "../crates/dtmf"
+
+[dependencies.rtcp]
+path = "../crates/rtcp"
+
+[dependencies.rtp]
+path = "../crates/rtp"
+
+[dependencies.sdp]
+path = "../crates/sdp"
+
+[dependencies.sip-parser]
+path = "../crates/sip-parser"
+
+[[bin]]
+name = "dtmf_parse"
+path = "fuzz_targets/dtmf_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "websocket_parse"
+path = "fuzz_targets/websocket_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rtcp_parse"
+path = "fuzz_targets/rtcp_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rtp_parse"
+path = "fuzz_targets/rtp_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sdp_parse"
+path = "fuzz_targets/sdp_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sip_parse"
+path = "fuzz_targets/sip_parse.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

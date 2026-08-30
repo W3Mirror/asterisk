@@ -49,3 +49,6 @@ tests/CI/output
 
 # Rust workspace build artifacts
 /target/
+/fuzz/target/
+/fuzz/corpus/
+/fuzz/artifacts/
