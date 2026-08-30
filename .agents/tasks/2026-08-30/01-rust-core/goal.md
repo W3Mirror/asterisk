@@ -1,12 +1,12 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-054 — Rust quality and fuzz CI workflow
-**Last checkpoint (UTC):** 2026-08-30T17:12:58Z
+**Current checkpoint:** CP-055 — PR22 Actions-budget failure reconciled
+**Last checkpoint (UTC):** 2026-08-30T17:16:56Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Milestone 4 — Dialog + SDP + Basic Calls<br>
-**Next resume action:** Obtain read-only access to the actual Asterisk/provider host or sanitized captures, then record successful and failed interoperability fixtures before enabling any Rust route
-**Active PR:** pending; branch `rust-quality-ci` targets `protocol-fuzz`
+**Next resume action:** Restore GitHub Actions budget and rerun PR22 checks, then obtain read-only access to the actual Asterisk/provider host or sanitized captures before enabling any Rust route
+**Active PR:** [#22](https://github.com/W3Mirror/asterisk/pull/22); branch `rust-quality-ci` targets `protocol-fuzz`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-22-rust-quality-ci`
 **Primary language:** Rust  
@@ -1915,7 +1915,7 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 | Workstream | Status | Evidence / checkpoint | PR | Next action |
 | --- | --- | --- | --- | --- |
 | Phase 0 — current Asterisk surface | in_progress | CP-004/CP-010/CP-045/CP-051; `docs/current-asterisk-surface.md` (commit `edba8386c` plus 2026-08-30 rechecks); no Asterisk runtime, target SIP/RTP/8088 listeners, `.env.aistack`, or sanitized capture corpus; DNS/config/host address drift remains | #1 | Obtain provider/runtime access and sanitized successful/failed fixtures |
-| Phase 1 — Rust media engine | in_progress | CP-005/CP-008/CP-019/CP-042/CP-047/CP-048/CP-049/CP-050/CP-051/CP-052/CP-053/CP-054; PR #2 safe protocol/media foundation, PR #8 bounded RTP↔AI media session/DTMF/PCM recorder, PR #18 bounded WebSocket adapter, PR #19 stream driver, PR #20 UDP RTP/RTCP runtime, PR #21 parser fuzz harnesses, and PR #22 Rust quality/fuzz workflow; local workspace and sanitizer checks green | [#22](https://github.com/W3Mirror/asterisk/pull/22) pending | Publish the quality workflow, then obtain provider/runtime access and sanitized media fixtures before enabling Rust traffic |
+| Phase 1 — Rust media engine | in_progress | CP-005/CP-008/CP-019/CP-042/CP-047/CP-048/CP-049/CP-050/CP-051/CP-052/CP-053/CP-054/CP-055; PR #2 safe protocol/media foundation, PR #8 bounded RTP↔AI media session/DTMF/PCM recorder, PR #18 bounded WebSocket adapter, PR #19 stream driver, PR #20 UDP RTP/RTCP runtime, PR #21 parser fuzz harnesses, and PR #22 Rust quality/fuzz workflow; local workspace and sanitizer checks green; PR22 jobs were not started because the repository Actions budget is exhausted | [#22](https://github.com/W3Mirror/asterisk/pull/22) OPEN, checks externally blocked | Restore the GitHub Actions budget and rerun PR22 checks, then obtain provider/runtime access and sanitized media fixtures before enabling Rust traffic |
 | Phase 2 — SIP edge shadow mode | not_started | — | — | Build sanitized replay and comparison fixtures |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
 | Phase 4 — expanded provider coverage | not_started | — | — | Add one provider compatibility suite per rollout target |
@@ -3184,6 +3184,27 @@ blockers: No Asterisk binary, provider credentials/runtime, SIPp/live-call path,
 next_action: Publish PR22 against `protocol-fuzz`, verify exact branch/base/head/workflow state, then obtain read-only provider/runtime access or sanitized captures before enabling any Rust route
 rollback: Keep all call routing and media on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
 notes: The workflow is scoped to Rust source/fuzz changes, has no runtime or provider configuration, and uses read-only repository permissions. Local validation cannot prove GitHub runner execution until the workflow is published and triggered; dependency audit findings remain an external CI result
+~~~
+
+### CP-055 — PR22 Actions-budget failure reconciled
+
+~~~yaml
+checkpoint_id: CP-055
+recorded_at_utc: 2026-08-30T17:16:56Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Milestone 2 — Rust RTP Core / Milestone 3 — SIP Parser + Transactions / Milestone 4 — Dialog + SDP + Basic Calls
+scope: Reconcile the first published PR22 workflow run and distinguish repository checks from an external GitHub Actions availability failure
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-22-rust-quality-ci
+branch: rust-quality-ci
+base_branch: protocol-fuzz
+pr: https://github.com/W3Mirror/asterisk/pull/22
+head_sha: e48f04af9a91d82cbb30cfd4173133fb76422088
+evidence: `git rev-parse HEAD origin/rust-quality-ci` matches `e48f04af9a91d82cbb30cfd4173133fb76422088`; PR22 is OPEN/non-draft with base `protocol-fuzz` at `d4e65235b61d90572914c35397e3824d0ea2ee7a`; workflow run `33324689064` completed with failure, but all three jobs (`99292633973`, `99292634094`, `99292634169`) have empty step lists and identical check-run annotations: `The job was not started because an Actions budget is preventing further use`; local formatting, workspace tests, clippy, six-target nightly address-sanitizer fuzz checks, YAML parsing, and diff checks remain green
+blockers: GitHub Actions budget exhaustion prevents PR22 jobs from starting, so hosted CI evidence is unavailable; no Asterisk binary, provider credentials/runtime, SIPp/live-call path, sanitized SIP/SDP/RTP/RTCP/WebSocket fixtures, provider dashboard access, or valid load/memory baseline are available; Asterisk routing remains the fallback
+next_action: Restore the repository's GitHub Actions budget and rerun PR22 checks
+rollback: Keep all call routing and media on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
+notes: The failure is external to the workflow and occurred before checkout or any workflow step; no workflow code change is indicated. After hosted checks run, continue with read-only provider/runtime access or sanitized captures before enabling any Rust route. No credentials, runtime configuration, provider dashboard, or live traffic were modified.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
