@@ -156,8 +156,6 @@ pub enum DialogError {
     TagMismatch,
     /// The message is not valid for the dialog's role or state.
     InvalidState,
-    /// An operation was attempted on the wrong dialog role.
-    InvalidRole,
     /// The Record-Route set exceeded the configured bound.
     TooManyRoutes {
         /// Configured route limit.
@@ -195,9 +193,6 @@ impl Display for DialogError {
             Self::CallIdMismatch => formatter.write_str("SIP message Call-ID mismatches dialog"),
             Self::TagMismatch => formatter.write_str("SIP message tag mismatches dialog"),
             Self::InvalidState => formatter.write_str("SIP dialog event is invalid in this state"),
-            Self::InvalidRole => {
-                formatter.write_str("SIP dialog operation is invalid for this role")
-            }
             Self::TooManyRoutes { maximum } => {
                 write!(formatter, "SIP dialog exceeds the {maximum}-route limit")
             }
@@ -673,7 +668,11 @@ fn optional_value<'a>(headers: &'a Headers, names: &[&str]) -> Option<&'a str> {
 }
 
 fn validate_field(value: &str, field: &'static str, maximum: usize) -> Result<String, DialogError> {
-    if value.is_empty() || value.bytes().any(|byte| byte.is_ascii_control()) {
+    if value.is_empty()
+        || value
+            .bytes()
+            .any(|byte| byte.is_ascii_control() || byte.is_ascii_whitespace())
+    {
         return Err(DialogError::InvalidField(field));
     }
     if value.len() > maximum {
