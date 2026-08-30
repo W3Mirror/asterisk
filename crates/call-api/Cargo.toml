@@ -7,6 +7,7 @@ rust-version.workspace = true
 
 [dependencies]
 call-core = { path = "../call-core" }
+sdp = { path = "../sdp" }
 sip-dialog = { path = "../sip-dialog" }
 
 [dev-dependencies]
