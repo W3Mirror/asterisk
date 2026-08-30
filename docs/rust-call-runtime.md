@@ -16,6 +16,12 @@ in `call-engine`.
 - `receive_once` and `poll` clone the engine before processing and only commit
   state after all generated actions are delivered. A malformed batch or a
   delivery error therefore cannot leave a partially applied engine state.
+- UDP and connected TCP runtimes default to the PR12 source policy's
+  default-allow behavior for backward compatibility. Use
+  `udp_with_source_policy`, `tcp_with_source_policy`, or
+  `with_source_policy` to require an observed peer address to match configured
+  CIDRs. Denied peers fail before `CallEngine` dispatch, and deny rules retain
+  precedence over allows.
 
 The adapter has no async-runtime or provider-specific dependency. An
 application can call it from its own event loop, wrap it in an async worker, or
