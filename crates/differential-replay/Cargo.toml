@@ -1,5 +1,5 @@
 [package]
-name = "scenario-replay"
+name = "differential-replay"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,17 +9,14 @@ rust-version.workspace = true
 call-api = { path = "../call-api" }
 call-bridge = { path = "../call-bridge" }
 call-core = { path = "../call-core" }
-call-engine = { path = "../call-engine" }
 media-core = { path = "../media-core" }
-rtcp = { path = "../rtcp" }
+scenario-replay = { path = "../scenario-replay" }
 sdp = { path = "../sdp" }
-sip-parser = { path = "../sip-parser" }
-sip-transaction = { path = "../sip-transaction" }
 sip-types = { path = "../sip-types" }
 
 [dev-dependencies]
-dtmf = { path = "../dtmf" }
-rtp = { path = "../rtp" }
+call-engine = { path = "../call-engine" }
+sip-transaction = { path = "../sip-transaction" }
 
 [lints]
 workspace = true
