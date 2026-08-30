@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-038 — PR14 published with RTP source validation
-**Last checkpoint (UTC):** 2026-08-30T15:16:19Z
+**Current checkpoint:** CP-039 — PR15 published with RTCP source-policy session
+**Last checkpoint (UTC):** 2026-08-30T15:29:01Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Milestone 4 — Dialog + SDP + Basic Calls<br>
 **Next resume action:** Collect sanitized provider interoperability/runtime evidence before enabling any Rust route, then add the next bounded security or media-interop slice
-**Active PR:** [#14](https://github.com/W3Mirror/asterisk/pull/14); branch `sip-rtp-security` targets `sip-runtime-security`
+**Active PR:** [#15](https://github.com/W3Mirror/asterisk/pull/15); branch `sip-rtcp-security` targets `sip-rtp-security`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-14-rtp-security`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-15-rtcp-security`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -2567,7 +2567,8 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 11 | [#11](https://github.com/W3Mirror/asterisk/pull/11) | provider-routing | sip-auth-routing | /home/ashutosh/.worktrees/w3mirror/asterisk/pr-11-provider-routing | Milestone 4 provider abstraction: bounded provider profiles for signaling/media/auth/NAT policy plus deterministic inbound/outbound routing and mandatory Asterisk fallback | in_progress | `0a3ab4c5b` | workspace format/tests/clippy green; local HEAD equals origin/provider-routing at `0a3ab4c5b`; PR #11 is OPEN/non-draft against sip-auth-routing at 5677ca7ed; no GitHub checks are configured; provider profile is repository-derived only; no provider/runtime or live-call evidence; Asterisk fallback remains active | Preserve Asterisk fallback and continue with provider interoperability evidence and security/load slices |
 | 12 | [#12](https://github.com/W3Mirror/asterisk/pull/12) | `sip-security-policy` | `provider-routing` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-12-sip-security` | Milestone 4 security primitive: bounded IPv4/IPv6 CIDR parsing and canonicalization, source allow/deny policy, deny precedence, and fail-closed configured allowlists | in_progress | `b8d81f63e` | workspace format/tests/clippy/diff checks pass; local HEAD equals origin/sip-security-policy at `b8d81f63e`; PR #12 is OPEN/non-draft against provider-routing at `0a3ab4c5b`; no GitHub checks are configured; no provider/runtime or live-call evidence; Asterisk fallback remains active | Preserve Asterisk fallback and continue with provider interoperability evidence and runtime security slices |
 | 13 | [#13](https://github.com/W3Mirror/asterisk/pull/13) | `sip-runtime-security` | `sip-security-policy` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-13-runtime-security` | Milestone 4 runtime security integration: apply bounded source-IP policy to observed UDP/TCP peers before `CallEngine` dispatch with backward-compatible default allow | in_progress | `e0e692644` | workspace format/tests/clippy/diff checks pass; local HEAD equals origin/sip-runtime-security at `e0e692644`; PR #13 is OPEN/non-draft against sip-security-policy at `b8d81f63e`; no GitHub checks are configured; no provider/runtime or live-call evidence; Asterisk fallback remains active | Collect sanitized provider interoperability/runtime evidence before enabling any Rust route, then add the next bounded security or media-interop slice |
-| 14 | [#14](https://github.com/W3Mirror/asterisk/pull/14) | `sip-rtp-security` | `sip-runtime-security` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-14-rtp-security` | Milestone 2/4 media security integration: apply bounded source-IP policy to observed RTP peers before parsing or media-state mutation, including DTMF dispatch | in_progress | `c79904d3f` | workspace format/tests/clippy/diff checks pass; 8 RTP and 9 media-core tests pass; local HEAD equals origin/sip-rtp-security at `c79904d3f`; PR #14 is OPEN/non-draft against sip-runtime-security at `e0e692644`; no GitHub checks are configured; no provider/runtime or live-call evidence; Asterisk fallback remains active | Collect sanitized provider interoperability/runtime evidence before enabling any Rust route, then add the next bounded security or media-interop slice |
+| 14 | [#14](https://github.com/W3Mirror/asterisk/pull/14) | `sip-rtp-security` | `sip-runtime-security` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-14-rtp-security` | Milestone 2/4 media security integration: apply bounded source-IP policy to observed RTP peers before parsing or media-state mutation, including DTMF dispatch | in_progress | `378270d85f` | workspace format/tests/clippy/diff checks pass; 8 RTP and 9 media-core tests pass; local HEAD equals origin/sip-rtp-security at `378270d85f`; PR #14 is OPEN/non-draft against sip-runtime-security at `e0e692644`; no GitHub checks are configured; no provider/runtime or live-call evidence; Asterisk fallback remains active | Collect sanitized provider interoperability/runtime evidence before enabling any Rust route, then add the next bounded security or media-interop slice |
+| 15 | [#15](https://github.com/W3Mirror/asterisk/pull/15) | `sip-rtcp-security` | `sip-rtp-security` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-15-rtcp-security` | Milestone 2/4 media observability security integration: add a bounded RTCP send/receive session with observed source-IP authorization, expected-SSRC validation, and packet/octet/arrival metrics | in_progress | `3857ef841` | workspace format/tests/clippy/diff checks pass; 8 RTCP tests pass; local HEAD equals origin/sip-rtcp-security at `3857ef841`; PR #15 is OPEN/non-draft against sip-rtp-security at `378270d85f`; no GitHub checks are configured; no provider/runtime or live-call evidence; Asterisk fallback remains active | Collect sanitized provider interoperability/runtime evidence before enabling any Rust route, then add the next bounded security or media-interop slice |
 
 ### CP-026 — PR10 published and stacked remote parity verified
 
@@ -2840,6 +2841,27 @@ blockers: No Asterisk binary, provider credentials/runtime, SIPp/live-call path,
 next_action: Collect sanitized provider interoperability/runtime evidence before enabling any Rust route, then add the next bounded security or media-interop slice
 rollback: Keep all call routing and media on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
 notes: Existing constructors remain compatibility default-allow; source-aware RTP/MediaSession receives reject peers before parsing and do not mutate state; PR14 is independently reviewable and unmerged; provider interoperability, fuzzing, load, and production evidence remain follow-up work
+~~~
+
+### CP-039 — PR15 published with RTCP source-policy session
+
+~~~yaml
+checkpoint_id: CP-039
+recorded_at_utc: 2026-08-30T15:29:01Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Milestone 2/4 — Media plane + Dialog + SDP + Basic Calls
+scope: Add a bounded RTCP session that authorizes observed source addresses before parsing, validates optional remote SSRC, preserves legacy parse/serialize APIs, and records send/receive metrics
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-15-rtcp-security
+branch: sip-rtcp-security
+base_branch: sip-rtp-security
+pr: https://github.com/W3Mirror/asterisk/pull/15
+head_sha: 3857ef841b4163da088119fba50695739b9d62d1
+evidence: implementation commit 3857ef841; `cargo fmt --all -- --check` passed; `cargo test --workspace` passed; `cargo clippy --workspace --all-targets` exited 0 with existing documentation/pedantic warnings; `git diff --check` passed; focused RTCP tests cover send/receive metrics, bounded sends, IPv4/IPv6 source policy, deny-before-parse behavior, invalid limits, malformed datagrams, and SSRC validation; PR #15 is OPEN/non-draft against sip-rtp-security at 378270d85f; no GitHub checks are configured
+blockers: No Asterisk binary, provider credentials/runtime, SIPp/live-call path, or sanitized SIP/SDP/RTP fixtures are available from this host; Asterisk routing remains the fallback
+next_action: Collect sanitized provider interoperability/runtime evidence before enabling any Rust route, then add the next bounded security or media-interop slice
+rollback: Keep all call routing and media on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
+notes: Existing constructors remain compatibility default-allow; source-aware RTCP receives reject peers before parsing and do not mutate state; PR15 is independently reviewable and unmerged; provider interoperability, fuzzing, load, and production evidence remain follow-up work
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
