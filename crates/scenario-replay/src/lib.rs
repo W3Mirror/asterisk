@@ -104,6 +104,11 @@ pub enum ScenarioStep {
         /// Command exposed through the internal API contract.
         command: CallCommand,
     },
+    /// Remove one terminal call and all signaling resources owned by it.
+    ReclaimTerminalCall {
+        /// Stable application call identifier.
+        call_id: CallId,
+    },
     /// Advance transaction timers without sleeping or consulting wall time.
     Poll {
         /// Explicit monotonic scenario time.
@@ -149,6 +154,7 @@ impl ScenarioStep {
             | Self::ReceiveRtp { at, .. }
             | Self::ReceiveRtcp { at, .. } => Some(*at),
             Self::ApplyCallCommand { .. }
+            | Self::ReclaimTerminalCall { .. }
             | Self::PushAiAudio { .. }
             | Self::EmitAudioRtp { .. } => None,
         }
@@ -168,7 +174,10 @@ impl ScenarioStep {
                 .len()
                 .checked_mul(size_of::<i16>())
                 .or(Some(usize::MAX)),
-            Self::ApplyCallCommand { .. } | Self::Poll { .. } | Self::EmitAudioRtp { .. } => None,
+            Self::ApplyCallCommand { .. }
+            | Self::ReclaimTerminalCall { .. }
+            | Self::Poll { .. }
+            | Self::EmitAudioRtp { .. } => None,
         }
     }
 }
@@ -215,6 +224,8 @@ pub enum StepOutcome {
         /// Lifecycle events in emission order.
         events: Vec<LifecycleEvent>,
     },
+    /// Snapshot removed by explicit terminal resource reclamation.
+    CallReclaimed(CallSnapshot),
     /// Decoded media outcome from one RTP packet.
     MediaReceived(ReceivedMedia),
     /// Parsed packets from one RTCP compound datagram.
@@ -257,7 +268,8 @@ impl ReplayReport {
             .iter()
             .filter_map(|step| match &step.outcome {
                 StepOutcome::Engine { events, .. } => Some(events.iter()),
-                StepOutcome::MediaReceived(_)
+                StepOutcome::CallReclaimed(_)
+                | StepOutcome::MediaReceived(_)
                 | StepOutcome::RtcpReceived(_)
                 | StepOutcome::AiAudioQueued(_)
                 | StepOutcome::AudioRtpEmitted(_) => None,
@@ -273,7 +285,8 @@ impl ReplayReport {
             .iter()
             .filter_map(|step| match &step.outcome {
                 StepOutcome::Engine { actions, .. } => Some(actions.iter()),
-                StepOutcome::MediaReceived(_)
+                StepOutcome::CallReclaimed(_)
+                | StepOutcome::MediaReceived(_)
                 | StepOutcome::RtcpReceived(_)
                 | StepOutcome::AiAudioQueued(_)
                 | StepOutcome::AudioRtpEmitted(_) => None,
@@ -434,6 +447,9 @@ impl ReplayRunner {
             ScenarioStep::ApplyCallCommand { call_id, command } => Ok(engine_outcome(
                 None,
                 self.engine.apply_call_command(call_id, *command)?,
+            )),
+            ScenarioStep::ReclaimTerminalCall { call_id } => Ok(StepOutcome::CallReclaimed(
+                self.engine.reclaim_terminal_call(call_id)?,
             )),
             ScenarioStep::Poll { at } => Ok(engine_outcome(None, self.engine.poll(*at)?)),
             ScenarioStep::ReceiveRtp { at, source, wire } => {
