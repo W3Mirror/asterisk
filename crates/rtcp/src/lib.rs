@@ -3,7 +3,13 @@
 use std::{
     error::Error,
     fmt::{Display, Formatter},
+    net::SocketAddr,
+    time::Duration,
 };
+
+use sip_security::SourceIpPolicy;
+
+const MAX_PACKET_BYTES: usize = 65_535;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReceptionReport {
@@ -70,7 +76,7 @@ impl Display for ParseError {
 impl Error for ParseError {}
 
 pub fn parse(input: &[u8]) -> Result<Vec<RtcpPacket>, ParseError> {
-    if input.len() > 65_535 {
+    if input.len() > MAX_PACKET_BYTES {
         return Err(ParseError::PacketTooLarge);
     }
     if input.is_empty() {
@@ -97,6 +103,293 @@ pub fn parse(input: &[u8]) -> Result<Vec<RtcpPacket>, ParseError> {
         offset = end;
     }
     Ok(packets)
+}
+
+/// Configuration for a bounded RTCP receive session.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RtcpSessionConfig {
+    /// Maximum compound RTCP datagram size accepted by the session.
+    pub max_packet_bytes: usize,
+    /// Optional expected remote SSRC for known sender/receiver reports.
+    pub remote_ssrc: Option<u32>,
+}
+
+impl Default for RtcpSessionConfig {
+    fn default() -> Self {
+        Self {
+            max_packet_bytes: MAX_PACKET_BYTES,
+            remote_ssrc: None,
+        }
+    }
+}
+
+impl RtcpSessionConfig {
+    fn validate(self) -> Result<Self, SessionError> {
+        if !(4..=MAX_PACKET_BYTES).contains(&self.max_packet_bytes) {
+            return Err(SessionError::InvalidPacketLimit);
+        }
+        Ok(self)
+    }
+}
+
+/// Errors raised while validating or driving an RTCP receive session.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SessionError {
+    /// The configured RTCP datagram bound cannot contain an RTCP header.
+    InvalidPacketLimit,
+    /// An RTCP datagram exceeded the configured session bound.
+    PacketTooLarge { actual: usize, maximum: usize },
+    /// A known report used a different synchronization source than expected.
+    UnexpectedSsrc { expected: u32, actual: u32 },
+    /// The observed peer address was rejected before RTCP parsing.
+    SourceAddressDenied { source: SocketAddr },
+    /// The serialized RTCP input was malformed.
+    Parse(ParseError),
+    /// RTCP serialization failed.
+    Serialize(SerializeError),
+}
+
+impl Display for SessionError {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidPacketLimit => {
+                formatter.write_str("RTCP session packet limit must include the fixed header")
+            }
+            Self::PacketTooLarge { actual, maximum } => {
+                write!(
+                    formatter,
+                    "RTCP session packet is {actual} bytes, maximum is {maximum}"
+                )
+            }
+            Self::UnexpectedSsrc { expected, actual } => {
+                write!(
+                    formatter,
+                    "RTCP session expected SSRC {expected}, received {actual}"
+                )
+            }
+            Self::SourceAddressDenied { source } => {
+                write!(formatter, "RTCP source address {source} is not allowed")
+            }
+            Self::Parse(error) => Display::fmt(error, formatter),
+            Self::Serialize(error) => Display::fmt(error, formatter),
+        }
+    }
+}
+
+impl Error for SessionError {}
+
+impl From<ParseError> for SessionError {
+    fn from(error: ParseError) -> Self {
+        Self::Parse(error)
+    }
+}
+
+impl From<SerializeError> for SessionError {
+    fn from(error: SerializeError) -> Self {
+        Self::Serialize(error)
+    }
+}
+
+/// Aggregated RTCP send/receive counters and observed SSRC state.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RtcpSessionStats {
+    /// Number of RTCP datagrams serialized by the session.
+    pub packets_sent: u64,
+    /// Number of serialized RTCP octets sent by the session.
+    pub octets_sent: u64,
+    /// Number of RTCP packets accepted from parsed compound datagrams.
+    pub packets_received: u64,
+    /// Number of serialized RTCP octets accepted.
+    pub octets_received: u64,
+    /// Number of datagrams rejected after source authorization.
+    pub invalid_packets: u64,
+    /// Number of changes between known report SSRCs.
+    pub ssrc_changes: u64,
+    /// Arrival time of the most recently accepted datagram.
+    pub last_received: Option<Duration>,
+}
+
+/// Bounded RTCP receive session with observed-source and SSRC validation.
+#[derive(Clone, Debug)]
+pub struct RtcpSession {
+    config: RtcpSessionConfig,
+    source_policy: SourceIpPolicy,
+    remote_ssrc: Option<u32>,
+    stats: RtcpSessionStats,
+}
+
+/// Alias that makes the RTCP-specific session error name discoverable.
+pub type RtcpSessionError = SessionError;
+
+impl RtcpSession {
+    /// Creates a session with the default-allow source policy.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SessionError::InvalidPacketLimit`] when the RTCP size bound
+    /// cannot contain the fixed header.
+    pub fn new(config: RtcpSessionConfig) -> Result<Self, SessionError> {
+        Self::new_with_source_policy(config, SourceIpPolicy::default())
+    }
+
+    /// Creates a session with an explicit observed-source policy.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SessionError::InvalidPacketLimit`] when the RTCP size bound
+    /// cannot contain the fixed header.
+    pub fn new_with_source_policy(
+        config: RtcpSessionConfig,
+        source_policy: SourceIpPolicy,
+    ) -> Result<Self, SessionError> {
+        let config = config.validate()?;
+        Ok(Self {
+            remote_ssrc: config.remote_ssrc,
+            config,
+            source_policy,
+            stats: RtcpSessionStats::default(),
+        })
+    }
+
+    /// Replaces the observed-source policy while preserving session state.
+    #[must_use]
+    pub fn with_source_policy(mut self, source_policy: SourceIpPolicy) -> Self {
+        self.source_policy = source_policy;
+        self
+    }
+
+    /// Borrows the configured RTCP bounds.
+    #[must_use]
+    pub const fn config(&self) -> RtcpSessionConfig {
+        self.config
+    }
+
+    /// Borrows the observed-source policy applied by source-aware receives.
+    #[must_use]
+    pub fn source_policy(&self) -> &SourceIpPolicy {
+        &self.source_policy
+    }
+
+    /// Checks an observed source address before RTCP parsing or state changes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SessionError::SourceAddressDenied`] when the source policy
+    /// rejects `source`.
+    pub fn authorize_source(&self, source: SocketAddr) -> Result<(), SessionError> {
+        if self.source_policy.allows_socket(source) {
+            Ok(())
+        } else {
+            Err(SessionError::SourceAddressDenied { source })
+        }
+    }
+
+    /// Parses and validates one RTCP datagram, updating receive metrics.
+    ///
+    /// # Errors
+    ///
+    /// Returns a size, parse, or expected-SSRC error. Invalid datagrams are
+    /// counted, while successful parsing updates packet and octet counters.
+    pub fn receive(
+        &mut self,
+        input: &[u8],
+        arrival: Duration,
+    ) -> Result<Vec<RtcpPacket>, SessionError> {
+        if input.len() > self.config.max_packet_bytes {
+            self.stats.invalid_packets = self.stats.invalid_packets.saturating_add(1);
+            return Err(SessionError::PacketTooLarge {
+                actual: input.len(),
+                maximum: self.config.max_packet_bytes,
+            });
+        }
+        let packets = parse(input).map_err(|error| {
+            self.stats.invalid_packets = self.stats.invalid_packets.saturating_add(1);
+            SessionError::Parse(error)
+        })?;
+        if let Some(expected) = self.config.remote_ssrc {
+            for actual in packets.iter().filter_map(packet_ssrc) {
+                if actual != expected {
+                    self.stats.invalid_packets = self.stats.invalid_packets.saturating_add(1);
+                    return Err(SessionError::UnexpectedSsrc { expected, actual });
+                }
+            }
+        }
+        for actual in packets.iter().filter_map(packet_ssrc) {
+            if self.remote_ssrc.is_some_and(|previous| previous != actual) {
+                self.stats.ssrc_changes = self.stats.ssrc_changes.saturating_add(1);
+            }
+            self.remote_ssrc = Some(actual);
+        }
+        self.stats.packets_received = self
+            .stats
+            .packets_received
+            .saturating_add(packets.len() as u64);
+        self.stats.octets_received = self
+            .stats
+            .octets_received
+            .saturating_add(input.len() as u64);
+        self.stats.last_received = Some(arrival);
+        Ok(packets)
+    }
+
+    /// Parses and validates one RTCP datagram from an observed peer.
+    ///
+    /// Source authorization runs before size checks and parsing, so a denied
+    /// peer cannot change parse counters, SSRC state, or receive metrics.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SessionError::SourceAddressDenied`] before parsing when the
+    /// source is rejected, or forwards the usual RTCP session errors.
+    pub fn receive_from(
+        &mut self,
+        input: &[u8],
+        source: SocketAddr,
+        arrival: Duration,
+    ) -> Result<Vec<RtcpPacket>, SessionError> {
+        self.authorize_source(source)?;
+        self.receive(input, arrival)
+    }
+
+    /// Serializes one RTCP packet and updates send metrics.
+    ///
+    /// # Errors
+    ///
+    /// Returns a serialization error or [`SessionError::PacketTooLarge`] when
+    /// the encoded datagram exceeds the configured session bound. A failed
+    /// send does not advance the send counters.
+    pub fn send(&mut self, packet: &RtcpPacket) -> Result<Vec<u8>, SessionError> {
+        let wire = serialize(packet)?;
+        if wire.len() > self.config.max_packet_bytes {
+            return Err(SessionError::PacketTooLarge {
+                actual: wire.len(),
+                maximum: self.config.max_packet_bytes,
+            });
+        }
+        self.stats.packets_sent = self.stats.packets_sent.saturating_add(1);
+        self.stats.octets_sent = self.stats.octets_sent.saturating_add(wire.len() as u64);
+        Ok(wire)
+    }
+
+    /// Returns a snapshot of RTCP send and receive metrics.
+    #[must_use]
+    pub fn stats(&self) -> RtcpSessionStats {
+        self.stats.clone()
+    }
+
+    /// Returns the most recently observed known report SSRC.
+    #[must_use]
+    pub const fn remote_ssrc(&self) -> Option<u32> {
+        self.remote_ssrc
+    }
+}
+
+fn packet_ssrc(packet: &RtcpPacket) -> Option<u32> {
+    match packet {
+        RtcpPacket::SenderReport(report) => Some(report.ssrc),
+        RtcpPacket::ReceiverReport(report) => Some(report.ssrc),
+        RtcpPacket::Unknown { .. } => None,
+    }
 }
 
 fn parse_one(input: &[u8]) -> Result<RtcpPacket, ParseError> {
@@ -369,5 +662,141 @@ mod tests {
             serialize(&invalid),
             Err(SerializeError::InvalidLoss)
         ));
+    }
+
+    #[test]
+    fn session_tracks_receive_metrics_and_ssrc_changes() {
+        let mut session = RtcpSession::new(RtcpSessionConfig::default()).unwrap();
+        let first_packet = RtcpPacket::ReceiverReport(ReceiverReport {
+            ssrc: 42,
+            reports: Vec::new(),
+        });
+        let first = session.send(&first_packet).unwrap();
+        session.receive(&first, Duration::from_millis(1)).unwrap();
+        let second_packet = RtcpPacket::ReceiverReport(ReceiverReport {
+            ssrc: 43,
+            reports: Vec::new(),
+        });
+        let second = session.send(&second_packet).unwrap();
+        session.receive(&second, Duration::from_millis(2)).unwrap();
+
+        let stats = session.stats();
+        assert_eq!(stats.packets_sent, 2);
+        assert_eq!(stats.octets_sent, (first.len() + second.len()) as u64);
+        assert_eq!(stats.packets_received, 2);
+        assert_eq!(stats.octets_received, (first.len() + second.len()) as u64);
+        assert_eq!(stats.ssrc_changes, 1);
+        assert_eq!(stats.last_received, Some(Duration::from_millis(2)));
+        assert_eq!(session.remote_ssrc(), Some(43));
+    }
+
+    #[test]
+    fn source_policy_rejects_before_parse_and_state_mutation() {
+        let mut policy = SourceIpPolicy::default();
+        policy.add_allow("198.51.100.0/24").unwrap();
+        policy.add_deny("198.51.100.128/25").unwrap();
+        let mut session =
+            RtcpSession::new_with_source_policy(RtcpSessionConfig::default(), policy).unwrap();
+        let baseline = session.stats();
+        let denied = "198.51.100.200:5000".parse().unwrap();
+        assert_eq!(
+            session.receive_from(&[], denied, Duration::ZERO),
+            Err(SessionError::SourceAddressDenied { source: denied })
+        );
+        assert_eq!(session.stats(), baseline);
+        assert_eq!(session.remote_ssrc(), None);
+
+        let wire = serialize(&RtcpPacket::ReceiverReport(ReceiverReport {
+            ssrc: 42,
+            reports: Vec::new(),
+        }))
+        .unwrap();
+        let allowed = "198.51.100.10:5000".parse().unwrap();
+        session
+            .receive_from(&wire, allowed, Duration::from_millis(1))
+            .unwrap();
+        assert_eq!(session.stats().packets_received, 1);
+        assert_eq!(session.remote_ssrc(), Some(42));
+    }
+
+    #[test]
+    fn source_policy_keeps_ipv4_and_ipv6_families_separate() {
+        let mut policy = SourceIpPolicy::default();
+        policy.add_allow("2001:db8::/32").unwrap();
+        let mut session =
+            RtcpSession::new_with_source_policy(RtcpSessionConfig::default(), policy).unwrap();
+        let wire = serialize(&RtcpPacket::ReceiverReport(ReceiverReport {
+            ssrc: 7,
+            reports: Vec::new(),
+        }))
+        .unwrap();
+        let ipv6 = "[2001:db8::10]:5000".parse().unwrap();
+        session.receive_from(&wire, ipv6, Duration::ZERO).unwrap();
+        let before_ipv4 = session.stats();
+        let ipv4 = "192.0.2.10:5000".parse().unwrap();
+        assert_eq!(
+            session.receive_from(&wire, ipv4, Duration::from_millis(1)),
+            Err(SessionError::SourceAddressDenied { source: ipv4 })
+        );
+        assert_eq!(session.stats(), before_ipv4);
+    }
+
+    #[test]
+    fn session_rejects_invalid_bounds_and_unexpected_ssrc() {
+        assert!(matches!(
+            RtcpSession::new(RtcpSessionConfig {
+                max_packet_bytes: 3,
+                ..RtcpSessionConfig::default()
+            }),
+            Err(SessionError::InvalidPacketLimit)
+        ));
+        let mut limited = RtcpSession::new(RtcpSessionConfig {
+            max_packet_bytes: 12,
+            ..RtcpSessionConfig::default()
+        })
+        .unwrap();
+        assert!(matches!(
+            limited.receive(&[0; 13], Duration::ZERO),
+            Err(SessionError::PacketTooLarge {
+                actual: 13,
+                maximum: 12
+            })
+        ));
+        assert_eq!(limited.stats().invalid_packets, 1);
+
+        let oversized = RtcpPacket::ReceiverReport(ReceiverReport {
+            ssrc: 7,
+            reports: vec![report()],
+        });
+        let oversized_len = serialize(&oversized).unwrap().len();
+        assert!(matches!(
+            limited.send(&oversized),
+            Err(SessionError::PacketTooLarge {
+                actual,
+                maximum: 12
+            }) if actual == oversized_len
+        ));
+        assert_eq!(limited.stats().packets_sent, 0);
+        assert_eq!(limited.stats().octets_sent, 0);
+
+        let mut expected = RtcpSession::new(RtcpSessionConfig {
+            remote_ssrc: Some(42),
+            ..RtcpSessionConfig::default()
+        })
+        .unwrap();
+        let wire = serialize(&RtcpPacket::ReceiverReport(ReceiverReport {
+            ssrc: 7,
+            reports: Vec::new(),
+        }))
+        .unwrap();
+        assert!(matches!(
+            expected.receive(&wire, Duration::ZERO),
+            Err(SessionError::UnexpectedSsrc {
+                expected: 42,
+                actual: 7
+            })
+        ));
+        assert_eq!(expected.stats().invalid_packets, 1);
+        assert_eq!(expected.remote_ssrc(), Some(42));
     }
 }

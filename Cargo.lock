@@ -71,6 +71,9 @@ dependencies = [
 [[package]]
 name = "rtcp"
 version = "0.1.0"
+dependencies = [
+ "sip-security",
+]
 
 [[package]]
 name = "rtp"
