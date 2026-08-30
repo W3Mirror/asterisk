@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: Proposed**  
-**Current checkpoint:** CP-022 — SIP runtime adapter committed; PR9 publication pending
-**Last checkpoint (UTC):** 2026-08-30T13:58:22Z
+**Current checkpoint:** CP-023 — PR9 published and stacked remote parity verified
+**Last checkpoint (UTC):** 2026-08-30T13:59:33Z
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
 **Active milestone:** Milestone 4 — Dialog + SDP + Basic Calls<br>
-**Next resume action:** Publish PR9 from `sip-engine-runtime`, verify stacked remote parity, then continue the runtime/provider evidence gate
+**Next resume action:** Add the next bounded offline-verifiable security/provider slice while preserving the runtime/provider evidence gate
 **Active PR:** [#9](https://github.com/W3Mirror/asterisk/pull/9); branch `sip-engine-runtime` targets `media-session-core`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-9-sip-runtime`
@@ -2409,6 +2409,27 @@ rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain 
 notes: Runtime transport delivery is localhost-tested only; TLS, async orchestration, provider authentication, and production interoperability remain follow-up work
 ```
 
+### CP-023 — PR9 published and stacked remote parity verified
+
+```yaml
+checkpoint_id: CP-023
+recorded_at_utc: 2026-08-30T13:59:33Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Milestone 4 — Dialog + SDP + Basic Calls
+scope: Publish the bounded UDP/TCP SIP runtime adapter as stacked PR9 and reconcile branch, base, head, and worktree state
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-9-sip-runtime
+branch: sip-engine-runtime
+base_branch: media-session-core
+pr: https://github.com/W3Mirror/asterisk/pull/9
+head_sha: d6ebc8156f5e6223a32b0ee37de2ff9a3f5f6301
+evidence: `git push -u origin sip-engine-runtime` succeeded; local HEAD equals origin/sip-engine-runtime at d6ebc8156; `git diff --check origin/media-session-core...HEAD` passed; `gh pr view 9` reports OPEN/non-draft with base media-session-core at 883c6901d and matching head; `gh pr checks 9` reports no checks
+blockers: No Asterisk binary, provider credentials/runtime, SIPp/live-call path, or sanitized SIP/SDP/RTP fixtures are available from this host; Asterisk routing remains the fallback
+next_action: Add the next bounded offline-verifiable security/provider slice while preserving the runtime/provider evidence gate
+rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
+notes: All existing migration worktrees and the root checkout remain clean; PR9 is independently reviewable and unmerged
+```
+
 ### Checkpoint template
 
 Copy this template, assign the next checkpoint ID, fill every field, and append it after each meaningful state change:
@@ -2498,7 +2519,7 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 6 | [#6](https://github.com/W3Mirror/asterisk/pull/6) | `sdp-media-core` | `call-api-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-6-sdp-media` | Milestone 4 SDP/media binding: retain negotiated audio codec mappings, direction, remote RTP endpoint, and safe SDP update replacement in `call-api` | in_progress | `c983cb86f` | workspace format/tests/clippy green; `git diff --check` passes; remote parity verified; PR open with no configured checks; no provider/runtime or live-call evidence; Asterisk fallback remains active | Collect redacted provider/runtime evidence and sanitized SIP/SDP/RTP fixtures before basic call transport/orchestration |
 | 7 | [#7](https://github.com/W3Mirror/asterisk/pull/7) | `call-engine-core` | `sdp-media-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-7-call-engine` | Milestone 4 provider-neutral call engine: bounded registry/dialog/transaction orchestration, INVITE/ACK/BYE/CANCEL/OPTIONS handling, retransmission, and deterministic timeout polling | in_progress | `32c5fb5a9` | workspace format/tests/clippy green; `git diff --check` passes; local HEAD equals origin/call-engine-core; PR #7 is OPEN against sdp-media-core with matching head/base; no provider/runtime or live-call evidence; Asterisk fallback remains active | Collect redacted runtime/provider evidence and sanitized SIP/SDP/RTP fixtures on the actual Asterisk host |
 | 8 | [#8](https://github.com/W3Mirror/asterisk/pull/8) | `media-session-core` | `call-engine-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-8-media-session` | Milestone 2 media-plane integration: bounded RTP↔AI audio session, RFC 4733 DTMF handling, and non-blocking PCM/WAV recording sink | in_progress | `84ac6c852` | focused media/RTP tests green; workspace tests and clippy green; local HEAD equals origin/media-session-core; PR #8 is OPEN against call-engine-core with matching head/base; no provider/runtime or live-call evidence; Asterisk fallback remains active | Add the next bounded offline-verifiable engine slice while preserving the runtime/provider evidence gate |
-| 9 | [#9](https://github.com/W3Mirror/asterisk/pull/9) | `sip-engine-runtime` | `media-session-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-9-sip-runtime` | Milestone 4 runtime integration: bounded blocking UDP/TCP transport dispatch into `CallEngine`, outbound origination, application response wrappers, and atomic delivery | in_progress | `940af945c` | workspace format/tests/clippy green; `git diff --check` passes; implementation committed locally; PR publication pending; no provider/runtime or live-call evidence; Asterisk fallback remains active | Publish PR #9, verify stacked remote parity, then continue the runtime/provider evidence gate |
+| 9 | [#9](https://github.com/W3Mirror/asterisk/pull/9) | `sip-engine-runtime` | `media-session-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-9-sip-runtime` | Milestone 4 runtime integration: bounded blocking UDP/TCP transport dispatch into `CallEngine`, outbound origination, application response wrappers, and atomic delivery | in_progress | `d6ebc8156` | workspace format/tests/clippy green; `git diff --check` passes; local HEAD equals origin/sip-engine-runtime; PR #9 is OPEN against media-session-core with matching head/base; no provider/runtime or live-call evidence; Asterisk fallback remains active | Add the next bounded offline-verifiable security/provider slice while preserving the runtime/provider evidence gate |
 
 ## 59.4 Stacked-PR Checkpoints
 
