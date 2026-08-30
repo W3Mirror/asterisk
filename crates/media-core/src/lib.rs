@@ -138,6 +138,73 @@ pub struct AudioFrame {
     pub samples: Vec<i16>,
 }
 
+/// Queue configuration for the two directions of an AI media bridge.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MediaBridgeConfig {
+    pub to_ai_capacity: usize,
+    pub from_ai_capacity: usize,
+    pub to_ai_policy: DropPolicy,
+    pub from_ai_policy: DropPolicy,
+}
+
+impl Default for MediaBridgeConfig {
+    fn default() -> Self {
+        Self {
+            to_ai_capacity: 50,
+            from_ai_capacity: 50,
+            to_ai_policy: DropPolicy::DropOldest,
+            from_ai_policy: DropPolicy::DropOldest,
+        }
+    }
+}
+
+/// Bounded, bidirectional audio handoff between the RTP/media plane and an AI
+/// application. The bridge is transport-agnostic; a WebSocket or another
+/// adapter can drive its two queue pairs without allowing unbounded growth.
+#[derive(Clone, Debug)]
+pub struct AudioBridge {
+    to_ai: BoundedMediaQueue<AudioFrame>,
+    from_ai: BoundedMediaQueue<AudioFrame>,
+}
+
+impl AudioBridge {
+    pub fn new(config: MediaBridgeConfig) -> Result<Self, QueueError> {
+        Ok(Self {
+            to_ai: BoundedMediaQueue::new(config.to_ai_capacity, config.to_ai_policy)?,
+            from_ai: BoundedMediaQueue::new(config.from_ai_capacity, config.from_ai_policy)?,
+        })
+    }
+
+    pub fn push_to_ai(&mut self, frame: AudioFrame) -> PushOutcome {
+        self.to_ai.push(frame)
+    }
+
+    pub fn pop_for_ai(&mut self) -> Option<AudioFrame> {
+        self.to_ai.pop()
+    }
+
+    pub fn push_from_ai(&mut self, frame: AudioFrame) -> PushOutcome {
+        self.from_ai.push(frame)
+    }
+
+    pub fn pop_for_rtp(&mut self) -> Option<AudioFrame> {
+        self.from_ai.pop()
+    }
+
+    pub fn stats(&self) -> MediaBridgeStats {
+        MediaBridgeStats {
+            to_ai: self.to_ai.stats(),
+            from_ai: self.from_ai.stats(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MediaBridgeStats {
+    pub to_ai: QueueStats,
+    pub from_ai: QueueStats,
+}
+
 pub fn decode(codec: AudioCodec, encoded: &[u8]) -> Vec<i16> {
     encoded
         .iter()
@@ -239,6 +306,29 @@ mod tests {
         assert_eq!(queue.pop(), Some(2));
         assert_eq!(queue.stats().dropped_oldest, 1);
         assert!(BoundedMediaQueue::<u8>::new(0, DropPolicy::DropNewest).is_err());
+    }
+
+    #[test]
+    fn audio_bridge_is_bidirectional_and_bounded() {
+        let frame = |timestamp| AudioFrame {
+            timestamp,
+            codec: AudioCodec::Pcmu,
+            sample_rate: 8_000,
+            samples: vec![0; 160],
+        };
+        let mut bridge = AudioBridge::new(MediaBridgeConfig {
+            to_ai_capacity: 1,
+            from_ai_capacity: 1,
+            ..MediaBridgeConfig::default()
+        })
+        .unwrap();
+        assert_eq!(bridge.push_to_ai(frame(1)), PushOutcome::Accepted);
+        assert_eq!(bridge.push_to_ai(frame(2)), PushOutcome::DroppedOldest);
+        assert_eq!(bridge.pop_for_ai().unwrap().timestamp, 2);
+        assert_eq!(bridge.push_from_ai(frame(3)), PushOutcome::Accepted);
+        assert_eq!(bridge.pop_for_rtp().unwrap().timestamp, 3);
+        assert_eq!(bridge.stats().to_ai.dropped_oldest, 1);
+        assert_eq!(bridge.stats().from_ai.depth, 0);
     }
 
     #[test]

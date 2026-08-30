@@ -379,6 +379,261 @@ impl PayloadTypeMap {
     }
 }
 
+/// Configuration for a bidirectional RTP session.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RtpSessionConfig {
+    /// Payload type used for packets sent and accepted by this session.
+    pub payload_type: u8,
+    /// RTP clock rate used for receive-side jitter accounting.
+    pub clock_rate: u32,
+    /// Maximum serialized RTP packet size accepted by the session.
+    pub max_packet_bytes: usize,
+    /// Maximum RTP header-extension payload accepted by the session.
+    pub max_extension_bytes: usize,
+    /// Local synchronization source identifier.
+    pub local_ssrc: u32,
+    /// Optional expected remote synchronization source identifier.
+    pub remote_ssrc: Option<u32>,
+}
+
+impl Default for RtpSessionConfig {
+    fn default() -> Self {
+        Self {
+            payload_type: 0,
+            clock_rate: 8_000,
+            max_packet_bytes: 65_535,
+            max_extension_bytes: 4_096,
+            local_ssrc: 1,
+            remote_ssrc: None,
+        }
+    }
+}
+
+/// Errors raised while validating or driving an RTP session.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SessionError {
+    InvalidPayloadType(u8),
+    InvalidClockRate,
+    InvalidPacketLimit,
+    PacketTooLarge { actual: usize, maximum: usize },
+    UnexpectedPayloadType { expected: u8, actual: u8 },
+    UnexpectedSsrc { expected: u32, actual: u32 },
+    Parse(ParseError),
+    Serialize(SerializeError),
+    Stats(StatsError),
+}
+
+impl Display for SessionError {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidPayloadType(payload_type) => {
+                write!(
+                    formatter,
+                    "RTP session payload type {payload_type} must fit in seven bits"
+                )
+            }
+            Self::InvalidClockRate => {
+                formatter.write_str("RTP session clock rate must be non-zero")
+            }
+            Self::InvalidPacketLimit => {
+                formatter.write_str("RTP session packet limits must include the fixed header")
+            }
+            Self::PacketTooLarge { actual, maximum } => {
+                write!(
+                    formatter,
+                    "RTP session packet is {actual} bytes, maximum is {maximum}"
+                )
+            }
+            Self::UnexpectedPayloadType { expected, actual } => write!(
+                formatter,
+                "RTP session expected payload type {expected}, received {actual}"
+            ),
+            Self::UnexpectedSsrc { expected, actual } => {
+                write!(
+                    formatter,
+                    "RTP session expected SSRC {expected}, received {actual}"
+                )
+            }
+            Self::Parse(error) => Display::fmt(error, formatter),
+            Self::Serialize(error) => Display::fmt(error, formatter),
+            Self::Stats(error) => Display::fmt(error, formatter),
+        }
+    }
+}
+
+impl Error for SessionError {}
+
+impl From<ParseError> for SessionError {
+    fn from(error: ParseError) -> Self {
+        Self::Parse(error)
+    }
+}
+
+impl From<SerializeError> for SessionError {
+    fn from(error: SerializeError) -> Self {
+        Self::Serialize(error)
+    }
+}
+
+impl From<StatsError> for SessionError {
+    fn from(error: StatsError) -> Self {
+        Self::Stats(error)
+    }
+}
+
+/// Aggregated RTP session counters and receive-side quality metrics.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RtpSessionStats {
+    pub packets_sent: u64,
+    pub octets_sent: u64,
+    pub received: RtpStats,
+    pub last_received: Option<Duration>,
+}
+
+/// Stateful, bounded RTP send/receive session.
+#[derive(Clone, Debug)]
+pub struct RtpSession {
+    config: RtpSessionConfig,
+    next_sequence: u16,
+    next_timestamp: u32,
+    remote_ssrc: Option<u32>,
+    received: RtpStats,
+    packets_sent: u64,
+    octets_sent: u64,
+    last_received: Option<Duration>,
+}
+
+impl RtpSession {
+    /// Creates a session with deterministic initial sequence and timestamp values.
+    pub fn new(
+        config: RtpSessionConfig,
+        initial_sequence: u16,
+        initial_timestamp: u32,
+    ) -> Result<Self, SessionError> {
+        if config.payload_type > 127 {
+            return Err(SessionError::InvalidPayloadType(config.payload_type));
+        }
+        if config.clock_rate == 0 {
+            return Err(SessionError::InvalidClockRate);
+        }
+        if !(12..=65_535).contains(&config.max_packet_bytes)
+            || config.max_extension_bytes > config.max_packet_bytes.saturating_sub(12)
+        {
+            return Err(SessionError::InvalidPacketLimit);
+        }
+        Ok(Self {
+            remote_ssrc: config.remote_ssrc,
+            config,
+            next_sequence: initial_sequence,
+            next_timestamp: initial_timestamp,
+            received: RtpStats::default(),
+            packets_sent: 0,
+            octets_sent: 0,
+            last_received: None,
+        })
+    }
+
+    /// Serializes one RTP payload and advances sequence/timestamp state.
+    pub fn send(
+        &mut self,
+        payload: &[u8],
+        timestamp_increment: u32,
+        marker: bool,
+    ) -> Result<Vec<u8>, SessionError> {
+        let packet = RtpPacket {
+            padding: false,
+            marker,
+            payload_type: self.config.payload_type,
+            sequence_number: self.next_sequence,
+            timestamp: self.next_timestamp,
+            ssrc: self.config.local_ssrc,
+            csrcs: Vec::new(),
+            extension: None,
+            payload: payload.to_vec(),
+        };
+        let wire = serialize(&packet)?;
+        if wire.len() > self.config.max_packet_bytes {
+            return Err(SessionError::PacketTooLarge {
+                actual: wire.len(),
+                maximum: self.config.max_packet_bytes,
+            });
+        }
+        self.next_sequence = self.next_sequence.wrapping_add(1);
+        self.next_timestamp = self.next_timestamp.wrapping_add(timestamp_increment);
+        self.packets_sent = self.packets_sent.saturating_add(1);
+        self.octets_sent = self.octets_sent.saturating_add(payload.len() as u64);
+        Ok(wire)
+    }
+
+    /// Parses and validates one received RTP packet, updating quality metrics.
+    pub fn receive(&mut self, input: &[u8], arrival: Duration) -> Result<RtpPacket, SessionError> {
+        let packet = match parse_with_config(
+            input,
+            ParseConfig {
+                max_packet_bytes: self.config.max_packet_bytes,
+                max_extension_bytes: self.config.max_extension_bytes,
+            },
+        ) {
+            Ok(packet) => packet,
+            Err(error) => {
+                self.received.invalid_packets = self.received.invalid_packets.saturating_add(1);
+                return Err(error.into());
+            }
+        };
+        if packet.payload_type != self.config.payload_type {
+            self.received.invalid_packets = self.received.invalid_packets.saturating_add(1);
+            return Err(SessionError::UnexpectedPayloadType {
+                expected: self.config.payload_type,
+                actual: packet.payload_type,
+            });
+        }
+        if let Some(expected) = self.config.remote_ssrc {
+            if packet.ssrc != expected {
+                self.received.invalid_packets = self.received.invalid_packets.saturating_add(1);
+                return Err(SessionError::UnexpectedSsrc {
+                    expected,
+                    actual: packet.ssrc,
+                });
+            }
+        }
+        self.remote_ssrc = Some(packet.ssrc);
+        self.received
+            .observe(&packet, arrival, self.config.clock_rate)?;
+        self.last_received = Some(arrival);
+        Ok(packet)
+    }
+
+    /// Returns a snapshot of sent and received metrics.
+    pub fn stats(&self) -> RtpSessionStats {
+        RtpSessionStats {
+            packets_sent: self.packets_sent,
+            octets_sent: self.octets_sent,
+            received: self.received.clone(),
+            last_received: self.last_received,
+        }
+    }
+
+    /// Returns whether no packet has arrived within `timeout` at `now`.
+    pub fn is_inactive(&self, now: Duration, timeout: Duration) -> bool {
+        match self.last_received {
+            Some(last) => now.saturating_sub(last) >= timeout,
+            None => true,
+        }
+    }
+
+    pub fn next_sequence(&self) -> u16 {
+        self.next_sequence
+    }
+
+    pub fn next_timestamp(&self) -> u32 {
+        self.next_timestamp
+    }
+
+    pub fn remote_ssrc(&self) -> Option<u32> {
+        self.remote_ssrc
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -449,5 +704,75 @@ mod tests {
         assert_eq!(stats.packets_lost, 1);
         assert_eq!(stats.ssrc_changes, 1);
         assert!(stats.jitter > 0);
+    }
+
+    #[test]
+    fn session_advances_send_state_and_tracks_receive_metrics() {
+        let mut session = RtpSession::new(
+            RtpSessionConfig {
+                local_ssrc: 7,
+                ..RtpSessionConfig::default()
+            },
+            u16::MAX,
+            u32::MAX - 80,
+        )
+        .unwrap();
+        let first = session.send(&[1, 2, 3], 160, true).unwrap();
+        assert_eq!(session.next_sequence(), 0);
+        assert_eq!(session.next_timestamp(), 79);
+        let packet = session.receive(&first, Duration::from_millis(10)).unwrap();
+        assert_eq!(packet.sequence_number, u16::MAX);
+        assert_eq!(session.remote_ssrc(), Some(7));
+        assert_eq!(session.stats().packets_sent, 1);
+        assert_eq!(session.stats().octets_sent, 3);
+        assert_eq!(session.stats().received.packets_received, 1);
+        assert!(!session.is_inactive(Duration::from_millis(10), Duration::from_millis(1)));
+        assert!(session.is_inactive(Duration::from_millis(20), Duration::from_millis(10)));
+    }
+
+    #[test]
+    fn session_rejects_unexpected_payload_source_and_limits() {
+        assert!(matches!(
+            RtpSession::new(
+                RtpSessionConfig {
+                    payload_type: 128,
+                    ..RtpSessionConfig::default()
+                },
+                0,
+                0
+            ),
+            Err(SessionError::InvalidPayloadType(128))
+        ));
+        let mut session = RtpSession::new(
+            RtpSessionConfig {
+                remote_ssrc: Some(42),
+                ..RtpSessionConfig::default()
+            },
+            0,
+            0,
+        )
+        .unwrap();
+        let mut packet = packet(1, 0, 7);
+        packet.payload_type = 8;
+        let wire = serialize(&packet).unwrap();
+        assert!(matches!(
+            session.receive(&wire, Duration::ZERO),
+            Err(SessionError::UnexpectedPayloadType {
+                expected: 0,
+                actual: 8
+            })
+        ));
+        assert_eq!(session.stats().received.invalid_packets, 1);
+        packet.payload_type = 0;
+        packet.ssrc = 7;
+        let wire = serialize(&packet).unwrap();
+        assert!(matches!(
+            session.receive(&wire, Duration::ZERO),
+            Err(SessionError::UnexpectedSsrc {
+                expected: 42,
+                actual: 7
+            })
+        ));
+        assert_eq!(session.stats().received.invalid_packets, 2);
     }
 }
