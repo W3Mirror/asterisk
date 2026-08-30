@@ -1,0 +1,12 @@
+[package]
+name = "sip-auth"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+md5 = "0.7"
+
+[lints]
+workspace = true
