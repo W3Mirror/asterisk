@@ -30,6 +30,13 @@ name = "sdp"
 version = "0.1.0"
 
 [[package]]
+name = "sip-dialog"
+version = "0.1.0"
+dependencies = [
+ "sip-types",
+]
+
+[[package]]
 name = "sip-parser"
 version = "0.1.0"
 dependencies = [
