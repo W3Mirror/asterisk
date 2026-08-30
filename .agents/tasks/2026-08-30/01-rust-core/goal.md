@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: Proposed**  
-**Current checkpoint:** CP-008 — RTP session and bounded audio bridge published on PR #2; production evidence outstanding
-**Last checkpoint (UTC):** 2026-08-30T11:48:00Z
+**Current checkpoint:** CP-009 — SIP transaction state machines and bounded UDP/TCP transport published on PR #3; production evidence outstanding
+**Last checkpoint (UTC):** 2026-08-30T12:04:19Z
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
-**Active milestone:** Milestone 1 — Scope Baseline  
+**Active milestone:** Milestone 3 — SIP Parser + Transactions<br>
 **Next resume action:** Collect redacted runtime/provider evidence and the first sanitized SIP/SDP/RTP fixtures on the actual Asterisk host
-**Active PR:** [#2](https://github.com/W3Mirror/asterisk/pull/2); foundation branch `rust-core-foundation` targets `sip-rtp-engine-rust`
+**Active PR:** [#3](https://github.com/W3Mirror/asterisk/pull/3); branch `sip-transaction-core` targets `rust-core-foundation`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-2-rust-foundation`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-3-sip-transactions`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -2115,6 +2115,27 @@ rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain 
 notes: RtpSession validates payload/source, tracks sent/received metrics and inactivity; AudioBridge bounds both directions but does not claim WebSocket integration
 ```
 
+### CP-009 — SIP transactions and bounded transport published
+
+```yaml
+checkpoint_id: CP-009
+recorded_at_utc: 2026-08-30T12:04:19Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 3 — SIP Parser + Transactions
+scope: Add deterministic client/server SIP transaction state machines, RFC-style timers, bounded incremental TCP framing, and blocking UDP/TCP transport adapters without changing Asterisk routing
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-3-sip-transactions
+branch: sip-transaction-core
+base_branch: rust-core-foundation
+pr: https://github.com/W3Mirror/asterisk/pull/3
+head_sha: 467dd88a12eb4bdab42f227ad6c6891c05ead159
+evidence: cargo fmt --all -- --check; cargo test --workspace (all tests passed); cargo clippy --workspace --all-targets (exit 0, existing pedantic documentation warnings only); git diff --check; origin/sip-transaction-core equals local HEAD; PR #3 is OPEN and CLEAN with no configured CI checks
+blockers: production provider/call-flow evidence, sanitized packet corpus, and live SIPp/telephony validation remain unavailable from this host; TLS, async runtime, concrete AI transport, and recording adapter are not included
+next_action: Collect redacted provider/runtime evidence and sanitized SIP/SDP/RTP fixtures on the actual Asterisk host before starting dialog/API integration
+rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
+notes: Reliable INVITE server transactions wait for ACK with Timer H without retransmitting over reliable transports; no production/provider configuration was modified
+```
+
 ### Checkpoint template
 
 Copy this template, assign the next checkpoint ID, fill every field, and append it after each meaningful state change:
@@ -2198,6 +2219,7 @@ Populate one row per PR before implementation begins, then update it at every ch
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 1 | [#1](https://github.com/W3Mirror/asterisk/pull/1) | `sip-rtp-engine-rust` | `aistack/main` | `/home/ashutosh/.worktrees/w3mirror/asterisk/sip-rtp-engine-rust` | Phase 0 repository surface inventory and evidence boundary | in_progress | `edba8386c` | `docs/current-asterisk-surface.md`; full `git diff --check` passes; remote branch parity verified; PR open; no GitHub checks reported; production runtime unavailable | Collect redacted provider/runtime evidence before Rust implementation |
 | 2 | [#2](https://github.com/W3Mirror/asterisk/pull/2) | `rust-core-foundation` | `sip-rtp-engine-rust` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-2-rust-foundation` | Provider-neutral bounded SIP/SDP/RTP/RTCP/DTMF/media/call foundations | in_progress | `4fc9ec14b` | workspace format/tests/clippy green; remote parity verified; PR open and clean; no production routing changes | Collect production provider/runtime evidence and sanitized fixtures; keep Asterisk fallback |
+| 3 | [#3](https://github.com/W3Mirror/asterisk/pull/3) | `sip-transaction-core` | `rust-core-foundation` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-3-sip-transactions` | Milestone 3 SIP parser/transactions: deterministic client/server timers plus bounded UDP/TCP transport framing | in_progress | `467dd88a1` | workspace format/tests/clippy green; `git diff --check` passes; remote branch parity verified; PR open; no provider/runtime or live-call evidence; Asterisk fallback remains active | Collect redacted provider/runtime evidence and sanitized SIP/SDP/RTP fixtures before dialog/API work |
 
 ## 59.4 Stacked-PR Checkpoints
 
