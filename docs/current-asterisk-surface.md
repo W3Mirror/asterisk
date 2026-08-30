@@ -188,6 +188,32 @@ configured. The prior Kamailio/rtpengine plan is not implemented here.
 The absence of `.env.aistack` in the current checkout means no credential value
 was inspected and no authenticated runtime path was tested.
 
+## Fresh live-state recheck
+
+A read-only recheck from the active PR18 worktree on 2026-08-30 found the same
+deployment boundary, with the following concrete results:
+
+- `command -v asterisk`, `asterisk -V`, and `pgrep -a asterisk` found no
+  Asterisk binary or process;
+- `docker compose ps` could not load the stack because the worktree has no
+  `.env.aistack`;
+- no listener was present on SIP UDP/TCP `5060`/`5061`, Asterisk HTTP/ARI
+  `8088`, or the configured RTP range `10000–10100`; requests to
+  `127.0.0.1:8088/` and `/ari/api-docs` were refused;
+- `sip-trunk.w3.run` still resolves to `65.1.135.111`; TCP probes to ports
+  `5060` and `5061` timed out, and an `openssl s_client` TLS probe to `5061`
+  also timed out;
+- the host reports `135.181.5.36/32` on `enp35s0` and `100.99.75.85/32` on
+  Tailscale, so the repository's advertised `195.201.246.125` remains
+  unreconciled;
+- no sanitized SIP/RTP/RTCP/WebSocket capture or replay corpus is checked in.
+  The only matching filename is the unrelated example
+  `contrib/scripts/sipp-sendfax.xml`.
+
+No credential contents, provider dashboard, production configuration, or live
+traffic were inspected or modified. Provider interoperability and a valid
+memory/load baseline therefore remain unavailable.
+
 ### Control plane, events, and identifiers
 
 The portal is a read-only ARI BFF. It forwards ARI channel/endpoint/health data

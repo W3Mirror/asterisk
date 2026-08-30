@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-044 — PR18 ledger head reconciled
-**Last checkpoint (UTC):** 2026-08-30T16:15:30Z
+**Current checkpoint:** CP-045 — fresh Asterisk/provider live-state recheck
+**Last checkpoint (UTC):** 2026-08-30T16:19:27Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Milestone 4 — Dialog + SDP + Basic Calls<br>
-**Next resume action:** Collect sanitized provider interoperability/runtime evidence before enabling any Rust route, then add the next bounded security or media-interop slice
+**Next resume action:** Obtain read-only access to the actual Asterisk/provider host or sanitized captures, then record successful and failed interoperability fixtures before enabling any Rust route
 **Active PR:** [#18](https://github.com/W3Mirror/asterisk/pull/18); branch `media-websocket` targets `sip-media-rtcp`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-18-media-websocket`
@@ -1914,7 +1914,7 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 
 | Workstream | Status | Evidence / checkpoint | PR | Next action |
 | --- | --- | --- | --- | --- |
-| Phase 0 — current Asterisk surface | in_progress | CP-004/CP-010; `docs/current-asterisk-surface.md` (commit `edba8386c`); fresh read-only probe again found no runtime, no SIP/RTP/8088 listeners, missing `.env.aistack`, and DNS/config address drift | #1 | Collect provider/runtime evidence and sanitized fixtures |
+| Phase 0 — current Asterisk surface | in_progress | CP-004/CP-010/CP-045; `docs/current-asterisk-surface.md` (commit `edba8386c` plus fresh 2026-08-30 recheck); no Asterisk runtime, target SIP/RTP/8088 listeners, `.env.aistack`, or sanitized capture corpus; DNS/config/host address drift remains | #1 | Obtain provider/runtime access and sanitized successful/failed fixtures |
 | Phase 1 — Rust media engine | in_progress | CP-005/CP-008/CP-019; PR #2 safe protocol/media foundation plus PR #8 bounded RTP↔AI media session, DTMF bridge, and PCM recorder; workspace tests and clippy green | [#8](https://github.com/W3Mirror/asterisk/pull/8) | Add a concrete network AI transport and validate against provider media fixtures |
 | Phase 2 — SIP edge shadow mode | not_started | — | — | Build sanitized replay and comparison fixtures |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
@@ -2970,6 +2970,27 @@ blockers: No Asterisk binary, provider credentials/runtime, SIPp/live-call path,
 next_action: Collect sanitized provider interoperability/runtime evidence before enabling any Rust route, then add the next bounded security or media-interop slice
 rollback: Keep all call routing and media on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
 notes: This reconciliation is ledger-only; PR18 remains independently reviewable and unmerged, the adapter remains offline/provider-neutral, and provider interoperability, fuzzing, load, production, and real telephony evidence remain follow-up work
+~~~
+
+### CP-045 — Fresh Asterisk/provider live-state recheck
+
+~~~yaml
+checkpoint_id: CP-045
+recorded_at_utc: 2026-08-30T16:19:27Z
+status: in_progress
+phase: Phase 0 — current Asterisk surface / Phase 1 — Rust media engine
+milestone: Milestone 1 — Scope Baseline / Milestone 2/4 — Media plane + Dialog + Basic Calls
+scope: Refresh the read-only Asterisk, provider endpoint, host-address, and sanitized-fixture evidence after PR18 publication
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-18-media-websocket
+branch: media-websocket
+base_branch: sip-media-rtcp
+pr: https://github.com/W3Mirror/asterisk/pull/18
+head_sha: 2ba03c2fae5701e7a2be25b05c776714f0d3cb4d
+evidence: `command -v asterisk`, `asterisk -V`, and `pgrep -a asterisk` found no binary/process; `docker compose ps` failed because `.env.aistack` is absent; no target 5060/5061/8088/10000–10100 listener was present and localhost:8088 refused; `sip-trunk.w3.run` resolves to 65.1.135.111; provider TCP 5060/5061 and TLS 5061 probes timed out; host addresses are 135.181.5.36/32 and 100.99.75.85/32; no sanitized SIP/RTP/RTCP/WebSocket capture or replay corpus is checked in; docs/current-asterisk-surface.md records the refresh
+blockers: No Asterisk binary, provider credentials/runtime, SIPp/live-call path, sanitized protocol fixtures, provider dashboard access, or valid load/memory baseline are available from this host; repository-advertised 195.201.246.125 remains unreconciled; Asterisk routing remains the fallback
+next_action: Obtain read-only access to the actual Asterisk/provider host or sanitized captures, then record successful and failed interoperability fixtures before enabling any Rust route
+rollback: Keep all call routing and media on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
+notes: This checkpoint is read-only evidence only; no credential contents, provider dashboard, production configuration, or live traffic were inspected or modified. PR18 remains offline/provider-neutral and unmerged; fuzzing, load, production, and real telephony evidence remain follow-up work
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
