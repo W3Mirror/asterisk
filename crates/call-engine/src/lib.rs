@@ -307,6 +307,41 @@ impl CallEngine {
         self.finish(Vec::new())
     }
 
+    /// Removes a terminal call and every retained signaling resource owned by it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the call is unknown or has not reached `Ended` or
+    /// `Failed`. Rejected reclamation leaves the engine unchanged.
+    pub fn reclaim_terminal_call(&mut self, id: &CallId) -> Result<CallSnapshot, EngineError> {
+        let snapshot = self.registry.remove_terminal(id)?;
+        self.dialogs.remove(id);
+
+        let client_branches = self
+            .client_calls
+            .iter()
+            .filter(|(_, call_id)| *call_id == id)
+            .map(|(branch, _)| branch.clone())
+            .collect::<Vec<_>>();
+        for branch in client_branches {
+            self.remove_client_transaction(&branch);
+        }
+
+        let server_branches = self
+            .server_calls
+            .iter()
+            .filter(|(_, call_id)| *call_id == id)
+            .map(|(branch, _)| branch.clone())
+            .collect::<Vec<_>>();
+        for branch in server_branches {
+            self.remove_server_transaction(&branch);
+        }
+
+        self.remove_final_invites_for_call(id);
+        self.remove_final_server_invites_for_call(id);
+        Ok(snapshot)
+    }
+
     /// Negotiates and retains audio for a registered call.
     pub fn negotiate_audio(
         &mut self,

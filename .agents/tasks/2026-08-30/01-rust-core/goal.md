@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-066 — PR #26 hosted validation green
-**Last checkpoint (UTC):** 2026-08-30T21:29:00Z
+**Current checkpoint:** CP-067 — Transfer lifecycle and terminal reclamation locally green
+**Last checkpoint (UTC):** 2026-08-30T21:36:46Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Offline deterministic verification foundation across Milestones 2–5<br>
-**Next resume action:** Add transfer/bridge state and broader resource-reclamation scenarios in the next tracked stacked-PR worktree from `origin/sip-scenario-faults`
-**Active PR:** [#26](https://github.com/W3Mirror/asterisk/pull/26); branch `sip-scenario-faults` targets `sip-scenario-replay`
+**Next resume action:** Commit and publish `sip-scenario-transfer-reclamation` as a stacked PR against `sip-scenario-faults`, then verify all hosted Rust quality gates
+**Active PR:** Pre-publication branch `sip-scenario-transfer-reclamation` targets PR [#26](https://github.com/W3Mirror/asterisk/pull/26)'s branch `sip-scenario-faults`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-26`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-27` (pre-publication predicted PR path)
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -1999,8 +1999,8 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 | Workstream | Status | Evidence / checkpoint | PR | Next action |
 | --- | --- | --- | --- | --- |
 | Phase 0 — current Asterisk surface | in_progress | CP-004/CP-010/CP-045/CP-051; `docs/current-asterisk-surface.md` (commit `edba8386c` plus 2026-08-30 rechecks); no Asterisk runtime, target SIP/RTP/8088 listeners, `.env.aistack`, or sanitized capture corpus; DNS/config/host address drift remains | #1 | Obtain provider/runtime access and sanitized successful/failed fixtures |
-| Phase 1 — Rust media engine | in_progress | CP-005/CP-008/CP-019/CP-042/CP-047/CP-048/CP-049/CP-050/CP-051/CP-052/CP-053/CP-054/CP-055/CP-056/CP-057/CP-058/CP-059/CP-060/CP-061/CP-062/CP-063; PR #2 safe protocol/media foundation, PR #8 bounded RTP↔AI media session/DTMF/PCM recorder, PR #18 bounded WebSocket adapter, PR #19 stream driver, PR #20 UDP RTP/RTCP runtime, PR #21 parser fuzz harnesses, and PR #25 deterministic scenario replay foundation; repository-native hosted Rust CI is present on `aistack/main`, with PR #25 fully green | [#25](https://github.com/W3Mirror/asterisk/pull/25) OPEN/CLEAN | Extend the deterministic corpus in the next stacked PR; keep provider evidence as the later traffic-enablement gate |
-| Offline deterministic verification | in_progress | CP-060 defined the workstream; CP-061–CP-063 add, publish, and host-validate a bounded atomic `scenario-replay` runner, synthetic SIP fixtures, explicit monotonic time, transaction/dialog/call/event reports, RTP/AI-media outcomes, five focused tests, and 134 passing workspace tests | [#25](https://github.com/W3Mirror/asterisk/pull/25) OPEN/CLEAN, three hosted checks green | Extend the corpus with deterministic failure/retransmission, RTCP/DTMF fault, transfer, and reclamation scenarios |
+| Phase 1 — Rust media engine | in_progress | CP-005/CP-008/CP-019/CP-042/CP-047–CP-067; PR #2 safe protocol/media foundation, PR #8 bounded RTP↔AI media session/DTMF/PCM recorder, PR #18 WebSocket adapter, PR #19 stream driver, PR #20 UDP RTP/RTCP runtime, PR #21 parser fuzz harnesses, PR #25 deterministic replay foundation, and PR #26 signaling/media fault corpus; repository-native hosted Rust CI is present on `aistack/main`, with PR #26 fully green | [#26](https://github.com/W3Mirror/asterisk/pull/26) OPEN/CLEAN | Publish transfer/reclamation coverage; keep provider evidence as the later traffic-enablement gate |
+| Offline deterministic verification | in_progress | CP-060–CP-067 add a bounded atomic replay runner plus answered calls, retransmission/CANCEL cleanup, RTP loss/reordering, DTMF deduplication, RTCP, transfer lifecycle, rejected-reclamation atomicity, and terminal capacity reuse; 139 workspace tests pass locally | [#26](https://github.com/W3Mirror/asterisk/pull/26) OPEN/CLEAN and hosted green; next slice pre-publication | Publish transfer/reclamation, then design the missing multi-leg bridge state model before claiming bridge tests |
 | Phase 2 — SIP edge shadow mode | not_started | — | — | Extend offline differential tooling with sanitized Asterisk/provider captures when available |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
 | Phase 4 — expanded provider coverage | not_started | — | — | Add one provider compatibility suite per rollout target |
@@ -3516,12 +3516,33 @@ worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-26
 branch: sip-scenario-faults
 base_branch: sip-scenario-replay
 pr: https://github.com/W3Mirror/asterisk/pull/26
-head_sha: d8e6e03f47b8325b59d73849c3f2e35c97492172 before this green-check reconciliation commit
-evidence: PR #26 is OPEN/non-draft/CLEAN with exact base `sip-scenario-replay` at `36b063ceb`; hosted run `33336400347` passed Workspace checks in 23 seconds (formatting, 136 tests, workspace Clippy), Protocol fuzz checks in 1 minute 4 seconds (all six address-sanitizer targets), and Dependency audit in 2 minutes 50 seconds
+head_sha: 08093ff2e5d2cb74e6634be1ddd2426bd5bce420
+evidence: PR #26 is OPEN/non-draft/CLEAN with exact base `sip-scenario-replay` at `36b063ceb` and local/origin/GitHub final-head parity at `08093ff2e`; final hosted run `33336562360` passed Workspace checks in 18 seconds (formatting, 136 tests, workspace Clippy), Protocol fuzz checks in 1 minute (all six address-sanitizer targets), and Dependency audit in 3 minutes 16 seconds
 blockers: Provider/Asterisk access and sanitized real captures remain unavailable and continue to block only provider interoperability proof and Rust traffic enablement; they do not block the remaining offline test layers; Asterisk routing remains the fallback
 next_action: Push this green-check reconciliation commit, verify the final head, then create the next tracked stacked-PR worktree from `origin/sip-scenario-faults` for transfer/bridge state and broader resource-reclamation scenarios
 rollback: Keep all call routing and media on Asterisk; do not enable Rust traffic; close PR #26 if the corpus slice is superseded
 notes: No provider credentials, runtime configuration, production routing, or live traffic changed. Only known non-blocking action-runtime deprecation annotations remain. Property-based testing, local SIPp, differential replay, load, and soak remain active follow-up work.
+~~~
+
+### CP-067 — Transfer lifecycle and terminal reclamation locally green
+
+~~~yaml
+checkpoint_id: CP-067
+recorded_at_utc: 2026-08-30T21:36:46Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Offline deterministic verification foundation across Milestones 2–5
+scope: Add deterministic transfer lifecycle assertions and explicit all-resource terminal-call reclamation with bounded-capacity reuse
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-27
+branch: sip-scenario-transfer-reclamation
+base_branch: sip-scenario-faults
+pr: pre-publication
+head_sha: 08093ff2e5d2cb74e6634be1ddd2426bd5bce420 before implementation/checkpoint commit
+evidence: `CallEngine::reclaim_terminal_call` rejects nonterminal calls without mutation and removes a terminal call's registry entry, dialog, client/server transactions and destinations, and cached final INVITE responses; `ScenarioStep::ReclaimTerminalCall` reports the removed snapshot; deterministic tests assert `MediaStarted -> Transferring -> Transferred -> Hangup`, complete terminal cleanup, indexed/atomic rejection for active calls, and reuse of one-call/two-transaction bounded capacity after CANCEL; ten focused replay tests and all 139 workspace tests pass; workspace Clippy exits 0 with existing documentation/pedantic warnings; strict scenario-replay Clippy, formatting, and diff checks pass
+blockers: Multi-leg human bridging is not implemented in the current call core, so bridge failure-state tests require a separately designed bounded bridge/leg model; provider/Asterisk access and sanitized real captures remain unavailable and block only interoperability proof and Rust traffic enablement; Asterisk routing remains the fallback
+next_action: Commit and push `sip-scenario-transfer-reclamation`, open a stacked PR against `sip-scenario-faults`, reconcile the actual PR/worktree number, and verify hosted Workspace checks, Protocol fuzz checks, and Dependency audit
+rollback: Keep all call routing and media on Asterisk; do not enable Rust traffic; close the downstream PR if the reclamation contract is superseded
+notes: The failed first focused attempt used `max_transactions: 1`, which correctly rejected CANCEL because INVITE and CANCEL briefly coexist; the corrected bound is two and still proves retained INVITE capacity is released before reuse. Tests remain in the same PR as the relevant engine/replay code. Bridge modeling, property tests, local SIPp, differential replay, load, and soak remain active follow-up work.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
