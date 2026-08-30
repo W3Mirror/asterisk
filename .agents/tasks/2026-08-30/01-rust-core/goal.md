@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-072 — PR #28 hosted validation green
-**Last checkpoint (UTC):** 2026-08-30T21:57:38Z
+**Current checkpoint:** CP-073 — deterministic bridge replay locally green
+**Last checkpoint (UTC):** 2026-08-30T22:07:27Z
 **Active phase:** Phase 1 — Rust media engine
-**Active milestone:** Multi-leg AI-to-human bridge control-plane foundation<br>
-**Next resume action:** Create the next tracked stacked-PR worktree from `origin/call-bridge-core` and integrate deterministic bridge transitions into scenario replay
-**Active PR:** [#28](https://github.com/W3Mirror/asterisk/pull/28); branch `call-bridge-core` targets `sip-scenario-transfer-reclamation`
+**Active milestone:** Deterministic multi-leg bridge replay and failure verification<br>
+**Next resume action:** Publish `call-bridge-scenario-replay` against `call-bridge-core`, verify all hosted checks, then implement the next offline bridge/runtime composition slice
+**Active PR:** Pending publication for branch `call-bridge-scenario-replay` targeting `call-bridge-core`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-28`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-29`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -3648,6 +3648,27 @@ blockers: Runtime SIP origination and RTP-to-RTP bridge composition remain incom
 next_action: Push this green-check reconciliation commit, verify the final PR #28 head, then create a tracked stacked worktree from `origin/call-bridge-core` for deterministic bridge scenario replay
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #28 if the bridge contract is superseded
 notes: Relevant bridge tests shipped in the same PR as their code. Hosted PR CI and pushes to `aistack/main` continue to run the complete repository suite rather than affected-module selection. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-073 — deterministic bridge replay locally green
+
+~~~yaml
+checkpoint_id: CP-073
+recorded_at_utc: 2026-08-30T22:07:27Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Deterministic multi-leg bridge replay and failure verification
+scope: Integrate bounded bridge transitions into the atomic offline scenario runner and verify stable-caller switching, human-leg failure, cleanup, diagnostics, and rollback through the same path as synthetic SIP fixtures
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-29
+branch: call-bridge-scenario-replay
+base_branch: call-bridge-core
+pr: pending publication
+head_sha: 564f04beb61fff840f28bb30bff4f5b317fa5442 before the implementation commit
+evidence: `ScenarioStep` now creates AI-backed bridges, begins/completes/fails human legs, resumes AI, ends bridges, and reclaims terminal bridge records; `ReplayReport` exposes bounded final bridge snapshots and ordered bridge events; the runner clones and atomically commits call-engine, media-session, and bridge-registry state only after every step succeeds; three new tests start from a parsed and answered inbound SIP call, retain its call/leg/AI identities across AI-to-human-to-AI switching, cover pending and active human failure plus terminal reclamation, and prove indexed invalid-transition rollback with deterministic identifier reuse; 13 focused scenario-replay tests and all 147 workspace tests pass; strict scenario-replay Clippy, workspace Clippy/all targets, formatting, and `git diff --check` pass
+blockers: This replay layer does not originate the runtime human SIP transaction or forward RTP between caller and human sessions; property invariants, local SIPp, differential replay, load, soak, real Asterisk/provider interoperability, and rollback evidence remain required before Rust traffic; Asterisk remains the fallback
+next_action: Commit and publish this replay integration as a stacked PR against `call-bridge-core`, verify hosted Workspace, Protocol fuzz, and Dependency audit checks on its final head, then select the next smallest offline bridge/runtime composition slice
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the replay PR if the scenario contract is superseded
+notes: Tests ship in the same branch as the relevant replay code. Current hosted CI remains intentionally stronger than affected-module selection: every pull request and every push to `aistack/main` runs the complete locked workspace tests, formatting, workspace Clippy/all targets, dependency audit, and all six fuzz-target checks. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints

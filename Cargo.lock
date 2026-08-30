@@ -114,6 +114,7 @@ name = "scenario-replay"
 version = "0.1.0"
 dependencies = [
  "call-api",
+ "call-bridge",
  "call-core",
  "call-engine",
  "dtmf",

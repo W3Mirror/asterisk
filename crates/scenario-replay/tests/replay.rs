@@ -6,7 +6,8 @@ use std::{
 };
 
 use call_api::{ApiError, CallCommand, CallRegistryConfig};
-use call_core::{CallEventKind, CallId, CallState};
+use call_bridge::{BridgeError, BridgeEventKind, BridgeOperation, BridgeState};
+use call_core::{BridgeId, CallEventKind, CallId, CallState, LegId, StreamId};
 use call_engine::{CallEngine, EngineConfig, EngineError};
 use dtmf::{DtmfDigit, DtmfEvent, Notification, encode as encode_dtmf};
 use media_core::{
@@ -311,6 +312,186 @@ fn replays_transfer_lifecycle_and_reclaims_the_terminal_call() {
             CallEventKind::Hangup,
         ]
     );
+}
+
+#[test]
+fn replays_ai_to_human_and_back_without_replacing_the_inbound_caller() {
+    let bridge_id = BridgeId::from_sequence(1);
+    let caller_call_id = CallId::from_sequence(1);
+    let caller_leg_id = LegId::from_sequence(1);
+    let ai_stream_id = StreamId::from_sequence(1);
+    let peer = address(5060);
+    let scenario = Scenario::new(
+        "bridge-ai-human-ai",
+        vec![
+            ScenarioStep::ReceiveSip {
+                at: Duration::ZERO,
+                source: peer,
+                reliability: TransportReliability::Unreliable,
+                wire: sip_fixture(include_str!("fixtures/inbound_answered/invite.sip")),
+            },
+            ScenarioStep::RespondToInvite {
+                at: Duration::from_millis(10),
+                call_id: caller_call_id.clone(),
+                status_code: 200,
+                reason: "OK".to_owned(),
+                body: Vec::new(),
+            },
+            ScenarioStep::ReceiveSip {
+                at: Duration::from_millis(20),
+                source: peer,
+                reliability: TransportReliability::Unreliable,
+                wire: sip_fixture(include_str!("fixtures/inbound_answered/ack.sip")),
+            },
+            ScenarioStep::ApplyCallCommand {
+                call_id: caller_call_id.clone(),
+                command: CallCommand::MediaStarted,
+            },
+            ScenarioStep::CreateBridge {
+                caller_call_id: caller_call_id.clone(),
+                caller_leg_id: caller_leg_id.clone(),
+                ai_stream_id: ai_stream_id.clone(),
+            },
+            ScenarioStep::BeginHumanLeg {
+                bridge_id: bridge_id.clone(),
+                call_id: CallId::from_sequence(2),
+                leg_id: LegId::from_sequence(2),
+            },
+            ScenarioStep::CompleteHumanLeg {
+                bridge_id: bridge_id.clone(),
+            },
+            ScenarioStep::ResumeBridgeAi { bridge_id },
+        ],
+    );
+
+    let report = runner().run(&scenario).unwrap();
+
+    assert_eq!(report.calls.len(), 1);
+    assert_eq!(report.calls[0].id, caller_call_id);
+    assert_eq!(report.calls[0].state, CallState::Active);
+    assert_eq!(report.bridges.len(), 1);
+    let bridge = &report.bridges[0];
+    assert_eq!(bridge.state, BridgeState::AiActive);
+    assert_eq!(bridge.caller_call_id, caller_call_id);
+    assert_eq!(bridge.caller_leg_id, caller_leg_id);
+    assert_eq!(bridge.ai_stream_id, ai_stream_id);
+    assert!(bridge.pending_human.is_none());
+    assert!(bridge.active_human.is_none());
+    assert_eq!(
+        report
+            .bridge_events()
+            .into_iter()
+            .map(|event| event.kind)
+            .collect::<Vec<_>>(),
+        vec![
+            BridgeEventKind::Created,
+            BridgeEventKind::HumanConnecting,
+            BridgeEventKind::HumanConnected,
+            BridgeEventKind::AiResumed,
+        ]
+    );
+}
+
+#[test]
+fn replays_partial_human_failure_and_terminal_bridge_reclamation() {
+    let bridge_id = BridgeId::from_sequence(1);
+    let scenario = Scenario::new(
+        "bridge-failure-and-reclamation",
+        vec![
+            ScenarioStep::CreateBridge {
+                caller_call_id: CallId::from_sequence(1),
+                caller_leg_id: LegId::from_sequence(1),
+                ai_stream_id: StreamId::from_sequence(1),
+            },
+            ScenarioStep::BeginHumanLeg {
+                bridge_id: bridge_id.clone(),
+                call_id: CallId::from_sequence(2),
+                leg_id: LegId::from_sequence(2),
+            },
+            ScenarioStep::FailHumanLeg {
+                bridge_id: bridge_id.clone(),
+            },
+            ScenarioStep::BeginHumanLeg {
+                bridge_id: bridge_id.clone(),
+                call_id: CallId::from_sequence(2),
+                leg_id: LegId::from_sequence(2),
+            },
+            ScenarioStep::CompleteHumanLeg {
+                bridge_id: bridge_id.clone(),
+            },
+            ScenarioStep::FailHumanLeg {
+                bridge_id: bridge_id.clone(),
+            },
+            ScenarioStep::EndBridge {
+                bridge_id: bridge_id.clone(),
+            },
+            ScenarioStep::ReclaimTerminalBridge { bridge_id },
+        ],
+    );
+
+    let report = runner().run(&scenario).unwrap();
+
+    assert!(report.bridges.is_empty());
+    assert!(matches!(
+        report.steps[7].outcome,
+        StepOutcome::BridgeReclaimed(ref snapshot)
+            if snapshot.state == BridgeState::Ended
+                && snapshot.pending_human.is_none()
+                && snapshot.active_human.is_none()
+    ));
+    assert_eq!(
+        report
+            .bridge_events()
+            .into_iter()
+            .map(|event| event.kind)
+            .collect::<Vec<_>>(),
+        vec![
+            BridgeEventKind::Created,
+            BridgeEventKind::HumanConnecting,
+            BridgeEventKind::HumanFailed,
+            BridgeEventKind::HumanConnecting,
+            BridgeEventKind::HumanConnected,
+            BridgeEventKind::HumanFailed,
+            BridgeEventKind::Ended,
+        ]
+    );
+}
+
+#[test]
+fn rejected_bridge_transition_is_indexed_and_the_whole_replay_is_atomic() {
+    let bridge_id = BridgeId::from_sequence(1);
+    let create = ScenarioStep::CreateBridge {
+        caller_call_id: CallId::from_sequence(1),
+        caller_leg_id: LegId::from_sequence(1),
+        ai_stream_id: StreamId::from_sequence(1),
+    };
+    let invalid = Scenario::new(
+        "invalid-bridge-transition",
+        vec![
+            create.clone(),
+            ScenarioStep::CompleteHumanLeg {
+                bridge_id: bridge_id.clone(),
+            },
+        ],
+    );
+    let corrected = Scenario::new("after-invalid-bridge-transition", vec![create]);
+    let mut replay = runner();
+
+    assert_eq!(
+        replay.run(&invalid),
+        Err(ReplayError::Step {
+            index: 1,
+            source: StepError::Bridge(BridgeError::InvalidOperation {
+                state: BridgeState::AiActive,
+                operation: BridgeOperation::CompleteHuman,
+            }),
+        })
+    );
+    let report = replay.run(&corrected).unwrap();
+    assert_eq!(report.bridges.len(), 1);
+    assert_eq!(report.bridges[0].id, bridge_id);
+    assert_eq!(report.bridges[0].state, BridgeState::AiActive);
+    assert_eq!(report.bridge_events().len(), 1);
 }
 
 #[test]
