@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-094 — PR #35 published with hosted validation running
-**Last checkpoint (UTC):** 2026-08-30T23:52:36Z
+**Current checkpoint:** CP-095 — PR #35 hosted RTP-bridge validation green
+**Last checkpoint (UTC):** 2026-08-30T23:56:33Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Runtime caller/human RTP audio composition<br>
-**Next resume action:** Push the PR #35 publication checkpoint, then verify every hosted Rust quality gate on its documentation-only final head
+**Next resume action:** Push the PR #35 green-check reconciliation, verify all three hosted jobs on that documentation-only final head, then implement the next bounded state-gated media reliability slice
 **Active PR:** [#35](https://github.com/W3Mirror/asterisk/pull/35) — `runtime-rtp-leg-bridge` targets `runtime-human-leg-bridge`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-35`
@@ -4110,6 +4110,27 @@ blockers: Hosted validation is pending on the publication checkpoint's final hea
 next_action: Push this publication checkpoint and verify all three hosted Rust quality gates on the final PR #35 head, then select the next bounded offline media reliability slice
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #35 if the RTP bridge contract is superseded
 notes: PR #35 contains the relevant runtime implementation, seven localhost UDP tests, documentation, manifest, and lockfile update. Every PR and push to `aistack/main` runs the complete repository suite rather than affected-module-only selection. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-095 — PR #35 hosted RTP-bridge validation green
+
+~~~yaml
+checkpoint_id: CP-095
+recorded_at_utc: 2026-08-30T23:56:33Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Runtime caller/human RTP audio composition
+scope: Verify the published state-gated caller/human RTP audio bridge through every repository-hosted Rust quality gate before continuing media reliability work
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-35
+branch: runtime-rtp-leg-bridge
+base_branch: runtime-human-leg-bridge
+pr: https://github.com/W3Mirror/asterisk/pull/35
+head_sha: b68a7536818789e284089028faa44100a8dafd9e before this green-check reconciliation commit
+evidence: PR #35 is OPEN/non-draft/CLEAN against exact base `runtime-human-leg-bridge` at `3b29122b0`, with local, origin, and GitHub head parity; hosted run `33342981260` passed Workspace checks in 40 seconds, including formatting, all 182 tests, all three local SIPp scenarios, the 512-call reclamation smoke, and workspace Clippy; Protocol fuzz checks passed in 50 seconds across all six address-sanitizer targets; Dependency audit passed in 3 minutes
+blockers: The bridge forwards negotiated G.711 audio only; telephone-event packets remain bounded and observable but DTMF relay, RTCP relay, jitter playout, media/WebSocket load, long-duration soak/memory, sanitized captures, provider/Asterisk compatibility, rollback proof, and production evidence remain active goal work; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Push this reconciliation checkpoint, verify all three hosted jobs on that documentation-only final head, then implement the next smallest state-gated media reliability slice without enabling Rust traffic
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #35 if the RTP bridge contract is superseded
+notes: Relevant tests shipped with the implementation. Hosted PR CI and pushes to `aistack/main` continue to run the complete repository suite rather than affected-module selection. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
