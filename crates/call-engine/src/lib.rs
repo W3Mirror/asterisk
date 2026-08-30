@@ -200,6 +200,12 @@ impl EngineOutput {
     pub fn into_events(self) -> Vec<LifecycleEvent> {
         self.events
     }
+
+    /// Consumes the output and returns actions and lifecycle events together.
+    #[must_use]
+    pub fn into_parts(self) -> (Vec<SendAction>, Vec<LifecycleEvent>) {
+        (self.actions, self.events)
+    }
 }
 
 /// A bounded, runtime-agnostic SIP call orchestrator.
