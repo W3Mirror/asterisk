@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**
-**Current checkpoint:** CP-078 — PR #30 hosted validation confirmed after restack
-**Last checkpoint (UTC):** 2026-09-01T20:02:26Z
+**Current checkpoint:** CP-079 — local SIPp runtime integration matrix green
+**Last checkpoint (UTC):** 2026-08-30T22:39:48Z
 **Active phase:** Phase 1 — Rust media engine
-**Active milestone:** Property-based protocol, state-machine, and bounded-resource verification<br>
-**Next resume action:** Reconcile PR #31 onto the validated PR #30 head and run focused local SIPp integration checks
-**Active PR:** [#30](https://github.com/W3Mirror/asterisk/pull/30) branch `rust-property-invariants` targets `call-bridge-scenario-replay`; hosted validation is green for the published head
+**Active milestone:** Milestone 3/4 offline SIP interoperability<br>
+**Next resume action:** Publish the rebased PR #31 head with an exact SHA-pinned force-with-lease and verify hosted checks plus mergeability
+**Active PR:** [#31](https://github.com/W3Mirror/asterisk/pull/31) branch `sipp-local-integration` targets `rust-property-invariants`; hosted validation is pending for the rebased head
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-30`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-31`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -5328,6 +5328,26 @@ blockers: Runtime human SIP origination and RTP-to-RTP bridge composition remain
 next_action: Reconcile PR #31 onto the validated PR #30 head and run focused local SIPp integration checks
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the property-invariants PR if the testing contract is superseded
 notes: Relevant tests and documentation ship together. Every implementation PR must include focused tests for each affected crate/module; pull requests and pushes to `aistack/main` run the complete ordinary workspace suite, while extended property cases and environment-dependent gates remain scheduled or manually dispatched.
+```
+### CP-079 — local SIPp runtime integration matrix green
+
+```yaml
+checkpoint_id: CP-079
+recorded_at_utc: 2026-08-30T22:39:48Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Milestone 3/4 offline SIP interoperability
+scope: Drive the real blocking UDP `CallRuntime` boundary with deterministic local SIPp normal and failure scenarios, assert exact signaling sequences, and prove terminal call reclamation without provider or Asterisk access
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-31
+branch: sipp-local-integration
+base_branch: rust-property-invariants
+pr: pending publication
+head_sha: 5bed6b7640d6dc97c6b0aa52c7eaf2a9def2bb65 before the implementation commit
+evidence: A digest-pinned Ubuntu 24.04 test image installs pinned SIPp 3.7.2; the executable runner starts a bounded Rust UDP UAS fixture and passes three one-call scenarios against host networking: successful `100 -> 180 -> 200 -> ACK -> BYE -> 200`, busy `100 -> 486 -> ACK`, and cancellation `100 -> 180 -> CANCEL -> 200/487 -> ACK`; each fixture asserts the engine reaches `Ended`, reclaims the terminal call, and leaves the registry empty before exit; `tests/rust-sipp/run.sh` passes all three scenarios; the hosted workflow now runs this matrix after the complete workspace suite on every PR and `aistack/main` push; strict example Clippy with `--no-deps -- -D warnings`, all 160 workspace tests, workspace Clippy/all targets, formatting, shell syntax, workflow YAML parsing, and `git diff --check` pass
+blockers: This matrix is local provider-neutral UDP interoperability, not Asterisk or provider proof; runtime outbound human-leg SIP origination and RTP-to-RTP bridge composition, broader SIPp failure/load matrices, differential Asterisk replay, media load/soak, sanitized captures, and real provider interoperability remain active goal work; Asterisk remains the fallback and Rust traffic stays disabled
+next_action: Commit and publish `sipp-local-integration` as a stacked PR against `rust-property-invariants`, verify hosted Workspace, Protocol fuzz, and Dependency audit checks on its final head, then extend offline load/reclamation or differential verification in a separate bounded slice
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the SIPp PR or remove its workflow step if the isolated harness is superseded
+notes: The first SIPp attempt expected `180` first and correctly failed on the engine's automatic `100 Trying`; the scenarios were fixed to assert `100` explicitly rather than ignore the response. The workflow remains on `ubuntu-latest`; Docker is used only inside the hosted job to run the isolated pinned SIPp test tool. Relevant runtime fixture code, scenarios, CI wiring, and documentation ship together.
 ```
 
 ## 59.4 Stacked-PR Checkpoints
