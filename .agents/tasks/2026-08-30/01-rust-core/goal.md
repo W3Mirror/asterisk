@@ -1,12 +1,12 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-082 — deterministic signaling load/reclamation smoke locally green
-**Last checkpoint (UTC):** 2026-08-30T22:58:17Z
+**Current checkpoint:** CP-083 — PR #32 published with hosted validation running
+**Last checkpoint (UTC):** 2026-08-30T22:59:36Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Deterministic signaling load and terminal reclamation<br>
-**Next resume action:** Commit and publish the locally green load/reclamation harness as PR #32, then verify every hosted quality gate on its final head
-**Active PR:** pending PR #32; branch `rust-load-reclamation-smoke` targets `sipp-local-integration`
+**Next resume action:** Push CP-083 and verify Workspace/SIPp/load, Protocol fuzz, and Dependency audit checks on PR #32's final head
+**Active PR:** [#32](https://github.com/W3Mirror/asterisk/pull/32); branch `rust-load-reclamation-smoke` targets `sipp-local-integration`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-32`
 **Primary language:** Rust  
@@ -3858,6 +3858,27 @@ blockers: This is logical signaling correctness and reclamation evidence, not ca
 next_action: Commit and publish `rust-load-reclamation-smoke` as a stacked PR against `sipp-local-integration`, verify hosted Workspace/SIPp/load, Protocol fuzz, and Dependency audit checks on the final head, then continue with the next smallest offline differential or media-load slice
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the load-smoke PR or remove its workflow steps if the harness is superseded
 notes: Relevant harness code, four tests, CLI, documentation, lockfile, and CI wiring ship together. Every PR and push to `aistack/main` runs the 512-call smoke through the hosted full suite; the 16,384-call run is scheduled-only. The harness intentionally avoids timing or process-metric claims so later real performance/soak tools can measure latency, throughput, CPU, RSS, sockets, and file descriptors honestly.
+~~~
+
+### CP-083 — PR #32 published with hosted validation running
+
+~~~yaml
+checkpoint_id: CP-083
+recorded_at_utc: 2026-08-30T22:59:36Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Deterministic signaling load and terminal reclamation
+scope: Publish the locally green load/reclamation harness as a stacked PR and reconcile exact worktree, branch, base, head, and hosted-check state
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-32
+branch: rust-load-reclamation-smoke
+base_branch: sipp-local-integration
+pr: https://github.com/W3Mirror/asterisk/pull/32
+head_sha: 9e6614784ba58b60f718677c4804f14f3378d871 before this publication checkpoint commit
+evidence: Implementation/checkpoint commit `9e6614784` was pushed normally with local and `origin/rust-load-reclamation-smoke` parity; PR #32 is OPEN/non-draft against exact base `sipp-local-integration` at `2f4c28a63`; GitHub assigned predicted #32, so the required worktree path already matches; hosted run `33340586655` started Workspace checks (including all 164 tests, local SIPp, and the 512-call load smoke), Protocol fuzz checks, and Dependency audit
+blockers: Hosted validation is pending on the publication checkpoint's final head; this deterministic harness is not real concurrency/performance, media load, Asterisk, or provider evidence; differential replay, media/WebSocket load, long-duration soak/memory, runtime human-leg origination/RTP composition, sanitized captures, and real provider interoperability remain active goal work; Asterisk remains the fallback and Rust traffic stays disabled
+next_action: Push this publication checkpoint and verify all three hosted Rust quality gates on the final PR #32 head, then continue with the next bounded offline differential or media-load slice
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #32 if the load harness contract is superseded
+notes: PR #32 contains the load harness, its four tests, CLI, documentation, lockfile, and CI wiring. Every PR and `aistack/main` push runs the 512-call smoke; the 16,384-call run is scheduled-only. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
