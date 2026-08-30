@@ -60,6 +60,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "provider-routing"
+version = "0.1.0"
+dependencies = [
+ "sip-auth",
+]
+
+[[package]]
 name = "rtcp"
 version = "0.1.0"
 
