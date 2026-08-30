@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-043 — PR18 published and stacked remote parity verified
-**Last checkpoint (UTC):** 2026-08-30T16:13:14Z
+**Current checkpoint:** CP-044 — PR18 ledger head reconciled
+**Last checkpoint (UTC):** 2026-08-30T16:15:30Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Milestone 4 — Dialog + SDP + Basic Calls<br>
 **Next resume action:** Collect sanitized provider interoperability/runtime evidence before enabling any Rust route, then add the next bounded security or media-interop slice
@@ -2571,7 +2571,7 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 15 | [#15](https://github.com/W3Mirror/asterisk/pull/15) | `sip-rtcp-security` | `sip-rtp-security` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-15-rtcp-security` | Milestone 2/4 media observability security integration: add a bounded RTCP send/receive session with observed source-IP authorization, expected-SSRC validation, and packet/octet/arrival metrics | in_progress | `2ec6783e2` | workspace format/tests/clippy/diff checks pass; 8 RTCP tests pass; local HEAD equals origin/sip-rtcp-security at `2ec6783e2`; PR #15 is OPEN/non-draft against sip-rtp-security at `378270d85f`; no GitHub checks are configured; no provider/runtime or live-call evidence; Asterisk fallback remains active | Collect sanitized provider interoperability/runtime evidence before enabling any Rust route, then add the next bounded security or media-interop slice |
 | 16 | [#16](https://github.com/W3Mirror/asterisk/pull/16) | `sip-rtcp-quality` | `sip-rtcp-security` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-16-rtcp-quality` | Milestone 2/4 media observability: derive bounded RTCP cumulative-loss, jitter, and matching Sender Report/Reception Report RTT metrics while preserving source authorization and Asterisk fallback | in_progress | `678bfa141` | workspace format/tests/clippy/diff checks pass; 10 RTCP tests pass; local HEAD equals origin/sip-rtcp-quality at `678bfa141`; PR #16 is OPEN/non-draft against sip-rtcp-security at `2ec6783e2`; no GitHub checks are configured; no provider/runtime or live-call evidence; Asterisk fallback remains active | Collect sanitized provider interoperability/runtime evidence before enabling any Rust route, then add the next bounded security or media-interop slice |
 | 17 | [#17](https://github.com/W3Mirror/asterisk/pull/17) | `sip-media-rtcp` | `sip-rtcp-quality` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-17-media-rtcp` | Milestone 2/4 media-plane integration: wire the bounded RTCP session into `MediaSession`, expose RTCP receive/send APIs and report-derived quality stats, and share packet/SSRC/source-policy bounds | in_progress | `b82aa8113` | workspace format/tests/clippy/diff checks pass; 10 media-core tests pass including RTCP quality and source-policy integration; local HEAD equals origin/sip-media-rtcp at `b82aa8113`; PR #17 is OPEN/non-draft against sip-rtcp-quality at `678bfa141`; no GitHub checks are configured; no provider/runtime or live-call evidence; Asterisk fallback remains active | Collect sanitized provider interoperability/runtime evidence before enabling any Rust route, then add the next bounded security or media-interop slice |
-| 18 | [#18](https://github.com/W3Mirror/asterisk/pull/18) | `media-websocket` | `sip-media-rtcp` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-18-media-websocket` | Milestone 2/4 AI media transport: add bounded RFC 6455 WebSocket framing, Asterisk plain-text `chan_websocket` controls, and raw PCMU/PCMA bridging to `MediaSession` without enabling Rust traffic | in_progress | `f98906bbc` | implementation 89b47610b plus ledger commit f98906bbc; local HEAD equals origin/media-websocket; PR #18 is OPEN/non-draft against sip-media-rtcp at 9f4b65287 with matching head; `gh pr checks 18` reports no checks; workspace tests, formatting, and diff checks pass; no provider/runtime or live-call evidence; Asterisk fallback remains active | Collect sanitized provider interoperability/runtime evidence before enabling any Rust route, then add the next bounded security or media-interop slice |
+| 18 | [#18](https://github.com/W3Mirror/asterisk/pull/18) | `media-websocket` | `sip-media-rtcp` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-18-media-websocket` | Milestone 2/4 AI media transport: add bounded RFC 6455 WebSocket framing, Asterisk plain-text `chan_websocket` controls, and raw PCMU/PCMA bridging to `MediaSession` without enabling Rust traffic | in_progress | `3fb9d638b` | implementation 89b47610b plus ledger commits; local HEAD equals origin/media-websocket at 3fb9d638b before this ledger-only reconciliation; PR #18 is OPEN/non-draft against sip-media-rtcp at 9f4b65287 with matching head; `gh pr checks 18` reports no checks; workspace tests, formatting, and diff checks pass; no provider/runtime or live-call evidence; Asterisk fallback remains active | Collect sanitized provider interoperability/runtime evidence before enabling any Rust route, then add the next bounded security or media-interop slice |
 
 ### CP-026 — PR10 published and stacked remote parity verified
 
@@ -2943,12 +2943,33 @@ worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-18-media-websocket
 branch: media-websocket
 base_branch: sip-media-rtcp
 pr: https://github.com/W3Mirror/asterisk/pull/18
-head_sha: f98906bbc8f9ac3a4fef72bbaf0f4c761bbdd366
-evidence: `git push -u origin media-websocket` succeeded; local HEAD equals origin/media-websocket at f98906bbc; `gh pr view 18` reports OPEN/non-draft with base sip-media-rtcp at 9f4b65287 and matching head; `gh pr checks 18` reports no checks; `git diff --check origin/sip-media-rtcp...HEAD` passed; worktree clean
+head_sha: 3fb9d638b8bb8423b4e18619888684490f60d4d6
+evidence: `git push -u origin media-websocket` succeeded; local HEAD equals origin/media-websocket at 3fb9d638b; `gh pr view 18` reports OPEN/non-draft with base sip-media-rtcp at 9f4b65287 and matching head; `gh pr checks 18` reports no checks; `git diff --check origin/sip-media-rtcp...HEAD` passed; worktree clean
 blockers: No Asterisk binary, provider credentials/runtime, SIPp/live-call path, or sanitized SIP/SDP/RTP/RTCP/WebSocket fixtures are available from this host; Asterisk routing remains the fallback
 next_action: Collect sanitized provider interoperability/runtime evidence before enabling any Rust route, then add the next bounded security or media-interop slice
 rollback: Keep all call routing and media on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
 notes: PR18 is independently reviewable and unmerged; the adapter remains offline/provider-neutral, JSON controls and live interoperability are not claimed, and fuzzing, load, production, and real telephony evidence remain follow-up work
+~~~
+
+### CP-044 — PR18 ledger head reconciled
+
+~~~yaml
+checkpoint_id: CP-044
+recorded_at_utc: 2026-08-30T16:15:30Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Milestone 2/4 — Media plane + Dialog + Basic Calls
+scope: Reconcile the PR18 publication ledger with the exact pushed branch head and stacked PR state
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-18-media-websocket
+branch: media-websocket
+base_branch: sip-media-rtcp
+pr: https://github.com/W3Mirror/asterisk/pull/18
+head_sha: 3fb9d638b8bb8423b4e18619888684490f60d4d6
+evidence: local HEAD equals origin/media-websocket at 3fb9d638b before this ledger-only reconciliation; `gh pr view 18` reports OPEN/non-draft with base sip-media-rtcp at 9f4b65287 and matching head; `gh pr checks 18` reports no checks; `git diff --check origin/sip-media-rtcp...HEAD` passed; worktree clean
+blockers: No Asterisk binary, provider credentials/runtime, SIPp/live-call path, or sanitized SIP/SDP/RTP/RTCP/WebSocket fixtures are available from this host; Asterisk routing remains the fallback
+next_action: Collect sanitized provider interoperability/runtime evidence before enabling any Rust route, then add the next bounded security or media-interop slice
+rollback: Keep all call routing and media on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
+notes: This reconciliation is ledger-only; PR18 remains independently reviewable and unmerged, the adapter remains offline/provider-neutral, and provider interoperability, fuzzing, load, production, and real telephony evidence remain follow-up work
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
