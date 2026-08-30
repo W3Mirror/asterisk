@@ -5204,6 +5204,26 @@ next_action: Reconcile PR #30 onto the validated PR #29 head and run focused pro
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the replay PR if the scenario contract is superseded
 notes: Focused tests ship with the relevant implementation. Pull requests run the complete ordinary workspace suite (including those focused tests), while pushes to `aistack/main` repeat that complete ordinary hosted suite. Extended fuzzing, SIPp/interoperability, property, capacity, soak, credentialed-provider, and real-time checks remain scheduled, manually dispatched, or approval-gated.
 ```
+### CP-076 — cross-crate property invariants locally green
+
+```yaml
+checkpoint_id: CP-076
+recorded_at_utc: 2026-08-30T22:25:07Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Property-based protocol, state-machine, and bounded-resource verification
+scope: Add a repository property-testing harness for implemented SIP, SDP, RTP, RTCP, DTMF, media-queue, transaction, dialog, call-engine, and multi-leg bridge invariants, with retained minimized counterexamples and a deeper scheduled run
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-30
+branch: rust-property-invariants
+base_branch: call-bridge-scenario-replay
+pr: pending publication
+head_sha: 54436dece5ecd495214d1876fc9ef862559450ca before the implementation commit
+evidence: New workspace crate `property-tests` supplies 13 tests covering SIP parse/serialize idempotence, SDP/RTP/RTCP/DTMF round trips, RTP rollover, duplicate DTMF and INVITE suppression, bounded media queues under both drop policies, INVITE timer ordering and reliable completion, dialog retransmission sequencing, terminal call reclamation/capacity reuse, and randomized bridge transition atomicity/stable caller ownership/failure recovery/endpoint release/capacity reuse; the ordinary focused suite passes; `PROPTEST_CASES=4096 cargo test -p property-tests --locked` passes all 13 tests in 1.12 seconds; the full locked workspace suite passes all 160 tests; strict property-crate Clippy with `--no-deps -- -D warnings`, workspace Clippy/all targets, formatting, workflow YAML parsing, and `git diff --check` pass; the tracked regression-policy README requires minimized counterexamples to ship with their fixes; no unexpected regression seed was generated
+blockers: Runtime human SIP origination and RTP-to-RTP bridge composition remain incomplete; local SIPp, differential Asterisk-versus-Rust replay, load, soak, sanitized real captures, provider interoperability, and rollback proof remain active goal work; real Asterisk/provider evidence remains mandatory before enabling Rust traffic; Asterisk remains the fallback
+next_action: Commit and publish `rust-property-invariants` as a stacked PR against `call-bridge-scenario-replay`, verify hosted Workspace, Protocol fuzz, and Dependency audit checks on its final head, then continue with the next smallest offline interoperability or load-verification slice
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the property-invariants PR if the testing contract is superseded
+notes: Relevant tests and documentation ship together. Every pull request and every push to `aistack/main` runs these properties through the complete locked workspace suite; the Monday 02:30 UTC hosted schedule additionally reruns them with 4,096 cases per property. CI remains on `ubuntu-latest`. The first strict Clippy pass found an unchecked duration subtraction, which was fixed with `checked_sub` without suppression. Existing dependency documentation/pedantic warnings remain non-fatal and predate this slice.
+```
 
 ## 59.4 Stacked-PR Checkpoints
 

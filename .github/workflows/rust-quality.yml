@@ -45,6 +45,11 @@ jobs:
       - name: Run workspace tests
         if: steps.rust-workspace.outputs.available == 'true'
         run: cargo test --workspace --locked
+      - name: Run extended property tests
+        if: steps.rust-workspace.outputs.available == 'true' && github.event_name == 'schedule'
+        env:
+          PROPTEST_CASES: "4096"
+        run: cargo test -p property-tests --locked
       - name: Run workspace clippy
         if: steps.rust-workspace.outputs.available == 'true'
         run: cargo clippy --workspace --all-targets --locked

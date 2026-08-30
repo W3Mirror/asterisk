@@ -1,0 +1,26 @@
+[package]
+name = "property-tests"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dev-dependencies]
+call-api = { path = "../call-api" }
+call-bridge = { path = "../call-bridge" }
+call-core = { path = "../call-core" }
+call-engine = { path = "../call-engine" }
+dtmf = { path = "../dtmf" }
+media-core = { path = "../media-core" }
+proptest = "1.11.0"
+rtcp = { path = "../rtcp" }
+rtp = { path = "../rtp" }
+sdp = { path = "../sdp" }
+sip-dialog = { path = "../sip-dialog" }
+sip-parser = { path = "../sip-parser" }
+sip-transaction = { path = "../sip-transaction" }
+sip-types = { path = "../sip-types" }
+
+[lints]
+workspace = true
