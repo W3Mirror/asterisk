@@ -1,12 +1,12 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-089 — runtime human-leg bridge orchestration locally green
-**Last checkpoint (UTC):** 2026-08-30T23:34:33Z
+**Current checkpoint:** CP-090 — PR #34 published with hosted validation running
+**Last checkpoint (UTC):** 2026-08-30T23:36:19Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Runtime human-leg SIP and bridge composition<br>
-**Next resume action:** Commit and publish `runtime-human-leg-bridge` as stacked PR #34 against `synthetic-differential-replay`, then verify Workspace/SIPp/load, Protocol fuzz, and Dependency audit checks on its final head
-**Active PR:** pending publication; branch `runtime-human-leg-bridge` targets `synthetic-differential-replay`
+**Next resume action:** Push the PR #34 publication checkpoint, then verify Workspace/SIPp/load, Protocol fuzz, and Dependency audit checks on its documentation-only final head before implementing bounded RTP-to-RTP caller/human forwarding
+**Active PR:** [#34](https://github.com/W3Mirror/asterisk/pull/34) — `runtime-human-leg-bridge` targets `synthetic-differential-replay`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-34`
 **Primary language:** Rust  
@@ -4005,6 +4005,27 @@ blockers: This slice composes runtime SIP signaling and bridge lifecycle but doe
 next_action: Commit and publish `runtime-human-leg-bridge` as stacked PR #34 against `synthetic-differential-replay`, verify all hosted Rust quality gates on its final head, then implement bounded RTP-to-RTP caller/human forwarding as the next runtime-composition slice
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the runtime-human-leg PR if the orchestration contract is superseded
 notes: Relevant implementation, five directly affected-module tests, documentation, manifest, and lockfile update ship together. Every PR and push to `aistack/main` runs the complete repository suite. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-090 — PR #34 published with hosted validation running
+
+~~~yaml
+checkpoint_id: CP-090
+recorded_at_utc: 2026-08-30T23:36:19Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Runtime human-leg SIP and bridge composition
+scope: Publish the locally green runtime human-leg orchestration slice as a stacked PR and reconcile its exact worktree, branch, base, implementation head, and hosted-check state
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-34
+branch: runtime-human-leg-bridge
+base_branch: synthetic-differential-replay
+pr: https://github.com/W3Mirror/asterisk/pull/34
+head_sha: ac39e930b51914b9a1bd14dd97ef52e635443b8b before this publication checkpoint commit
+evidence: Implementation commit `ac39e930b` was pushed normally with local and `origin/runtime-human-leg-bridge` parity; PR #34 is OPEN/non-draft against exact base `synthetic-differential-replay` at `5cc75e1c0`; GitHub assigned predicted #34, so the required worktree path already matches; hosted run `33342222830` passed Workspace checks and Protocol fuzz checks, while Dependency audit remained in progress when this checkpoint was recorded
+blockers: Hosted validation is pending on the publication checkpoint's final head; this slice does not yet forward RTP between caller and human sessions, generate provider-specific SIP identities, authenticate providers, or prove Asterisk/carrier interoperability; RTP-to-RTP composition, media/WebSocket load, long-duration soak/memory, sanitized captures, provider compatibility, and rollback proof remain active goal work; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Push this publication checkpoint and verify all three hosted Rust quality gates on the final PR #34 head, then implement bounded RTP-to-RTP caller/human forwarding as the next runtime-composition slice
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #34 if the orchestration contract is superseded
+notes: PR #34 contains the relevant runtime implementation, five localhost UDP tests, documentation, manifest, and lockfile update. Every PR and push to `aistack/main` runs the complete repository suite rather than affected-module-only selection. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
