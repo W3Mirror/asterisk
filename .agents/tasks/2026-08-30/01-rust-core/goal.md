@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: Proposed**  
-**Current checkpoint:** CP-005 — provider-neutral Rust protocol/media foundation published as stacked PR #2; production evidence outstanding
-**Last checkpoint (UTC):** 2026-08-30T11:37:35Z
+**Current checkpoint:** CP-006 — PR #2 remote publication and ledger state reconciled; production evidence outstanding
+**Last checkpoint (UTC):** 2026-08-30T11:39:12Z
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
 **Active milestone:** Milestone 1 — Scope Baseline  
 **Next resume action:** Collect redacted runtime/provider evidence and the first sanitized SIP/SDP/RTP fixtures on the actual Asterisk host
@@ -2052,6 +2052,27 @@ rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain 
 notes: Foundation work proceeds provider-neutrally while Phase 0 evidence remains incomplete; PR #2 is stacked on PR #1
 ```
 
+### CP-006 — PR #2 remote publication reconciled
+
+```yaml
+checkpoint_id: CP-006
+recorded_at_utc: 2026-08-30T11:39:12Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 1 — Scope Baseline
+scope: Reconcile the stacked PR #2 remote head and goal ledger after publishing the implementation and checkpoint commits
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-2-rust-foundation
+branch: rust-core-foundation
+base_branch: sip-rtp-engine-rust
+pr: https://github.com/W3Mirror/asterisk/pull/2
+head_sha: a811bb72c36d5dae2dc26c0b63382baf63ebf50d
+evidence: git status clean; local HEAD equals origin/rust-core-foundation and gh pr view #2 headRefOid; PR #2 is OPEN and CLEAN; PR #1 remains the Asterisk-surface stack base
+blockers: production provider/call-flow evidence and sanitized packet corpus remain unavailable from this host
+next_action: Collect redacted provider/runtime evidence and sanitized SIP/SDP/RTP fixtures on the actual Asterisk host
+rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain the existing fallback
+notes: CP-005 records the implementation commit; this checkpoint records the subsequent ledger commit and remote parity
+```
+
 ### Checkpoint template
 
 Copy this template, assign the next checkpoint ID, fill every field, and append it after each meaningful state change:
@@ -2134,7 +2155,7 @@ Populate one row per PR before implementation begins, then update it at every ch
 | Order | PR | Branch | Base / target | Worktree | Scope | Status | Head SHA | CI / evidence | Next action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 1 | [#1](https://github.com/W3Mirror/asterisk/pull/1) | `sip-rtp-engine-rust` | `aistack/main` | `/home/ashutosh/.worktrees/w3mirror/asterisk/sip-rtp-engine-rust` | Phase 0 repository surface inventory and evidence boundary | in_progress | `edba8386c` | `docs/current-asterisk-surface.md`; full `git diff --check` passes; remote branch parity verified; PR open; no GitHub checks reported; production runtime unavailable | Collect redacted provider/runtime evidence before Rust implementation |
-| 2 | [#2](https://github.com/W3Mirror/asterisk/pull/2) | `rust-core-foundation` | `sip-rtp-engine-rust` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-2-rust-foundation` | Provider-neutral bounded SIP/SDP/RTP/RTCP/DTMF/media/call foundations | in_progress | `1677eee48` | workspace format/tests/clippy green; remote parity verified; PR open and clean; no production routing changes | Collect production provider/runtime evidence and sanitized fixtures; keep Asterisk fallback |
+| 2 | [#2](https://github.com/W3Mirror/asterisk/pull/2) | `rust-core-foundation` | `sip-rtp-engine-rust` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-2-rust-foundation` | Provider-neutral bounded SIP/SDP/RTP/RTCP/DTMF/media/call foundations | in_progress | `a811bb72c` | workspace format/tests/clippy green; remote parity verified; PR open and clean; no production routing changes | Collect production provider/runtime evidence and sanitized fixtures; keep Asterisk fallback |
 
 ## 59.4 Stacked-PR Checkpoints
 
