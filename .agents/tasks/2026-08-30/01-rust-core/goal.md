@@ -1,12 +1,12 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-093 — runtime caller/human RTP audio bridge locally green
-**Last checkpoint (UTC):** 2026-08-30T23:48:44Z
+**Current checkpoint:** CP-094 — PR #35 published with hosted validation running
+**Last checkpoint (UTC):** 2026-08-30T23:52:36Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Runtime caller/human RTP audio composition<br>
-**Next resume action:** Commit and publish `runtime-rtp-leg-bridge` as stacked PR #35 against `runtime-human-leg-bridge`, then verify every hosted Rust quality gate on its final head
-**Active PR:** pending publication; branch `runtime-rtp-leg-bridge` targets `runtime-human-leg-bridge`
+**Next resume action:** Push the PR #35 publication checkpoint, then verify every hosted Rust quality gate on its documentation-only final head
+**Active PR:** [#35](https://github.com/W3Mirror/asterisk/pull/35) — `runtime-rtp-leg-bridge` targets `runtime-human-leg-bridge`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-35`
 **Primary language:** Rust  
@@ -4089,6 +4089,27 @@ blockers: This slice forwards negotiated G.711 audio only; telephone-event packe
 next_action: Commit and publish `runtime-rtp-leg-bridge` as stacked PR #35 against `runtime-human-leg-bridge`, then verify all hosted Rust quality gates on its final head
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the RTP bridge PR or remove the new runtime composition if its contract is superseded
 notes: Relevant implementation, seven directly affected-module tests, documentation, manifest, and lockfile update ship together. Every PR and push to `aistack/main` runs the complete repository suite rather than affected-module selection. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-094 — PR #35 published with hosted validation running
+
+~~~yaml
+checkpoint_id: CP-094
+recorded_at_utc: 2026-08-30T23:52:36Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Runtime caller/human RTP audio composition
+scope: Publish the locally green state-gated RTP audio bridge as a stacked PR and reconcile exact worktree, branch, base, implementation head, and hosted-check state
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-35
+branch: runtime-rtp-leg-bridge
+base_branch: runtime-human-leg-bridge
+pr: https://github.com/W3Mirror/asterisk/pull/35
+head_sha: f53dabb68e9cbde4121835dcce67f3748ffa71d9 before this publication checkpoint commit
+evidence: Implementation commit `f53dabb68` was pushed normally with local and `origin/runtime-rtp-leg-bridge` parity; PR #35 is OPEN/non-draft against exact base `runtime-human-leg-bridge` at `3b29122b0`; GitHub assigned predicted #35, so the required worktree path already matches; hosted run `33342950271` started Workspace checks, Protocol fuzz checks, and Dependency audit
+blockers: Hosted validation is pending on the publication checkpoint's final head; this slice forwards negotiated G.711 audio only and does not claim DTMF/RTCP relay, jitter playout, media/WebSocket load, long-duration soak/memory, provider/Asterisk interoperability, rollback proof, or production readiness; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Push this publication checkpoint and verify all three hosted Rust quality gates on the final PR #35 head, then select the next bounded offline media reliability slice
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #35 if the RTP bridge contract is superseded
+notes: PR #35 contains the relevant runtime implementation, seven localhost UDP tests, documentation, manifest, and lockfile update. Every PR and push to `aistack/main` runs the complete repository suite rather than affected-module-only selection. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
