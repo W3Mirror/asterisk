@@ -478,6 +478,13 @@ impl MediaSession {
         self.bridge.peek_for_ai()
     }
 
+    /// Borrows the oldest decoded frame waiting for RTP delivery without
+    /// removing it from the bounded queue.
+    #[must_use]
+    pub fn peek_for_rtp(&self) -> Option<&AudioFrame> {
+        self.bridge.peek_for_rtp()
+    }
+
     /// Returns the next queued DTMF notification, if any.
     pub fn pop_dtmf(&mut self) -> Option<Notification> {
         self.pending_dtmf.pop_front()

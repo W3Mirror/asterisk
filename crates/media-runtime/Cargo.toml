@@ -1,0 +1,18 @@
+[package]
+name = "media-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+dtmf = { path = "../dtmf" }
+media-core = { path = "../media-core" }
+rtcp = { path = "../rtcp" }
+
+[dev-dependencies]
+rtp = { path = "../rtp" }
+sip-security = { path = "../sip-security" }
+
+[lints]
+workspace = true
