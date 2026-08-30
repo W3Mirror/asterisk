@@ -57,6 +57,7 @@ name = "media-core"
 version = "0.1.0"
 dependencies = [
  "dtmf",
+ "rtcp",
  "rtp",
  "sip-security",
 ]

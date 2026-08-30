@@ -7,6 +7,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use dtmf::{Deduplicator, DtmfEvent, EncodeError, Notification, ParseError, encode, parse};
+use rtcp::{RtcpPacket, RtcpSession, RtcpSessionConfig, RtcpSessionStats};
 use rtp::{
     ParseConfig, RtpPacket, RtpSession, RtpSessionConfig, RtpSessionStats, SessionError,
     parse_with_config,
@@ -73,6 +74,8 @@ pub enum MediaSessionError {
     InvalidConfig,
     /// RTP parsing, validation, or serialization failed.
     Rtp(SessionError),
+    /// RTCP parsing, validation, or serialization failed.
+    Rtcp(rtcp::SessionError),
     /// The media bridge configuration was invalid.
     Queue(QueueError),
     /// A telephone-event payload was malformed.
@@ -111,6 +114,7 @@ impl Display for MediaSessionError {
         match self {
             Self::InvalidConfig => formatter.write_str("media session bounds are invalid"),
             Self::Rtp(error) => Display::fmt(error, formatter),
+            Self::Rtcp(error) => Display::fmt(error, formatter),
             Self::Queue(error) => Display::fmt(error, formatter),
             Self::Dtmf(error) => Display::fmt(error, formatter),
             Self::DtmfEncode(error) => Display::fmt(error, formatter),
@@ -147,6 +151,12 @@ impl Error for MediaSessionError {}
 impl From<SessionError> for MediaSessionError {
     fn from(error: SessionError) -> Self {
         Self::Rtp(error)
+    }
+}
+
+impl From<rtcp::SessionError> for MediaSessionError {
+    fn from(error: rtcp::SessionError) -> Self {
+        Self::Rtcp(error)
     }
 }
 
@@ -194,6 +204,8 @@ pub enum ReceivedMedia {
 pub struct MediaSessionStats {
     /// RTP packet and jitter statistics.
     pub rtp: RtpSessionStats,
+    /// RTCP packet, loss, jitter, and round-trip statistics.
+    pub rtcp: RtcpSessionStats,
     /// AI bridge queue statistics.
     pub bridge: MediaBridgeStats,
     /// Number of pending DTMF notifications.
@@ -213,6 +225,7 @@ pub struct MediaSessionStats {
 pub struct MediaSession {
     config: MediaSessionConfig,
     rtp: RtpSession,
+    rtcp: RtcpSession,
     bridge: AudioBridge,
     dtmf: Deduplicator,
     pending_dtmf: VecDeque<Notification>,
@@ -254,13 +267,22 @@ impl MediaSession {
         source_policy: SourceIpPolicy,
     ) -> Result<Self, MediaSessionError> {
         let config = config.validate()?;
+        let rtp = RtpSession::new_with_source_policy(
+            config.rtp,
+            initial_sequence,
+            initial_timestamp,
+            source_policy.clone(),
+        )?;
+        let rtcp = RtcpSession::new_with_source_policy(
+            RtcpSessionConfig {
+                max_packet_bytes: config.rtp.max_packet_bytes,
+                remote_ssrc: config.rtp.remote_ssrc,
+            },
+            source_policy,
+        )?;
         Ok(Self {
-            rtp: RtpSession::new_with_source_policy(
-                config.rtp,
-                initial_sequence,
-                initial_timestamp,
-                source_policy,
-            )?,
+            rtp,
+            rtcp,
             bridge: AudioBridge::new(config.bridge)?,
             pending_dtmf: VecDeque::with_capacity(config.max_pending_dtmf),
             config,
@@ -272,10 +294,11 @@ impl MediaSession {
         })
     }
 
-    /// Replaces the observed RTP-source policy while preserving session state.
+    /// Replaces the observed RTP/RTCP-source policy while preserving session state.
     #[must_use]
     pub fn with_source_policy(mut self, source_policy: SourceIpPolicy) -> Self {
-        self.rtp = self.rtp.with_source_policy(source_policy);
+        self.rtp = self.rtp.with_source_policy(source_policy.clone());
+        self.rtcp = self.rtcp.with_source_policy(source_policy);
         self
     }
 
@@ -285,7 +308,7 @@ impl MediaSession {
         self.config
     }
 
-    /// Borrows the observed RTP-source policy applied by source-aware receives.
+    /// Borrows the observed source policy applied by RTP and RTCP receives.
     #[must_use]
     pub fn source_policy(&self) -> &SourceIpPolicy {
         self.rtp.source_policy()
@@ -323,6 +346,33 @@ impl MediaSession {
     ) -> Result<ReceivedMedia, MediaSessionError> {
         self.rtp.authorize_source(source)?;
         self.receive_rtp_inner(input, arrival)
+    }
+
+    /// Accepts one serialized RTCP datagram from the remote media endpoint.
+    pub fn receive_rtcp(
+        &mut self,
+        input: &[u8],
+        arrival: Duration,
+    ) -> Result<Vec<RtcpPacket>, MediaSessionError> {
+        Ok(self.rtcp.receive(input, arrival)?)
+    }
+
+    /// Accepts one serialized RTCP datagram from an observed remote media peer.
+    ///
+    /// Source authorization runs before RTCP parsing, so denied datagrams do
+    /// not alter RTCP counters, SSRC state, or report-quality metrics.
+    pub fn receive_rtcp_from(
+        &mut self,
+        input: &[u8],
+        source: SocketAddr,
+        arrival: Duration,
+    ) -> Result<Vec<RtcpPacket>, MediaSessionError> {
+        Ok(self.rtcp.receive_from(input, source, arrival)?)
+    }
+
+    /// Serializes one RTCP packet using the session's configured datagram bound.
+    pub fn send_rtcp(&mut self, packet: &RtcpPacket) -> Result<Vec<u8>, MediaSessionError> {
+        Ok(self.rtcp.send(packet)?)
     }
 
     fn receive_rtp_inner(
@@ -489,11 +539,12 @@ impl MediaSession {
             .send_with_payload_type(payload_type, &payload, timestamp_increment, marker)?)
     }
 
-    /// Returns current RTP, queue, audio, and DTMF counters.
+    /// Returns current RTP, RTCP, queue, audio, and DTMF counters.
     #[must_use]
     pub fn stats(&self) -> MediaSessionStats {
         MediaSessionStats {
             rtp: self.rtp.stats(),
+            rtcp: self.rtcp.stats(),
             bridge: self.bridge.stats(),
             pending_dtmf: self.pending_dtmf.len(),
             dropped_dtmf: self.dropped_dtmf,
@@ -515,6 +566,7 @@ mod tests {
     use super::*;
     use crate::{AudioCodec, AudioFrame};
     use dtmf::{DtmfDigit, DtmfEvent};
+    use rtcp::{ReceiverReport, ReceptionReport, RtcpPacket, SenderReport};
     use rtp::{RtpPacket, RtpSession, RtpSessionConfig, serialize};
     use sip_security::SourceIpPolicy;
 
@@ -583,6 +635,48 @@ mod tests {
         assert_eq!(packet.payload_type, 0);
         assert_eq!(packet.timestamp, 2_000);
         assert_eq!(media.stats().audio_frames_sent, 1);
+    }
+
+    #[test]
+    fn receives_and_sends_rtcp_quality_reports() {
+        let mut media = session();
+        let sender = RtcpPacket::SenderReport(SenderReport {
+            ssrc: 77,
+            ntp_msw: 1,
+            ntp_lsw: 0,
+            rtp_timestamp: 0,
+            packets_sent: 10,
+            octets_sent: 80,
+            reports: Vec::new(),
+        });
+        let sender_wire = media.send_rtcp(&sender).unwrap();
+        media
+            .receive_rtcp(&sender_wire, Duration::from_secs(10))
+            .unwrap();
+
+        let receiver = RtcpPacket::ReceiverReport(ReceiverReport {
+            ssrc: 77,
+            reports: vec![ReceptionReport {
+                source_ssrc: 20,
+                fraction_lost: 1,
+                cumulative_lost: 3,
+                highest_sequence: 100,
+                jitter: 160,
+                last_sender_report: 1 << 16,
+                delay_since_last_sender_report: 0x0000_8000,
+            }],
+        });
+        let receiver_wire = rtcp::serialize(&receiver).unwrap();
+        media
+            .receive_rtcp(&receiver_wire, Duration::from_secs(12))
+            .unwrap();
+
+        let stats = media.stats();
+        assert_eq!(stats.rtcp.packets_sent, 1);
+        assert_eq!(stats.rtcp.packets_received, 2);
+        assert_eq!(stats.rtcp.packets_lost, 3);
+        assert_eq!(stats.rtcp.jitter, 160);
+        assert_eq!(stats.rtcp.round_trip, Some(Duration::from_millis(1_500)));
     }
 
     #[test]
@@ -664,6 +758,13 @@ mod tests {
             Err(MediaSessionError::Rtp(SessionError::SourceAddressDenied {
                 source: denied
             }))
+        );
+        assert_eq!(media.stats(), baseline);
+        assert_eq!(
+            media.receive_rtcp_from(&[], denied, Duration::ZERO),
+            Err(MediaSessionError::Rtcp(
+                rtcp::SessionError::SourceAddressDenied { source: denied }
+            ))
         );
         assert_eq!(media.stats(), baseline);
 
