@@ -1,0 +1,12 @@
+[package]
+name = "sip-transaction"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+sip-types = { path = "../sip-types" }
+
+[lints]
+workspace = true
