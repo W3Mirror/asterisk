@@ -6,6 +6,12 @@
 //! can wrap this boundary in its runtime of choice and retain Asterisk as a
 //! fallback.
 
+mod media_bridge;
+
+pub use media_bridge::{
+    HumanMediaBridgeError, HumanMediaBridgeRuntime, HumanMediaDirection, HumanMediaForward,
+};
+
 use std::{
     error::Error,
     fmt::{Display, Formatter},
