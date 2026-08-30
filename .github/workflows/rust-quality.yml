@@ -1,0 +1,103 @@
+name: Rust quality
+
+on:
+  pull_request:
+  push:
+    branches:
+      - aistack/main
+  schedule:
+    - cron: "30 2 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-quality-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  workspace:
+    name: Workspace checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Detect Rust workspace
+        id: rust-workspace
+        shell: bash
+        run: |
+          if [[ -f Cargo.toml ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "No Rust workspace exists on this stack layer; skipping workspace checks."
+          fi
+      - name: Install stable Rust
+        if: steps.rust-workspace.outputs.available == 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Check formatting
+        if: steps.rust-workspace.outputs.available == 'true'
+        run: cargo fmt --all -- --check
+      - name: Run workspace tests
+        if: steps.rust-workspace.outputs.available == 'true'
+        run: cargo test --workspace --locked
+      - name: Run workspace clippy
+        if: steps.rust-workspace.outputs.available == 'true'
+        run: cargo clippy --workspace --all-targets --locked
+
+  fuzz:
+    name: Protocol fuzz checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Detect protocol fuzz workspace
+        id: protocol-fuzz
+        shell: bash
+        run: |
+          if [[ -f fuzz/Cargo.toml ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "No protocol fuzz workspace exists on this stack layer; skipping fuzz checks."
+          fi
+      - name: Install nightly Rust
+        if: steps.protocol-fuzz.outputs.available == 'true'
+        uses: dtolnay/rust-toolchain@nightly
+      - name: Install cargo-fuzz
+        if: steps.protocol-fuzz.outputs.available == 'true'
+        run: cargo install cargo-fuzz --version 0.13.2 --locked
+      - name: Check all fuzz targets with address sanitizer
+        if: steps.protocol-fuzz.outputs.available == 'true'
+        run: cargo +nightly fuzz check --fuzz-dir fuzz --sanitizer address --no-cfg-fuzzing
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Detect locked Rust dependencies
+        id: rust-dependencies
+        shell: bash
+        run: |
+          if [[ -f Cargo.toml && -f Cargo.lock ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "No locked Rust dependency graph exists on this stack layer; skipping dependency audit."
+          fi
+      - name: Install stable Rust
+        if: steps.rust-dependencies.outputs.available == 'true'
+        uses: dtolnay/rust-toolchain@stable
+      - name: Audit Rust dependencies
+        if: steps.rust-dependencies.outputs.available == 'true'
+        uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
