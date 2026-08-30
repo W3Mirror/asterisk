@@ -83,6 +83,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
+name = "differential-replay"
+version = "0.1.0"
+dependencies = [
+ "call-api",
+ "call-bridge",
+ "call-core",
+ "call-engine",
+ "media-core",
+ "scenario-replay",
+ "sdp",
+ "sip-transaction",
+ "sip-types",
+]
+
+[[package]]
 name = "dtmf"
 version = "0.1.0"
 
@@ -390,6 +405,7 @@ dependencies = [
  "media-core",
  "rtcp",
  "rtp",
+ "sdp",
  "sip-parser",
  "sip-transaction",
  "sip-types",

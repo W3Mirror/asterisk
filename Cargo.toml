@@ -24,6 +24,7 @@ members = [
   "crates/scenario-replay",
   "crates/property-tests",
   "crates/load-smoke",
+  "crates/differential-replay",
 ]
 
 [workspace.package]

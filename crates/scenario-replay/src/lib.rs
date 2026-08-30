@@ -14,7 +14,7 @@ use std::{
     time::Duration,
 };
 
-use call_api::{CallCommand, CallSnapshot};
+use call_api::{CallCommand, CallSnapshot, NegotiatedAudio};
 use call_bridge::{BridgeError, BridgeEvent, BridgeRegistry, BridgeRegistryConfig, BridgeSnapshot};
 use call_core::{BridgeId, CallId, LegId, LifecycleEvent, StreamId};
 use call_engine::{CallEngine, EngineError, EngineOutput, SendAction};
@@ -22,6 +22,7 @@ use media_core::{
     AudioFrame, MediaSession, MediaSessionError, MediaSessionStats, PushOutcome, ReceivedMedia,
 };
 use rtcp::RtcpPacket;
+use sdp::SdpError;
 use sip_parser::ParseError;
 use sip_transaction::TransportReliability;
 use sip_types::SipMessage;
@@ -113,6 +114,15 @@ pub enum ScenarioStep {
         call_id: CallId,
         /// Command exposed through the internal API contract.
         command: CallCommand,
+    },
+    /// Parse and retain one local/remote SDP audio negotiation result.
+    NegotiateAudio {
+        /// Stable application call identifier.
+        call_id: CallId,
+        /// Serialized local SDP offer or answer.
+        local_sdp: Vec<u8>,
+        /// Serialized remote SDP offer or answer.
+        remote_sdp: Vec<u8>,
     },
     /// Remove one terminal call and all signaling resources owned by it.
     ReclaimTerminalCall {
@@ -207,6 +217,7 @@ impl ScenarioStep {
             | Self::ReceiveRtp { at, .. }
             | Self::ReceiveRtcp { at, .. } => Some(*at),
             Self::ApplyCallCommand { .. }
+            | Self::NegotiateAudio { .. }
             | Self::ReclaimTerminalCall { .. }
             | Self::CreateBridge { .. }
             | Self::BeginHumanLeg { .. }
@@ -233,6 +244,14 @@ impl ScenarioStep {
                 .samples
                 .len()
                 .checked_mul(size_of::<i16>())
+                .or(Some(usize::MAX)),
+            Self::NegotiateAudio {
+                local_sdp,
+                remote_sdp,
+                ..
+            } => local_sdp
+                .len()
+                .checked_add(remote_sdp.len())
                 .or(Some(usize::MAX)),
             Self::ApplyCallCommand { .. }
             | Self::ReclaimTerminalCall { .. }
@@ -293,6 +312,8 @@ pub enum StepOutcome {
     },
     /// Snapshot removed by explicit terminal resource reclamation.
     CallReclaimed(CallSnapshot),
+    /// Audio offer/answer result retained on one call.
+    MediaNegotiated(NegotiatedAudio),
     /// Ordered event emitted by one bridge transition.
     BridgeTransition(BridgeEvent),
     /// Snapshot removed by explicit terminal bridge reclamation.
@@ -342,6 +363,7 @@ impl ReplayReport {
             .filter_map(|step| match &step.outcome {
                 StepOutcome::Engine { events, .. } => Some(events.iter()),
                 StepOutcome::CallReclaimed(_)
+                | StepOutcome::MediaNegotiated(_)
                 | StepOutcome::BridgeTransition(_)
                 | StepOutcome::BridgeReclaimed(_)
                 | StepOutcome::MediaReceived(_)
@@ -362,6 +384,7 @@ impl ReplayReport {
                 StepOutcome::BridgeTransition(event) => Some(event),
                 StepOutcome::Engine { .. }
                 | StepOutcome::CallReclaimed(_)
+                | StepOutcome::MediaNegotiated(_)
                 | StepOutcome::BridgeReclaimed(_)
                 | StepOutcome::MediaReceived(_)
                 | StepOutcome::RtcpReceived(_)
@@ -379,6 +402,7 @@ impl ReplayReport {
             .filter_map(|step| match &step.outcome {
                 StepOutcome::Engine { actions, .. } => Some(actions.iter()),
                 StepOutcome::CallReclaimed(_)
+                | StepOutcome::MediaNegotiated(_)
                 | StepOutcome::BridgeTransition(_)
                 | StepOutcome::BridgeReclaimed(_)
                 | StepOutcome::MediaReceived(_)
@@ -506,33 +530,13 @@ impl ReplayRunner {
                 source,
                 reliability,
                 wire,
-            } => {
-                let message = sip_parser::parse(wire)?;
-                let output = match message {
-                    SipMessage::Request(request) => {
-                        self.engine
-                            .receive_request(*source, request, *at, *reliability)?
-                    }
-                    SipMessage::Response(response) => {
-                        self.engine.receive_response(response, *at)?
-                    }
-                };
-                Ok(engine_outcome(None, output))
-            }
+            } => self.receive_sip(*at, *source, *reliability, wire),
             ScenarioStep::OriginateSip {
                 at,
                 destination,
                 reliability,
                 wire,
-            } => {
-                let SipMessage::Request(request) = sip_parser::parse(wire)? else {
-                    return Err(StepError::ExpectedRequest);
-                };
-                let (call_id, output) =
-                    self.engine
-                        .originate(request, *destination, *at, *reliability)?;
-                Ok(engine_outcome(Some(call_id), output))
-            }
+            } => self.originate_sip(*at, *destination, *reliability, wire),
             ScenarioStep::RespondToInvite {
                 at,
                 call_id,
@@ -553,6 +557,15 @@ impl ReplayRunner {
                 None,
                 self.engine.apply_call_command(call_id, *command)?,
             )),
+            ScenarioStep::NegotiateAudio {
+                call_id,
+                local_sdp,
+                remote_sdp,
+            } => Ok(StepOutcome::MediaNegotiated(self.engine.negotiate_audio(
+                call_id,
+                &sdp::parse(local_sdp)?,
+                &sdp::parse(remote_sdp)?,
+            )?)),
             ScenarioStep::ReclaimTerminalCall { call_id } => Ok(StepOutcome::CallReclaimed(
                 self.engine.reclaim_terminal_call(call_id)?,
             )),
@@ -597,6 +610,39 @@ impl ReplayRunner {
                 Ok(StepOutcome::AudioRtpEmitted(media.next_audio_rtp(*marker)?))
             }
         }
+    }
+
+    fn receive_sip(
+        &mut self,
+        at: Duration,
+        source: SocketAddr,
+        reliability: TransportReliability,
+        wire: &[u8],
+    ) -> Result<StepOutcome, StepError> {
+        let output = match sip_parser::parse(wire)? {
+            SipMessage::Request(request) => {
+                self.engine
+                    .receive_request(source, request, at, reliability)?
+            }
+            SipMessage::Response(response) => self.engine.receive_response(response, at)?,
+        };
+        Ok(engine_outcome(None, output))
+    }
+
+    fn originate_sip(
+        &mut self,
+        at: Duration,
+        destination: SocketAddr,
+        reliability: TransportReliability,
+        wire: &[u8],
+    ) -> Result<StepOutcome, StepError> {
+        let SipMessage::Request(request) = sip_parser::parse(wire)? else {
+            return Err(StepError::ExpectedRequest);
+        };
+        let (call_id, output) = self
+            .engine
+            .originate(request, destination, at, reliability)?;
+        Ok(engine_outcome(Some(call_id), output))
     }
 
     fn create_bridge(
@@ -757,6 +803,8 @@ pub enum StepError {
     MediaNotConfigured,
     /// SIP wire parsing failed.
     SipParse(ParseError),
+    /// SDP offer/answer parsing failed.
+    SdpParse(SdpError),
     /// SIP transaction/dialog/call orchestration failed.
     Engine(EngineError),
     /// Bridge state or resource validation failed.
@@ -774,6 +822,7 @@ impl Display for StepError {
                 formatter.write_str("scenario uses media without a configured media session")
             }
             Self::SipParse(error) => Display::fmt(error, formatter),
+            Self::SdpParse(error) => Display::fmt(error, formatter),
             Self::Engine(error) => Display::fmt(error, formatter),
             Self::Bridge(error) => Display::fmt(error, formatter),
             Self::Media(error) => Display::fmt(error, formatter),
@@ -785,6 +834,7 @@ impl Error for StepError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::SipParse(error) => Some(error),
+            Self::SdpParse(error) => Some(error),
             Self::Engine(error) => Some(error),
             Self::Bridge(error) => Some(error),
             Self::Media(error) => Some(error),
@@ -796,6 +846,12 @@ impl Error for StepError {
 impl From<ParseError> for StepError {
     fn from(error: ParseError) -> Self {
         Self::SipParse(error)
+    }
+}
+
+impl From<SdpError> for StepError {
+    fn from(error: SdpError) -> Self {
+        Self::SdpParse(error)
     }
 }
 

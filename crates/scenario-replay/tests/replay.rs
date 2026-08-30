@@ -110,6 +110,80 @@ fn replays_answered_fixture_across_parser_transaction_dialog_call_and_events() {
 }
 
 #[test]
+fn replays_audio_negotiation_and_retains_the_result_on_the_call() {
+    let call_id = CallId::from_sequence(1);
+    let scenario = Scenario::new(
+        "inbound-audio-negotiation",
+        vec![
+            ScenarioStep::ReceiveSip {
+                at: Duration::ZERO,
+                source: address(5060),
+                reliability: TransportReliability::Unreliable,
+                wire: sip_fixture(include_str!("fixtures/inbound_answered/invite.sip")),
+            },
+            ScenarioStep::NegotiateAudio {
+                call_id: call_id.clone(),
+                local_sdp: b"v=0\r\no=rust 1 1 IN IP4 192.0.2.10\r\ns=Rust\r\nc=IN IP4 192.0.2.10\r\nt=0 0\r\nm=audio 4000 RTP/AVP 0 8\r\na=rtpmap:0 PCMU/8000\r\na=rtpmap:8 PCMA/8000\r\na=sendrecv\r\n".to_vec(),
+                remote_sdp: b"v=0\r\no=peer 8 9 IN IP4 203.0.113.20\r\ns=Peer\r\nc=IN IP4 203.0.113.20\r\nt=0 0\r\nm=audio 9000 RTP/AVP 96\r\na=rtpmap:96 PCMU/8000\r\na=sendrecv\r\n".to_vec(),
+            },
+        ],
+    );
+
+    let report = runner().run(&scenario).unwrap();
+
+    let StepOutcome::MediaNegotiated(ref negotiated) = report.steps[1].outcome else {
+        panic!("expected negotiated audio outcome");
+    };
+    assert_eq!(negotiated.local_codec.name, "PCMU");
+    assert_eq!(negotiated.remote_codec.name, "PCMU");
+    assert_eq!(report.calls[0].media.as_ref(), Some(negotiated));
+}
+
+#[test]
+fn rejected_sdp_parse_is_indexed_and_does_not_commit_the_call() {
+    let peer = address(5060);
+    let invite = sip_fixture(include_str!("fixtures/inbound_answered/invite.sip"));
+    let invalid = Scenario::new(
+        "invalid-sdp-after-invite",
+        vec![
+            ScenarioStep::ReceiveSip {
+                at: Duration::ZERO,
+                source: peer,
+                reliability: TransportReliability::Unreliable,
+                wire: invite.clone(),
+            },
+            ScenarioStep::NegotiateAudio {
+                call_id: CallId::from_sequence(1),
+                local_sdp: b"not sdp".to_vec(),
+                remote_sdp: b"not sdp either".to_vec(),
+            },
+        ],
+    );
+    let corrected = Scenario::new(
+        "clean-after-invalid-sdp",
+        vec![ScenarioStep::ReceiveSip {
+            at: Duration::ZERO,
+            source: peer,
+            reliability: TransportReliability::Unreliable,
+            wire: invite,
+        }],
+    );
+    let mut replay = runner();
+
+    assert!(matches!(
+        replay.run(&invalid),
+        Err(ReplayError::Step {
+            index: 1,
+            source: StepError::SdpParse(_),
+        })
+    ));
+    assert_eq!(
+        replay.run(&corrected).unwrap().calls[0].id,
+        CallId::from_sequence(1)
+    );
+}
+
+#[test]
 fn replays_media_fixture_with_bounded_backpressure_and_deterministic_output() {
     let media_config = MediaSessionConfig {
         rtp: RtpSessionConfig {
@@ -799,6 +873,23 @@ fn rejects_oversized_fixtures_before_mutating_the_engine() {
 
     assert_eq!(
         replay.run(&scenario),
+        Err(ReplayError::FixtureTooLarge {
+            index: 0,
+            actual: 9,
+            maximum: 8,
+        })
+    );
+
+    let negotiation = Scenario::new(
+        "bounded-combined-sdp",
+        vec![ScenarioStep::NegotiateAudio {
+            call_id: CallId::from_sequence(1),
+            local_sdp: vec![b'x'; 4],
+            remote_sdp: vec![b'y'; 5],
+        }],
+    );
+    assert_eq!(
+        replay.run(&negotiation),
         Err(ReplayError::FixtureTooLarge {
             index: 0,
             actual: 9,

@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-083 — PR #32 published with hosted validation running
-**Last checkpoint (UTC):** 2026-08-30T22:59:36Z
+**Current checkpoint:** CP-085 — synthetic differential replay locally green
+**Last checkpoint (UTC):** 2026-08-30T23:14:56Z
 **Active phase:** Phase 1 — Rust media engine
-**Active milestone:** Deterministic signaling load and terminal reclamation<br>
-**Next resume action:** Push CP-083 and verify Workspace/SIPp/load, Protocol fuzz, and Dependency audit checks on PR #32's final head
-**Active PR:** [#32](https://github.com/W3Mirror/asterisk/pull/32); branch `rust-load-reclamation-smoke` targets `sipp-local-integration`
+**Active milestone:** Synthetic semantic differential replay<br>
+**Next resume action:** Commit and publish `synthetic-differential-replay` as stacked PR #33 against `rust-load-reclamation-smoke`, then verify Workspace/SIPp/load, Protocol fuzz, and Dependency audit checks on its final head
+**Active PR:** pending publication; branch `synthetic-differential-replay` targets `rust-load-reclamation-smoke`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-32`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-33`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -3879,6 +3879,48 @@ blockers: Hosted validation is pending on the publication checkpoint's final hea
 next_action: Push this publication checkpoint and verify all three hosted Rust quality gates on the final PR #32 head, then continue with the next bounded offline differential or media-load slice
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #32 if the load harness contract is superseded
 notes: PR #32 contains the load harness, its four tests, CLI, documentation, lockfile, and CI wiring. Every PR and `aistack/main` push runs the 512-call smoke; the 16,384-call run is scheduled-only. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-084 — PR #32 hosted load validation green
+
+~~~yaml
+checkpoint_id: CP-084
+recorded_at_utc: 2026-08-30T23:14:56Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Deterministic signaling load and terminal reclamation
+scope: Verify the published signaling load/reclamation harness through every repository-hosted Rust quality gate before starting differential replay
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-32
+branch: rust-load-reclamation-smoke
+base_branch: sipp-local-integration
+pr: https://github.com/W3Mirror/asterisk/pull/32
+head_sha: 99ff881ab290f30dcdbc2d69d1f7a484c31b7616
+evidence: PR #32 is OPEN/non-draft/CLEAN against exact base `sipp-local-integration`, with local, origin, and GitHub head parity; hosted run `33340618537` passed Workspace checks in 51 seconds, including formatting, all 164 tests, the three local SIPp scenarios, the 512-call reclamation smoke, and workspace Clippy; Protocol fuzz checks passed in 50 seconds across all six address-sanitizer targets; Dependency audit passed in 2 minutes 46 seconds
+blockers: This deterministic harness is not real concurrency/performance, media load, Asterisk, or provider evidence; differential replay, media/WebSocket load, long-duration soak/memory, runtime human-leg origination/RTP composition, sanitized captures, and real provider interoperability remain active goal work; Asterisk remains the fallback and Rust traffic stays disabled
+next_action: Create the next tracked stacked worktree from `rust-load-reclamation-smoke` and implement the smallest bounded synthetic differential-replay slice
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #32 if the load harness contract is superseded
+notes: Relevant tests ship with the load harness. Hosted PR CI and pushes to `aistack/main` continue to run the complete repository suite rather than affected-module selection. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-085 — synthetic differential replay locally green
+
+~~~yaml
+checkpoint_id: CP-085
+recorded_at_utc: 2026-08-30T23:14:56Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Synthetic semantic differential replay
+scope: Add one bounded, versioned semantic comparison path for deterministic Rust reports and future converted Asterisk/provider captures, beginning with an explicitly synthetic INVITE/SDP/CANCEL oracle
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-33
+branch: synthetic-differential-replay
+base_branch: rust-load-reclamation-smoke
+pr: pending publication
+head_sha: 99ff881ab290f30dcdbc2d69d1f7a484c31b7616 before the implementation commit
+evidence: New `differential-replay` workspace package normalizes application call/bridge IDs, SIP Call-IDs, endpoints, transport/dialog-instance values, SDP addresses/ports/payload IDs, and timing while retaining ordered SIP status and complete CSeq, lifecycle/bridge events, call/bridge state, negotiated codec/direction, media counters, and cleanup; bounded versioned fixtures and mismatch diagnostics share one path for synthetic and future sanitized capture conversion; four differential tests cover oracle parity, environment-value removal, bounded semantic differences, and invalid fixture/config bounds; `scenario-replay` now parses and atomically retains SDP negotiation outcomes, with direct tests for successful retention, indexed invalid-SDP rollback, and combined local/remote SDP bounds; focused tests pass (4 differential and 15 scenario-replay), all 170 locked workspace tests pass, strict changed-package Clippy with `--no-deps -- -D warnings`, workspace Clippy/all targets, formatting, workflow YAML parsing, and `git diff --check` pass
+blockers: The checked-in oracle is synthetic and is not Asterisk/provider interoperability evidence; sanitized real captures, explained material differences, media/WebSocket load, long-duration soak/memory, runtime human-leg SIP origination/RTP composition, real provider interoperability, and rollback proof remain active goal work; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Commit and publish `synthetic-differential-replay` as stacked PR #33 against `rust-load-reclamation-smoke`, verify hosted Workspace/SIPp/load, Protocol fuzz, and Dependency audit checks on its final head, then select the next smallest media-load or runtime-composition slice
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the differential-replay PR if the fixture contract is superseded
+notes: Relevant code, five fixture files, six directly affected-module tests, documentation, and lockfile changes ship together. Every PR and push to `aistack/main` runs the complete suite; no affected-module-only selector is implemented. The synthetic oracle proves only the comparison machinery, and mismatches remain investigation evidence rather than automatic Rust defects. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
