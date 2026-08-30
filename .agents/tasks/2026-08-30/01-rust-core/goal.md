@@ -1,12 +1,12 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-028 — Provider routing profile implementation committed
-**Last checkpoint (UTC):** 2026-08-30T14:40:00Z
+**Current checkpoint:** CP-029 — PR11 published and stacked remote parity verified
+**Last checkpoint (UTC):** 2026-08-30T14:48:00Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Milestone 4 — Dialog + SDP + Basic Calls<br>
-**Next resume action:** Publish PR11 against sip-auth-routing and verify exact remote/PR parity
-**Active PR:** pending; branch `provider-routing` targets `sip-auth-routing`
+**Next resume action:** Continue with provider interoperability evidence and separate bounded security/load slices while preserving Asterisk fallback
+**Active PR:** [#11](https://github.com/W3Mirror/asterisk/pull/11); branch `provider-routing` targets `sip-auth-routing`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-11-provider-routing`
 **Primary language:** Rust  
@@ -2564,7 +2564,7 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 9 | [#9](https://github.com/W3Mirror/asterisk/pull/9) | `sip-engine-runtime` | `media-session-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-9-sip-runtime` | Milestone 4 runtime integration: bounded blocking UDP/TCP transport dispatch into `CallEngine`, outbound origination, application response wrappers, and atomic delivery | in_progress | `be51704c0` | workspace format/tests/clippy green; `git diff --check` passes; local HEAD equals origin/sip-engine-runtime; PR #9 is OPEN against media-session-core with matching head/base; no provider/runtime or live-call evidence; Asterisk fallback remains active | Add the next bounded offline-verifiable security/provider slice while preserving the runtime/provider evidence gate |
 
 | 10 | [#10](https://github.com/W3Mirror/asterisk/pull/10) | sip-auth-routing | sip-engine-runtime | /home/ashutosh/.worktrees/w3mirror/asterisk/pr-10-sip-auth | Milestone 4 security/provider primitive: bounded SIP Digest challenge/authorization parsing, RFC 2617 MD5 auth/auth-int responses, redacted credentials, constant-time verification, and bounded failure throttling | in_progress | 80e0368cc | workspace format/tests/clippy green; local HEAD equals origin/sip-auth-routing at 80e0368cc; PR #10 is OPEN/non-draft against sip-engine-runtime at 9cac8d21f; no GitHub checks are configured; no provider/runtime or live-call evidence; Asterisk fallback remains active | Preserve Asterisk fallback and continue with provider-routing/interoperability evidence and separate bounded slices |
-| 11 | pending | provider-routing | sip-auth-routing | /home/ashutosh/.worktrees/w3mirror/asterisk/pr-11-provider-routing | Milestone 4 provider abstraction: bounded provider profiles for signaling/media/auth/NAT policy plus deterministic inbound/outbound routing and mandatory Asterisk fallback | in_progress | ec386d831 | focused provider-routing tests and clippy green; PR not yet published; provider profile is repository-derived only; no provider/runtime or live-call evidence; Asterisk fallback remains active | Publish PR11 against sip-auth-routing and verify exact remote/PR parity |
+| 11 | [#11](https://github.com/W3Mirror/asterisk/pull/11) | provider-routing | sip-auth-routing | /home/ashutosh/.worktrees/w3mirror/asterisk/pr-11-provider-routing | Milestone 4 provider abstraction: bounded provider profiles for signaling/media/auth/NAT policy plus deterministic inbound/outbound routing and mandatory Asterisk fallback | in_progress | 068b69a4c | workspace format/tests/clippy green; local HEAD equals origin/provider-routing at 068b69a4c; PR #11 is OPEN/non-draft against sip-auth-routing at 5677ca7ed; no GitHub checks are configured; provider profile is repository-derived only; no provider/runtime or live-call evidence; Asterisk fallback remains active | Preserve Asterisk fallback and continue with provider interoperability evidence and security/load slices |
 
 ### CP-026 — PR10 published and stacked remote parity verified
 
@@ -2627,6 +2627,27 @@ blockers: No Asterisk binary, provider credentials/runtime, SIPp/live-call path,
 next_action: Publish branch provider-routing and create stacked PR11 against sip-auth-routing
 rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
 notes: The route table defaults unknown routes to Asterisk and rejects profiles without an Asterisk fallback; live provider interoperability remains unavailable
+~~~
+
+### CP-029 — PR11 published and stacked remote parity verified
+
+~~~yaml
+checkpoint_id: CP-029
+recorded_at_utc: 2026-08-30T14:48:00Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Milestone 4 — Dialog + SDP + Basic Calls
+scope: Publish bounded provider profiles and deterministic routing as stacked PR11, then verify exact branch, base, head, worktree, and validation state
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-11-provider-routing
+branch: provider-routing
+base_branch: sip-auth-routing
+pr: https://github.com/W3Mirror/asterisk/pull/11
+head_sha: 068b69a4c6f9b0f82e24e390b3a8c7efa42b0565
+evidence: cargo fmt --all -- --check passed; cargo test --workspace passed; cargo clippy --workspace --all-targets exited 0 with existing documentation/pedantic warnings; git diff --check origin/sip-auth-routing...HEAD passed; local HEAD equals origin/provider-routing; gh pr view 11 reports OPEN/non-draft with base sip-auth-routing at 5677ca7ed and matching head; no GitHub checks are configured
+blockers: No Asterisk binary, provider credentials/runtime, SIPp/live-call path, or sanitized SIP/SDP/RTP fixtures are available from this host; Asterisk routing remains the fallback
+next_action: Collect sanitized provider interoperability/runtime evidence before enabling any Rust route, then add the next bounded security or media-interop slice
+rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
+notes: PR11 is independently reviewable and unmerged; profile values are repository-derived declarations only and do not establish a live Meta/provider relationship
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
