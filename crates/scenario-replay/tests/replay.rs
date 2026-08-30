@@ -7,10 +7,12 @@ use std::{
 
 use call_core::{CallEventKind, CallId, CallState};
 use call_engine::{CallEngine, EngineConfig};
+use dtmf::{DtmfDigit, DtmfEvent, Notification, encode as encode_dtmf};
 use media_core::{
     AudioCodec, AudioFrame, MediaSession, MediaSessionConfig, PushOutcome, ReceivedMedia,
 };
-use rtp::{RtpPacket, RtpSessionConfig, serialize};
+use rtcp::{ReceiverReport, RtcpPacket, serialize as serialize_rtcp};
+use rtp::{RtpPacket, RtpSessionConfig, serialize as serialize_rtp};
 use scenario_replay::{
     ReplayConfig, ReplayError, ReplayRunner, Scenario, ScenarioStep, StepError, StepOutcome,
 };
@@ -119,7 +121,7 @@ fn replays_media_fixture_with_bounded_backpressure_and_deterministic_output() {
         ..MediaSessionConfig::default()
     };
     let media = MediaSession::new(media_config, 7, 1_000).unwrap();
-    let packet = serialize(&RtpPacket {
+    let packet = serialize_rtp(&RtpPacket {
         padding: false,
         marker: true,
         payload_type: 0,
@@ -171,6 +173,187 @@ fn replays_media_fixture_with_bounded_backpressure_and_deterministic_output() {
     };
     assert_eq!(output[1] & 0x7f, 0);
     assert_eq!(report.media.unwrap().audio_frames_received, 1);
+}
+
+#[test]
+fn replay_fixture_covers_retransmission_cancel_failure_and_timer_reclamation() {
+    let peer = address(5060);
+    let invite = sip_fixture(include_str!("fixtures/inbound_cancelled/invite.sip"));
+    let scenario = Scenario::new(
+        "inbound-retransmit-cancel",
+        vec![
+            ScenarioStep::ReceiveSip {
+                at: Duration::ZERO,
+                source: peer,
+                reliability: TransportReliability::Unreliable,
+                wire: invite.clone(),
+            },
+            ScenarioStep::ReceiveSip {
+                at: Duration::from_millis(1),
+                source: peer,
+                reliability: TransportReliability::Unreliable,
+                wire: invite,
+            },
+            ScenarioStep::ReceiveSip {
+                at: Duration::from_millis(2),
+                source: peer,
+                reliability: TransportReliability::Unreliable,
+                wire: sip_fixture(include_str!("fixtures/inbound_cancelled/cancel.sip")),
+            },
+            ScenarioStep::Poll {
+                at: Duration::from_secs(33),
+            },
+        ],
+    );
+
+    let report = runner().run(&scenario).unwrap();
+
+    assert_eq!(report.calls.len(), 1);
+    assert_eq!(report.calls[0].state, CallState::Ended);
+    assert_eq!(report.transaction_count, 0);
+    assert_eq!(
+        report
+            .events()
+            .into_iter()
+            .map(|event| event.kind)
+            .collect::<Vec<_>>(),
+        vec![
+            CallEventKind::Created,
+            CallEventKind::InviteReceived,
+            CallEventKind::Failed,
+        ]
+    );
+    assert_eq!(
+        report
+            .actions()
+            .into_iter()
+            .filter_map(|action| match &action.message {
+                SipMessage::Response(response) => Some(response.status_code),
+                SipMessage::Request(_) => None,
+            })
+            .collect::<Vec<_>>(),
+        vec![100, 100, 200, 487, 487]
+    );
+}
+
+fn media_runner() -> ReplayRunner {
+    let media_config = MediaSessionConfig {
+        rtp: RtpSessionConfig {
+            payload_type: 0,
+            local_ssrc: 11,
+            remote_ssrc: Some(22),
+            clock_rate: 8_000,
+            ..RtpSessionConfig::default()
+        },
+        audio_codec: AudioCodec::Pcmu,
+        ..MediaSessionConfig::default()
+    };
+    runner().with_media(MediaSession::new(media_config, 7, 1_000).unwrap())
+}
+
+fn rtp_packet(sequence_number: u16, timestamp: u32, payload_type: u8, payload: Vec<u8>) -> Vec<u8> {
+    serialize_rtp(&RtpPacket {
+        padding: false,
+        marker: sequence_number == 20,
+        payload_type,
+        sequence_number,
+        timestamp,
+        ssrc: 22,
+        csrcs: Vec::new(),
+        extension: None,
+        payload,
+    })
+    .unwrap()
+}
+
+fn dtmf_packet(sequence_number: u16, duration: u16) -> Vec<u8> {
+    let payload = encode_dtmf(DtmfEvent {
+        digit: DtmfDigit::Five,
+        end: false,
+        reserved: false,
+        volume: 10,
+        duration,
+    })
+    .unwrap()
+    .to_vec();
+    rtp_packet(sequence_number, 640, 101, payload)
+}
+
+fn receiver_report() -> (RtcpPacket, Vec<u8>) {
+    let packet = RtcpPacket::ReceiverReport(ReceiverReport {
+        ssrc: 22,
+        reports: Vec::new(),
+    });
+    let wire = serialize_rtcp(&packet).unwrap();
+    (packet, wire)
+}
+
+#[test]
+fn replays_loss_reordering_dtmf_deduplication_and_rtcp_reports() {
+    let peer = address(10_000);
+    let (expected_rtcp, rtcp_wire) = receiver_report();
+    let scenario = Scenario::new(
+        "media-loss-reordering-and-control",
+        vec![
+            ScenarioStep::ReceiveRtp {
+                at: Duration::from_millis(20),
+                source: peer,
+                wire: rtp_packet(20, 160, 0, vec![0xff; 160]),
+            },
+            ScenarioStep::ReceiveRtp {
+                at: Duration::from_millis(40),
+                source: peer,
+                wire: rtp_packet(22, 480, 0, vec![0xff; 160]),
+            },
+            ScenarioStep::ReceiveRtp {
+                at: Duration::from_millis(60),
+                source: peer,
+                wire: rtp_packet(21, 320, 0, vec![0xff; 160]),
+            },
+            ScenarioStep::ReceiveRtp {
+                at: Duration::from_millis(80),
+                source: peer,
+                wire: dtmf_packet(23, 160),
+            },
+            ScenarioStep::ReceiveRtp {
+                at: Duration::from_millis(100),
+                source: peer,
+                wire: dtmf_packet(24, 320),
+            },
+            ScenarioStep::ReceiveRtcp {
+                at: Duration::from_millis(120),
+                source: peer,
+                wire: rtcp_wire,
+            },
+        ],
+    );
+    let report = media_runner().run(&scenario).unwrap();
+
+    assert!(matches!(
+        report.steps[3].outcome,
+        StepOutcome::MediaReceived(ReceivedMedia::Dtmf {
+            notification: Some(Notification::Started(DtmfDigit::Five)),
+            queued: true,
+        })
+    ));
+    assert!(matches!(
+        report.steps[4].outcome,
+        StepOutcome::MediaReceived(ReceivedMedia::Dtmf {
+            notification: None,
+            queued: false,
+        })
+    ));
+    assert!(matches!(
+        report.steps[5].outcome,
+        StepOutcome::RtcpReceived(ref packets)
+            if packets == &vec![expected_rtcp]
+    ));
+    let stats = report.media.unwrap();
+    assert_eq!(stats.rtp.received.packets_received, 5);
+    assert_eq!(stats.rtp.received.packets_lost, 1);
+    assert_eq!(stats.dtmf_notifications, 1);
+    assert_eq!(stats.pending_dtmf, 1);
+    assert_eq!(stats.rtcp.packets_received, 1);
 }
 
 #[test]
