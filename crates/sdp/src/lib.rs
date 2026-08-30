@@ -116,7 +116,7 @@ impl SessionDescription {
                 media: "audio".to_owned(),
                 port,
                 protocol: "RTP/AVP".to_owned(),
-                formats: vec![0, 8],
+                formats: vec![0, 8, 101],
                 connection: None,
                 direction: None,
                 codecs: vec![
@@ -133,6 +133,13 @@ impl SessionDescription {
                         clock_rate: 8_000,
                         channels: 1,
                         fmtp: None,
+                    },
+                    Codec {
+                        payload_type: 101,
+                        name: "telephone-event".to_owned(),
+                        clock_rate: 8_000,
+                        channels: 1,
+                        fmtp: Some("0-16".to_owned()),
                     },
                 ],
                 attributes: Vec::new(),
@@ -383,6 +390,9 @@ fn parse_rtpmap(name: &str, argument: Option<&str>) -> Result<Option<(u8, Codec)
     let payload_type = payload.parse().map_err(|_| SdpError::InvalidPayloadType)?;
     let mut parts = mapping.split('/');
     let codec_name = parts.next().ok_or(SdpError::InvalidCodec)?;
+    if codec_name.is_empty() {
+        return Err(SdpError::InvalidCodec);
+    }
     let clock_rate = parts
         .next()
         .ok_or(SdpError::InvalidCodec)?

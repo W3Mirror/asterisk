@@ -157,6 +157,9 @@ pub fn parse_with_config(input: &[u8], config: ParseConfig) -> Result<SipMessage
             return Err(ParseError::InvalidVersion);
         }
         let reason = fields.next().unwrap_or_default().to_owned();
+        if reason.bytes().any(|byte| byte.is_ascii_control()) {
+            return Err(ParseError::InvalidStartLine);
+        }
         return Ok(SipMessage::Response(SipResponse {
             version: "SIP/2.0".to_owned(),
             status_code: code,
@@ -298,6 +301,10 @@ mod tests {
         assert!(matches!(
             parse(b"SIP/2.0 200 OK\r\nContent-Length: 3\r\n\r\nno"),
             Err(ParseError::BodyLengthMismatch { .. })
+        ));
+        assert!(matches!(
+            parse(b"SIP/2.0 200 O\x01K\r\nContent-Length: 0\r\n\r\n"),
+            Err(ParseError::InvalidStartLine)
         ));
     }
 
