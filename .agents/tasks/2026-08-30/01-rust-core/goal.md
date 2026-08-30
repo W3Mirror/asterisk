@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-069 — PR #27 hosted validation green
-**Last checkpoint (UTC):** 2026-08-30T21:42:25Z
+**Current checkpoint:** CP-070 — bounded call-bridge foundation locally green
+**Last checkpoint (UTC):** 2026-08-30T21:52:13Z
 **Active phase:** Phase 1 — Rust media engine
-**Active milestone:** Offline deterministic verification foundation across Milestones 2–5<br>
-**Next resume action:** Create the next tracked stacked-PR worktree from `origin/sip-scenario-transfer-reclamation` and design the bounded multi-leg bridge/leg state model with failure and cleanup invariants
-**Active PR:** [#27](https://github.com/W3Mirror/asterisk/pull/27); branch `sip-scenario-transfer-reclamation` targets `sip-scenario-faults`
+**Active milestone:** Multi-leg AI-to-human bridge control-plane foundation<br>
+**Next resume action:** Publish `call-bridge-core` against `sip-scenario-transfer-reclamation`, verify all hosted checks, then integrate deterministic bridge transitions into scenario replay
+**Active PR:** Pending publication for branch `call-bridge-core` targeting `sip-scenario-transfer-reclamation`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-27`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-28`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -3585,6 +3585,27 @@ blockers: Multi-leg human bridging still requires a bounded bridge/leg state mod
 next_action: Push this green-check reconciliation commit, verify the final head, then create the next tracked worktree/branch from `origin/sip-scenario-transfer-reclamation` for the bounded bridge/leg model
 rollback: Keep all call routing and media on Asterisk; do not enable Rust traffic; close PR #27 if the reclamation contract is superseded
 notes: Only known non-blocking action-runtime deprecation annotations remain. Property tests, local SIPp, differential replay, load, soak, and real provider interoperability remain active follow-up layers.
+~~~
+
+### CP-070 — bounded call-bridge foundation locally green
+
+~~~yaml
+checkpoint_id: CP-070
+recorded_at_utc: 2026-08-30T21:52:13Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Multi-leg AI-to-human bridge control-plane foundation
+scope: Add a bounded provider-neutral bridge and leg state model that retains one inbound caller and AI stream while establishing, activating, failing, ending, and reclaiming a server-originated human second leg
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-28
+branch: call-bridge-core
+base_branch: sip-scenario-transfer-reclamation
+pr: pending publication
+head_sha: bfb0d7421e8273759214a1088c01d3b9a020d8e4 before the implementation commit
+evidence: New workspace crate `call-bridge` owns exclusive caller, leg, AI-stream, and optional human-leg identities; event and bridge bounds are validated before mutation; AI-to-human-to-AI switching retains the original caller; pending and active human failures restore AI and release human endpoints; terminal reclamation releases every endpoint and the registry slot; five focused bridge tests pass; `cargo test --workspace --locked` passes all 144 tests; strict new-crate Clippy with `--no-deps -- -D warnings`, workspace Clippy/all targets, formatting, and `git diff --check` pass
+blockers: Runtime composition still must originate the outbound human SIP transaction and connect bridge state to RTP forwarding; deterministic scenario replay, property invariants, local SIPp, differential replay, load, soak, and real provider/Asterisk evidence remain required; provider evidence is mandatory before enabling Rust traffic but does not block offline implementation
+next_action: Commit and publish this bridge foundation as a stacked PR against `sip-scenario-transfer-reclamation`, verify hosted Workspace, Protocol fuzz, and Dependency audit checks on its final head, then integrate deterministic bridge transitions into scenario replay
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the bridge PR if its control contract is superseded
+notes: Tests ship in the same branch as the relevant bridge code. Current hosted CI remains intentionally stronger than affected-module selection: every pull request and every push to `aistack/main` runs the complete locked workspace tests, formatting, workspace Clippy/all targets, dependency audit, and all six fuzz-target checks. This slice does not claim runtime human-call origination or RTP-to-RTP forwarding.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints

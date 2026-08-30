@@ -41,6 +41,7 @@ macro_rules! identifier {
 }
 
 identifier!(CallId, "call_");
+identifier!(BridgeId, "bridge_");
 identifier!(LegId, "leg_");
 identifier!(StreamId, "stream_");
 identifier!(EventId, "evt_");
@@ -172,10 +173,13 @@ mod tests {
     #[test]
     fn identifiers_are_independent_from_sip_call_id() {
         let call = CallId::from_sequence(7);
+        let bridge = BridgeId::from_sequence(7);
         let leg = LegId::from_sequence(7);
         assert_eq!(call.as_str(), "call_7");
+        assert_eq!(bridge.as_str(), "bridge_7");
         assert_eq!(leg.as_str(), "leg_7");
         assert_ne!(call.to_string(), leg.to_string());
+        assert_ne!(bridge.to_string(), leg.to_string());
         assert!(CallId::new("sip-call-id").is_err());
     }
 

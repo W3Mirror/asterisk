@@ -13,6 +13,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "call-bridge"
+version = "0.1.0"
+dependencies = [
+ "call-core",
+]
+
+[[package]]
 name = "call-core"
 version = "0.1.0"
 
