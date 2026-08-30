@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-067 — Transfer lifecycle and terminal reclamation locally green
-**Last checkpoint (UTC):** 2026-08-30T21:36:46Z
+**Current checkpoint:** CP-068 — Transfer and reclamation published as PR #27
+**Last checkpoint (UTC):** 2026-08-30T21:38:13Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Offline deterministic verification foundation across Milestones 2–5<br>
-**Next resume action:** Commit and publish `sip-scenario-transfer-reclamation` as a stacked PR against `sip-scenario-faults`, then verify all hosted Rust quality gates
-**Active PR:** Pre-publication branch `sip-scenario-transfer-reclamation` targets PR [#26](https://github.com/W3Mirror/asterisk/pull/26)'s branch `sip-scenario-faults`
+**Next resume action:** Verify all hosted Rust quality gates on PR #27, then design the bounded multi-leg bridge state model before adding bridge failure scenarios
+**Active PR:** [#27](https://github.com/W3Mirror/asterisk/pull/27); branch `sip-scenario-transfer-reclamation` targets `sip-scenario-faults`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-27` (pre-publication predicted PR path)
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-27`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -3543,6 +3543,27 @@ blockers: Multi-leg human bridging is not implemented in the current call core, 
 next_action: Commit and push `sip-scenario-transfer-reclamation`, open a stacked PR against `sip-scenario-faults`, reconcile the actual PR/worktree number, and verify hosted Workspace checks, Protocol fuzz checks, and Dependency audit
 rollback: Keep all call routing and media on Asterisk; do not enable Rust traffic; close the downstream PR if the reclamation contract is superseded
 notes: The failed first focused attempt used `max_transactions: 1`, which correctly rejected CANCEL because INVITE and CANCEL briefly coexist; the corrected bound is two and still proves retained INVITE capacity is released before reuse. Tests remain in the same PR as the relevant engine/replay code. Bridge modeling, property tests, local SIPp, differential replay, load, and soak remain active follow-up work.
+~~~
+
+### CP-068 — Transfer and reclamation published as PR #27
+
+~~~yaml
+checkpoint_id: CP-068
+recorded_at_utc: 2026-08-30T21:38:13Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Offline deterministic verification foundation across Milestones 2–5
+scope: Publish the locally green transfer/reclamation contract as a stacked PR and reconcile exact branch, base, head, worktree, and hosted-check state
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-27
+branch: sip-scenario-transfer-reclamation
+base_branch: sip-scenario-faults
+pr: https://github.com/W3Mirror/asterisk/pull/27
+head_sha: d186980cf3bdd1642555ba8946b1a861a6f24221 before this reconciliation commit
+evidence: Implementation/checkpoint commit `d186980cf` was pushed normally with local and `origin/sip-scenario-transfer-reclamation` parity; PR #27 is OPEN/non-draft against exact base `sip-scenario-faults` at `08093ff2e`; GitHub assigned predicted #27, so the required worktree path already matches; hosted run `33336969323` started Workspace checks, Protocol fuzz checks, and Dependency audit
+blockers: Hosted PR #27 checks are pending; multi-leg human bridging still requires a bounded bridge/leg state model; provider/Asterisk evidence remains required before Rust traffic enablement; Asterisk routing remains the fallback
+next_action: Push this reconciliation commit and verify all three hosted Rust quality gates on the final PR #27 head, then design the bridge state model as a separate incremental slice
+rollback: Keep all call routing and media on Asterisk; do not enable Rust traffic; close PR #27 if the reclamation contract is superseded
+notes: No provider credentials, runtime configuration, production routing, or live traffic changed. PR tests and `aistack/main` pushes continue to run the full repository suite rather than affected-module selection.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
