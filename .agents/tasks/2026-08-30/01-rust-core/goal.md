@@ -1,9 +1,9 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
-**Status: in_progress**  
+**Status: in_progress**
 **Current checkpoint:** CP-027 — PR10 ledger reconciliation published
 **Last checkpoint (UTC):** 2026-08-30T14:25:20Z
-**Active phase:** Phase 1 — Rust media engine  
+**Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Milestone 4 — Dialog + SDP + Basic Calls<br>
 **Next resume action:** Add the next bounded offline-verifiable security/provider slice while preserving the runtime/provider evidence gate
 **Active PR:** [#10](https://github.com/W3Mirror/asterisk/pull/10); branch `sip-auth-routing` targets `sip-engine-runtime`
