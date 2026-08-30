@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: Proposed**  
-**Current checkpoint:** CP-014 — Bounded SDP/media binding published on PR #6; production evidence remains unavailable
-**Last checkpoint (UTC):** 2026-08-30T12:48:33Z
+**Current checkpoint:** CP-015 — PR6 state reconciled; fresh host/provider evidence remains unavailable
+**Last checkpoint (UTC):** 2026-08-30T12:52:50Z
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
 **Active milestone:** Milestone 4 — Dialog + SDP + Basic Calls<br>
 **Next resume action:** Collect redacted runtime/provider evidence and sanitized SIP/SDP/RTP fixtures on the actual Asterisk host before basic call transport/orchestration
@@ -2239,6 +2239,27 @@ blockers: Production provider/call-flow evidence, sanitized SIP/SDP/RTP corpus, 
 next_action: Collect redacted runtime/provider evidence and sanitized SIP/SDP/RTP fixtures on the actual Asterisk host before basic call transport/orchestration
 rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
 notes: The binding rejects missing audio, rejected remote media, and codec mismatch without mutating prior state; no provider credentials, runtime configuration, or live traffic were modified
+```
+
+### CP-015 — PR6 state and Phase 0 evidence rechecked
+
+```yaml
+checkpoint_id: CP-015
+recorded_at_utc: 2026-08-30T12:52:50Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 4 — Dialog + SDP + Basic Calls
+scope: Reconcile the published PR6 branch and re-run the actual-host evidence gate before beginning basic call transport/orchestration
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-6-sdp-media
+branch: sdp-media-core
+base_branch: call-api-core
+pr: https://github.com/W3Mirror/asterisk/pull/6
+head_sha: 0b72fae695768e669b0bb1acee4821723976ba8d
+evidence: git status clean; local HEAD equals origin/sdp-media-core; gh pr view #6 reports OPEN/CLEAN with base call-api-core and matching head; fresh read-only probes find no asterisk binary, no .env.aistack, no SIP/RTP/8088 listeners, DNS sip-trunk.w3.run -> 65.1.135.111, TCP/5061 probe timed out, and no sanitized SIP/SDP/RTP or SIPp fixture is checked in
+blockers: Production provider/call-flow evidence, sanitized SIP/SDP/RTP corpus, SIPp/live-call validation, and basic call transport/orchestration remain unavailable; Asterisk routing remains the fallback
+next_action: Collect redacted runtime/provider evidence and sanitized SIP/SDP/RTP fixtures on the actual Asterisk host before basic call transport/orchestration
+rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
+notes: Repository and host state are unchanged from CP-014; no provider credentials, runtime configuration, or live traffic were modified
 ```
 
 ### Checkpoint template
