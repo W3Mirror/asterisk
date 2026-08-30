@@ -23,6 +23,7 @@ members = [
   "crates/sip-security",
   "crates/scenario-replay",
   "crates/property-tests",
+  "crates/load-smoke",
 ]
 
 [workspace.package]
