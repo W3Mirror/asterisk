@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-045 — fresh Asterisk/provider live-state recheck
-**Last checkpoint (UTC):** 2026-08-30T16:19:27Z
+**Current checkpoint:** CP-046 — PR18 validation and evidence-boundary recheck
+**Last checkpoint (UTC):** 2026-08-30T16:23:38Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Milestone 4 — Dialog + SDP + Basic Calls<br>
 **Next resume action:** Obtain read-only access to the actual Asterisk/provider host or sanitized captures, then record successful and failed interoperability fixtures before enabling any Rust route
@@ -2991,6 +2991,27 @@ blockers: No Asterisk binary, provider credentials/runtime, SIPp/live-call path,
 next_action: Obtain read-only access to the actual Asterisk/provider host or sanitized captures, then record successful and failed interoperability fixtures before enabling any Rust route
 rollback: Keep all call routing and media on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
 notes: This checkpoint is read-only evidence only; no credential contents, provider dashboard, production configuration, or live traffic were inspected or modified. PR18 remains offline/provider-neutral and unmerged; fuzzing, load, production, and real telephony evidence remain follow-up work
+~~~
+
+### CP-046 — PR18 validation and evidence-boundary recheck
+
+~~~yaml
+checkpoint_id: CP-046
+recorded_at_utc: 2026-08-30T16:23:38Z
+status: in_progress
+phase: Phase 0 — current Asterisk surface / Phase 1 — Rust media engine
+milestone: Milestone 1 — Scope Baseline / Milestone 2/4 — Media plane + Dialog + Basic Calls
+scope: Re-run PR18 validation and confirm that no runtime credentials, provider access, or sanitized protocol fixtures have become available
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-18-media-websocket
+branch: media-websocket
+base_branch: sip-media-rtcp
+pr: https://github.com/W3Mirror/asterisk/pull/18
+head_sha: 6a513b1bdb10b96c76e167d62073adc460552c35
+evidence: clean worktree and exact local/origin head parity; `git diff --check origin/sip-media-rtcp...HEAD` passed; focused `cargo test -p media-websocket -p media-core --locked --quiet` passed; full `cargo test --workspace --locked --quiet` passed; PR18 remains OPEN/non-draft with CLEAN merge state and no configured checks; no sanitized SIP/SDP/RTP/RTCP/WebSocket fixture files or `.env.aistack`/PJSIP secret file are present
+blockers: No Asterisk binary, provider credentials/runtime, SIPp/live-call path, sanitized protocol fixtures, provider dashboard access, or valid load/memory baseline are available from this host; repository-advertised 195.201.246.125 remains unreconciled; Asterisk routing remains the fallback
+next_action: Obtain read-only access to the actual Asterisk/provider host or sanitized captures, then record successful and failed interoperability fixtures before enabling any Rust route
+rollback: Keep all call routing and media on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
+notes: Validation produced only existing dependency documentation warnings; no source, credential, production configuration, or live traffic was modified. PR18 remains offline/provider-neutral and unmerged; fuzzing, load, production, and real telephony evidence remain follow-up work
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
