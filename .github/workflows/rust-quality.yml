@@ -48,6 +48,12 @@ jobs:
       - name: Run local SIPp integration scenarios
         if: steps.rust-workspace.outputs.available == 'true'
         run: tests/rust-sipp/run.sh
+      - name: Run deterministic signaling reclamation smoke
+        if: steps.rust-workspace.outputs.available == 'true'
+        run: cargo run -p load-smoke --locked -- 512 32
+      - name: Run extended signaling reclamation load
+        if: steps.rust-workspace.outputs.available == 'true' && github.event_name == 'schedule'
+        run: cargo run -p load-smoke --locked -- 16384 256
       - name: Run extended property tests
         if: steps.rust-workspace.outputs.available == 'true' && github.event_name == 'schedule'
         env:

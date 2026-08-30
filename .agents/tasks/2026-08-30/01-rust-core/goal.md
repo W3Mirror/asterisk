@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-081 — PR #31 hosted SIPp validation green
-**Last checkpoint (UTC):** 2026-08-30T22:48:46Z
+**Current checkpoint:** CP-082 — deterministic signaling load/reclamation smoke locally green
+**Last checkpoint (UTC):** 2026-08-30T22:58:17Z
 **Active phase:** Phase 1 — Rust media engine
-**Active milestone:** Milestone 3/4 offline SIP interoperability<br>
-**Next resume action:** Verify CP-081's final hosted run, then create the next tracked stacked worktree for a deterministic load/reclamation smoke harness or synthetic differential runner
-**Active PR:** [#31](https://github.com/W3Mirror/asterisk/pull/31); branch `sipp-local-integration` targets `rust-property-invariants`
+**Active milestone:** Deterministic signaling load and terminal reclamation<br>
+**Next resume action:** Commit and publish the locally green load/reclamation harness as PR #32, then verify every hosted quality gate on its final head
+**Active PR:** pending PR #32; branch `rust-load-reclamation-smoke` targets `sipp-local-integration`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-31`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-32`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -3837,6 +3837,27 @@ blockers: This local provider-neutral SIPp matrix is not real Asterisk/provider 
 next_action: Push this reconciliation checkpoint, verify all three hosted jobs on that final documentation-only head, then create the next tracked stacked worktree for a deterministic load/reclamation smoke harness or synthetic differential runner
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #31 if the isolated SIPp harness is superseded
 notes: Relevant runtime fixture code, SIPp scenarios, CI wiring, and documentation ship in the same PR. Every pull request and every push to `aistack/main` currently runs the complete locked workspace tests, formatting, workspace Clippy/all targets, the three-scenario SIPp matrix, dependency audit, and all six fuzz-target checks; there is no affected-module-only selection. Only the deeper 4,096-case property run is scheduled. Docker is used only as an isolated test dependency inside the hosted `ubuntu-latest` Workspace job.
+~~~
+
+### CP-082 — deterministic signaling load/reclamation smoke locally green
+
+~~~yaml
+checkpoint_id: CP-082
+recorded_at_utc: 2026-08-30T22:58:17Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Deterministic signaling load and terminal reclamation
+scope: Add a reusable provider-neutral load harness that creates bounded batches of unique inbound calls, cancels them, verifies signaling outcomes, reclaims every terminal call and transaction, and proves capacity reuse in ordinary and scheduled CI
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-32
+branch: rust-load-reclamation-smoke
+base_branch: sipp-local-integration
+pr: pending publication
+head_sha: 2f4c28a63b3eeadc0dc6517bb1fdcd49f844f4a5 before the implementation commit
+evidence: New `load-smoke` workspace package constructs unique INVITE/CANCEL transactions without sockets, sleeps, credentials, or wall-clock assertions; it verifies every CANCEL emits 200 and 487, every call reaches `Ended`, each terminal call is explicitly reclaimed, and both the call registry and SIP transaction count return to zero before the next batch; four focused tests cover invalid zero bounds, a final batch smaller than its configured capacity, deterministic 10-call/4-slot peak accounting, and 128 consecutive one-call/two-transaction capacity reuses; the ordinary 512-call/32-slot run completes all calls with zero failures and final resources, reaching deterministic peaks of 32 calls and 64 transactions; the scheduled 16,384-call/256-slot run completes with zero failures and final resources, reaching deterministic peaks of 256 calls and 512 transactions; all 164 locked workspace tests, strict new-package Clippy, workspace Clippy/all targets, formatting, workflow YAML parsing, and `git diff --check` pass
+blockers: This is logical signaling correctness and reclamation evidence, not calls-per-second, real concurrency, CPU, memory, file-descriptor, media, WebSocket, Asterisk, or provider evidence; media load, real concurrency, differential replay, long-duration soak/memory, runtime human-leg origination/RTP composition, sanitized captures, and real provider interoperability remain active goal work; Asterisk remains the fallback and Rust traffic stays disabled
+next_action: Commit and publish `rust-load-reclamation-smoke` as a stacked PR against `sipp-local-integration`, verify hosted Workspace/SIPp/load, Protocol fuzz, and Dependency audit checks on the final head, then continue with the next smallest offline differential or media-load slice
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the load-smoke PR or remove its workflow steps if the harness is superseded
+notes: Relevant harness code, four tests, CLI, documentation, lockfile, and CI wiring ship together. Every PR and push to `aistack/main` runs the 512-call smoke through the hosted full suite; the 16,384-call run is scheduled-only. The harness intentionally avoids timing or process-metric claims so later real performance/soak tools can measure latency, throughput, CPU, RSS, sockets, and file descriptors honestly.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints

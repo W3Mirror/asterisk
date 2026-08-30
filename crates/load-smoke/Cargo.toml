@@ -1,0 +1,16 @@
+[package]
+name = "load-smoke"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+call-api = { path = "../call-api" }
+call-core = { path = "../call-core" }
+call-engine = { path = "../call-engine" }
+sip-transaction = { path = "../sip-transaction" }
+sip-types = { path = "../sip-types" }
+
+[lints]
+workspace = true
