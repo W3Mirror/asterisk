@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: Proposed**  
-**Current checkpoint:** CP-007 — protocol boundary tightening published on PR #2; production evidence outstanding
-**Last checkpoint (UTC):** 2026-08-30T11:42:23Z
+**Current checkpoint:** CP-008 — RTP session and bounded audio bridge published on PR #2; production evidence outstanding
+**Last checkpoint (UTC):** 2026-08-30T11:48:00Z
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
 **Active milestone:** Milestone 1 — Scope Baseline  
 **Next resume action:** Collect redacted runtime/provider evidence and the first sanitized SIP/SDP/RTP fixtures on the actual Asterisk host
@@ -1915,7 +1915,7 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 | Workstream | Status | Evidence / checkpoint | PR | Next action |
 | --- | --- | --- | --- | --- |
 | Phase 0 — current Asterisk surface | in_progress | CP-004; `docs/current-asterisk-surface.md` (commit `edba8386c`); full branch `git diff --check` passes; live probe found no runtime and DNS/config address drift | #1 | Collect provider/runtime evidence and sanitized fixtures |
-| Phase 1 — Rust media engine | in_progress | CP-005; PR #2 safe protocol/media foundation; workspace tests and clippy green | [#2](https://github.com/W3Mirror/asterisk/pull/2) | Add runtime RTP session and bidirectional AI streaming after provider fixtures |
+| Phase 1 — Rust media engine | in_progress | CP-005/CP-008; PR #2 safe protocol/media foundation, RTP session, and bounded audio bridge; workspace tests and clippy green | [#2](https://github.com/W3Mirror/asterisk/pull/2) | Add a concrete AI transport and recording adapter after provider fixtures |
 | Phase 2 — SIP edge shadow mode | not_started | — | — | Build sanitized replay and comparison fixtures |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
 | Phase 4 — expanded provider coverage | not_started | — | — | Add one provider compatibility suite per rollout target |
@@ -2094,6 +2094,27 @@ rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain 
 notes: Changes remain isolated to the provider-neutral Rust foundation; no live traffic or Asterisk configuration was modified
 ```
 
+### CP-008 — RTP session and bounded audio bridge published
+
+```yaml
+checkpoint_id: CP-008
+recorded_at_utc: 2026-08-30T11:48:00Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 2 — Rust RTP Core
+scope: Add stateful bounded RTP send/receive sessions and a transport-agnostic bidirectional RTP-to-AI audio bridge
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-2-rust-foundation
+branch: rust-core-foundation
+base_branch: sip-rtp-engine-rust
+pr: https://github.com/W3Mirror/asterisk/pull/2
+head_sha: 4fc9ec14b795742b5c89f45410f031b3acbd715c
+evidence: cargo fmt --all -- --check; cargo test --workspace; cargo clippy --workspace --all-targets; git diff --check origin/sip-rtp-engine-rust...HEAD; origin/rust-core-foundation equals local HEAD before this ledger commit; PR #2 is OPEN and CLEAN
+blockers: production provider/call-flow evidence and sanitized packet corpus remain unavailable from this host; concrete AI transport, recording, and live-call validation are still incomplete
+next_action: Collect redacted provider/runtime evidence and sanitized SIP/SDP/RTP fixtures on the actual Asterisk host
+rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain the existing fallback
+notes: RtpSession validates payload/source, tracks sent/received metrics and inactivity; AudioBridge bounds both directions but does not claim WebSocket integration
+```
+
 ### Checkpoint template
 
 Copy this template, assign the next checkpoint ID, fill every field, and append it after each meaningful state change:
@@ -2176,7 +2197,7 @@ Populate one row per PR before implementation begins, then update it at every ch
 | Order | PR | Branch | Base / target | Worktree | Scope | Status | Head SHA | CI / evidence | Next action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 1 | [#1](https://github.com/W3Mirror/asterisk/pull/1) | `sip-rtp-engine-rust` | `aistack/main` | `/home/ashutosh/.worktrees/w3mirror/asterisk/sip-rtp-engine-rust` | Phase 0 repository surface inventory and evidence boundary | in_progress | `edba8386c` | `docs/current-asterisk-surface.md`; full `git diff --check` passes; remote branch parity verified; PR open; no GitHub checks reported; production runtime unavailable | Collect redacted provider/runtime evidence before Rust implementation |
-| 2 | [#2](https://github.com/W3Mirror/asterisk/pull/2) | `rust-core-foundation` | `sip-rtp-engine-rust` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-2-rust-foundation` | Provider-neutral bounded SIP/SDP/RTP/RTCP/DTMF/media/call foundations | in_progress | `668ec7c36` | workspace format/tests/clippy green; remote parity verified; PR open and clean; no production routing changes | Collect production provider/runtime evidence and sanitized fixtures; keep Asterisk fallback |
+| 2 | [#2](https://github.com/W3Mirror/asterisk/pull/2) | `rust-core-foundation` | `sip-rtp-engine-rust` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-2-rust-foundation` | Provider-neutral bounded SIP/SDP/RTP/RTCP/DTMF/media/call foundations | in_progress | `4fc9ec14b` | workspace format/tests/clippy green; remote parity verified; PR open and clean; no production routing changes | Collect production provider/runtime evidence and sanitized fixtures; keep Asterisk fallback |
 
 ## 59.4 Stacked-PR Checkpoints
 
