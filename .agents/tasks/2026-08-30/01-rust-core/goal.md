@@ -3797,6 +3797,27 @@ rollback: Keep all signaling, media, and call routing on Asterisk; do not enable
 notes: The first SIPp attempt expected `180` first and correctly failed on the engine's automatic `100 Trying`; the scenarios were fixed to assert `100` explicitly rather than ignore the response. The workflow remains on `ubuntu-latest`; Docker is used only inside the hosted job to run the isolated pinned SIPp test tool. Relevant runtime fixture code, scenarios, CI wiring, and documentation ship together.
 ~~~
 
+### CP-080 — PR #31 published with hosted validation running
+
+~~~yaml
+checkpoint_id: CP-080
+recorded_at_utc: 2026-08-30T22:41:27Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Milestone 3/4 offline SIP interoperability
+scope: Publish the locally green SIPp runtime integration matrix as a stacked PR and reconcile the exact worktree, branch, base, head, and hosted-check state
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-31
+branch: sipp-local-integration
+base_branch: rust-property-invariants
+pr: https://github.com/W3Mirror/asterisk/pull/31
+head_sha: ca4e5e5d426c3a67409a7451498ab0e8373babf5 before this publication checkpoint commit
+evidence: Implementation/checkpoint commit `ca4e5e5d4` was pushed normally with local and `origin/sipp-local-integration` parity; PR #31 is OPEN/non-draft against exact base `rust-property-invariants` at `5bed6b764`; GitHub assigned predicted #31, so the required worktree path already matches; hosted run `33339815437` started Workspace checks (now including the local SIPp matrix), Protocol fuzz checks, and Dependency audit
+blockers: Hosted validation is pending on the publication checkpoint's final head; the local SIPp matrix is not real Asterisk/provider evidence; runtime human-leg origination and RTP bridge composition, broader signaling/load/soak and differential testing, sanitized captures, and real provider interoperability remain active goal work; Asterisk remains the fallback
+next_action: Push this publication checkpoint and verify all three hosted Rust quality gates, including the SIPp step, on the final PR #31 head, then continue with the next bounded offline load/reclamation or differential-verification slice
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #31 if the SIPp harness is superseded
+notes: PR #31 contains its runtime fixture, exact SIPp scenarios, pinned test image, executable runner, CI wiring, and documentation. All workflow jobs continue to use hosted `ubuntu-latest`; Docker is invoked only within the Workspace job for this isolated test dependency. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
 ## 59.4 Stacked-PR Checkpoints
 
 Each PR should leave a green checkpoint before the next PR depends on it:
