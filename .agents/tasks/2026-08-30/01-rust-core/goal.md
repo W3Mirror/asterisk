@@ -1,12 +1,12 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-070 — bounded call-bridge foundation locally green
-**Last checkpoint (UTC):** 2026-08-30T21:52:13Z
+**Current checkpoint:** CP-071 — PR #28 published with hosted validation running
+**Last checkpoint (UTC):** 2026-08-30T21:53:33Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Multi-leg AI-to-human bridge control-plane foundation<br>
-**Next resume action:** Publish `call-bridge-core` against `sip-scenario-transfer-reclamation`, verify all hosted checks, then integrate deterministic bridge transitions into scenario replay
-**Active PR:** Pending publication for branch `call-bridge-core` targeting `sip-scenario-transfer-reclamation`
+**Next resume action:** Verify all hosted checks on PR #28's final checkpoint head, then integrate deterministic bridge transitions into scenario replay
+**Active PR:** [#28](https://github.com/W3Mirror/asterisk/pull/28); branch `call-bridge-core` targets `sip-scenario-transfer-reclamation`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-28`
 **Primary language:** Rust  
@@ -3606,6 +3606,27 @@ blockers: Runtime composition still must originate the outbound human SIP transa
 next_action: Commit and publish this bridge foundation as a stacked PR against `sip-scenario-transfer-reclamation`, verify hosted Workspace, Protocol fuzz, and Dependency audit checks on its final head, then integrate deterministic bridge transitions into scenario replay
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the bridge PR if its control contract is superseded
 notes: Tests ship in the same branch as the relevant bridge code. Current hosted CI remains intentionally stronger than affected-module selection: every pull request and every push to `aistack/main` runs the complete locked workspace tests, formatting, workspace Clippy/all targets, dependency audit, and all six fuzz-target checks. This slice does not claim runtime human-call origination or RTP-to-RTP forwarding.
+~~~
+
+### CP-071 — PR #28 published with hosted validation running
+
+~~~yaml
+checkpoint_id: CP-071
+recorded_at_utc: 2026-08-30T21:53:33Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Multi-leg AI-to-human bridge control-plane foundation
+scope: Publish the locally green bounded bridge state model as a stacked PR and reconcile the exact worktree, branch, base, head, and hosted-check state
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-28
+branch: call-bridge-core
+base_branch: sip-scenario-transfer-reclamation
+pr: https://github.com/W3Mirror/asterisk/pull/28
+head_sha: 29c46afa06932d72c15706525687ed85ad2fcd27 before this publication checkpoint commit
+evidence: Implementation commit `29c46afa0` was pushed normally with local and `origin/call-bridge-core` parity; PR #28 is OPEN/non-draft against exact base `sip-scenario-transfer-reclamation` at `bfb0d7421`; GitHub assigned predicted #28, so the required worktree path already matches; hosted run `33337640098` started Workspace checks, Protocol fuzz checks, and Dependency audit
+blockers: Hosted validation is pending on the publication checkpoint's final head; runtime SIP origination and RTP bridge composition remain subsequent offline slices; real Asterisk/provider evidence remains mandatory before Rust traffic enablement; Asterisk routing remains the fallback
+next_action: Push this publication checkpoint, verify all three hosted Rust quality gates on the final PR #28 head, then create the next tracked stacked worktree for deterministic bridge scenario replay
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #28 if the bridge contract is superseded
+notes: PR #28 contains its five relevant bridge tests and GitHub runs the complete repository suite on the PR, not an affected-module-only subset. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
