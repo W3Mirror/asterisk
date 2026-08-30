@@ -1,11 +1,11 @@
 //! Bounded WebSocket framing and G.711 media bridging for AI applications.
 //!
-//! The crate deliberately stops at the transport boundary: an HTTP/WebSocket
-//! listener owns the socket and upgrade handshake, then passes complete bytes
-//! to [`MediaWebSocketSession`]. The session enforces RFC 6455 framing bounds,
-//! reconstructs bounded fragmented messages, and translates the plain-text
-//! control messages and binary G.711 frames used by Asterisk's
-//! `chan_websocket` into [`media_core::MediaSession`] operations.
+//! An HTTP/WebSocket listener owns TLS and the upgrade handshake, then can pass
+//! the upgraded stream to [`MediaWebSocketTransport`]. The transport owns
+//! bounded stream buffering and writes while [`MediaWebSocketSession`]
+//! enforces RFC 6455 framing bounds, reconstructs fragmented messages, and
+//! translates the plain-text control messages and binary G.711 frames used by
+//! Asterisk's `chan_websocket` into [`media_core::MediaSession`] operations.
 
 use std::{
     error::Error,
@@ -14,6 +14,13 @@ use std::{
 };
 
 use media_core::{AudioCodec, AudioFrame, MediaSession, PushOutcome};
+
+mod transport;
+
+pub use transport::{
+    MaskKeyError, MaskKeySource, MediaWebSocketTransport, MediaWebSocketTransportConfig,
+    NoMaskKeySource, OsRandomMaskKeySource, TransportError,
+};
 
 const DEFAULT_MAX_FRAME_BYTES: usize = 64 * 1024;
 const DEFAULT_MAX_MESSAGE_BYTES: usize = 256 * 1024;
