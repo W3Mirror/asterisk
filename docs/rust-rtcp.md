@@ -2,9 +2,15 @@
 
 `rtcp::RtcpSession` wraps the existing bounded, provider-neutral RTCP parser
 for socket-backed receive paths. It records sent and accepted packet/octet
-counts, arrival time, and known SSRC changes, and can optionally require an
-expected remote SSRC. `send` applies the same configured datagram bound before
-advancing send metrics.
+counts, the latest reported cumulative loss and jitter, arrival time, and
+known SSRC changes, and can optionally require an expected remote SSRC. `send`
+applies the same configured datagram bound before advancing send metrics.
+
+When a Sender Report is received, the session retains its NTP middle-32-bit
+identifier and local arrival time. A later reception report with that matching
+LSR produces an RTT estimate by subtracting DLSR from the elapsed local time.
+The estimate is exposed only when a matching report exists; it does not claim
+wall-clock synchronization or provider interoperability.
 
 Use `new_with_source_policy` or `with_source_policy` to apply the shared
 `sip-security::SourceIpPolicy`. `receive_from` evaluates the observed

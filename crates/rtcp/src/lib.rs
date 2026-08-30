@@ -201,6 +201,12 @@ pub struct RtcpSessionStats {
     pub packets_received: u64,
     /// Number of serialized RTCP octets accepted.
     pub octets_received: u64,
+    /// Most recently reported non-negative cumulative packet loss.
+    pub packets_lost: u64,
+    /// Most recently reported interarrival jitter, in RTP timestamp units.
+    pub jitter: u32,
+    /// Latest RTT estimate from a matching Sender Report and reception report.
+    pub round_trip: Option<Duration>,
     /// Number of datagrams rejected after source authorization.
     pub invalid_packets: u64,
     /// Number of changes between known report SSRCs.
@@ -215,7 +221,14 @@ pub struct RtcpSession {
     config: RtcpSessionConfig,
     source_policy: SourceIpPolicy,
     remote_ssrc: Option<u32>,
+    last_sender_report: Option<SenderReportObservation>,
     stats: RtcpSessionStats,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct SenderReportObservation {
+    lsr: u32,
+    received_at: Duration,
 }
 
 /// Alias that makes the RTCP-specific session error name discoverable.
@@ -247,6 +260,7 @@ impl RtcpSession {
             remote_ssrc: config.remote_ssrc,
             config,
             source_policy,
+            last_sender_report: None,
             stats: RtcpSessionStats::default(),
         })
     }
@@ -320,6 +334,7 @@ impl RtcpSession {
             }
             self.remote_ssrc = Some(actual);
         }
+        self.observe_quality(&packets, arrival);
         self.stats.packets_received = self
             .stats
             .packets_received
@@ -382,6 +397,60 @@ impl RtcpSession {
     pub const fn remote_ssrc(&self) -> Option<u32> {
         self.remote_ssrc
     }
+
+    fn observe_quality(&mut self, packets: &[RtcpPacket], arrival: Duration) {
+        for packet in packets {
+            match packet {
+                RtcpPacket::SenderReport(report) => {
+                    self.observe_reports(&report.reports, arrival);
+                    let lsr = ntp_middle_32(report.ntp_msw, report.ntp_lsw);
+                    if lsr != 0 {
+                        self.last_sender_report = Some(SenderReportObservation {
+                            lsr,
+                            received_at: arrival,
+                        });
+                    }
+                }
+                RtcpPacket::ReceiverReport(report) => {
+                    self.observe_reports(&report.reports, arrival);
+                }
+                RtcpPacket::Unknown { .. } => {}
+            }
+        }
+    }
+
+    fn observe_reports(&mut self, reports: &[ReceptionReport], arrival: Duration) {
+        for report in reports {
+            self.stats.packets_lost = u64::try_from(report.cumulative_lost.max(0)).unwrap_or(0);
+            self.stats.jitter = report.jitter;
+            if report.last_sender_report == 0 {
+                continue;
+            }
+            let Some(sender) = self.last_sender_report else {
+                continue;
+            };
+            if sender.lsr != report.last_sender_report {
+                continue;
+            }
+            let elapsed = arrival.saturating_sub(sender.received_at);
+            let Some(round_trip) =
+                elapsed.checked_sub(ntp_short_to_duration(report.delay_since_last_sender_report))
+            else {
+                continue;
+            };
+            self.stats.round_trip = Some(round_trip);
+        }
+    }
+}
+
+fn ntp_middle_32(most_significant_word: u32, least_significant_word: u32) -> u32 {
+    (most_significant_word << 16) | (least_significant_word >> 16)
+}
+
+fn ntp_short_to_duration(value: u32) -> Duration {
+    let seconds = u64::from(value >> 16);
+    let nanos = (u64::from(value & 0xffff) * 1_000_000_000) / 65_536;
+    Duration::from_secs(seconds).saturating_add(Duration::from_nanos(nanos))
 }
 
 fn packet_ssrc(packet: &RtcpPacket) -> Option<u32> {
@@ -688,6 +757,64 @@ mod tests {
         assert_eq!(stats.ssrc_changes, 1);
         assert_eq!(stats.last_received, Some(Duration::from_millis(2)));
         assert_eq!(session.remote_ssrc(), Some(43));
+    }
+
+    #[test]
+    fn session_tracks_report_quality_and_matching_round_trip() {
+        let mut session = RtcpSession::new(RtcpSessionConfig::default()).unwrap();
+        let sender = RtcpPacket::SenderReport(SenderReport {
+            ssrc: 42,
+            ntp_msw: 1,
+            ntp_lsw: 0,
+            rtp_timestamp: 0,
+            packets_sent: 10,
+            octets_sent: 80,
+            reports: Vec::new(),
+        });
+        let sender_wire = serialize(&sender).unwrap();
+        session
+            .receive(&sender_wire, Duration::from_secs(10))
+            .unwrap();
+
+        let receiver = RtcpPacket::ReceiverReport(ReceiverReport {
+            ssrc: 42,
+            reports: vec![ReceptionReport {
+                cumulative_lost: 12,
+                jitter: 320,
+                last_sender_report: ntp_middle_32(1, 0),
+                delay_since_last_sender_report: 0x0000_8000,
+                ..report()
+            }],
+        });
+        let receiver_wire = serialize(&receiver).unwrap();
+        session
+            .receive(&receiver_wire, Duration::from_secs(12))
+            .unwrap();
+
+        let stats = session.stats();
+        assert_eq!(stats.packets_lost, 12);
+        assert_eq!(stats.jitter, 320);
+        assert_eq!(stats.round_trip, Some(Duration::from_millis(1_500)));
+    }
+
+    #[test]
+    fn negative_reported_loss_is_clamped_and_jitter_is_retained() {
+        let mut session = RtcpSession::new(RtcpSessionConfig::default()).unwrap();
+        let receiver = RtcpPacket::ReceiverReport(ReceiverReport {
+            ssrc: 42,
+            reports: vec![ReceptionReport {
+                cumulative_lost: -2,
+                jitter: 9,
+                ..report()
+            }],
+        });
+        let wire = serialize(&receiver).unwrap();
+        session.receive(&wire, Duration::ZERO).unwrap();
+
+        let stats = session.stats();
+        assert_eq!(stats.packets_lost, 0);
+        assert_eq!(stats.jitter, 9);
+        assert_eq!(stats.round_trip, None);
     }
 
     #[test]
