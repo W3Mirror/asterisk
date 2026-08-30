@@ -8,7 +8,7 @@
 **Next resume action:** Reconcile PR #29 onto the validated PR #28 head and run focused bridge-scenario replay checks
 **Active PR:** [#28](https://github.com/W3Mirror/asterisk/pull/28); branch `call-bridge-core` targets [#27](https://github.com/W3Mirror/asterisk/pull/27)'s branch `sip-scenario-transfer-reclamation`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-28`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-29`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.

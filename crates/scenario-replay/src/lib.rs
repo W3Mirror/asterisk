@@ -1,9 +1,10 @@
-//! Deterministic, offline SIP and media scenario replay.
+//! Deterministic, offline SIP, media, and call-bridge scenario replay.
 //!
 //! The replay boundary consumes owned wire fixtures and explicit monotonic
 //! timestamps. It owns no sockets, sleeps, wall clock, credentials, or provider
 //! configuration, so synthetic scenarios and later sanitized captures can use
-//! the same execution path.
+//! the same execution path. Call-engine, media-session, and bridge-registry
+//! state commit atomically only after every scenario step succeeds.
 
 use std::{
     error::Error,
@@ -14,7 +15,8 @@ use std::{
 };
 
 use call_api::{CallCommand, CallSnapshot};
-use call_core::{CallId, LifecycleEvent};
+use call_bridge::{BridgeError, BridgeEvent, BridgeRegistry, BridgeRegistryConfig, BridgeSnapshot};
+use call_core::{BridgeId, CallId, LegId, LifecycleEvent, StreamId};
 use call_engine::{CallEngine, EngineError, EngineOutput, SendAction};
 use media_core::{
     AudioFrame, MediaSession, MediaSessionError, MediaSessionStats, PushOutcome, ReceivedMedia,
@@ -27,6 +29,7 @@ use sip_types::SipMessage;
 const DEFAULT_MAX_STEPS: usize = 4_096;
 const DEFAULT_MAX_WIRE_BYTES: usize = 65_535;
 const DEFAULT_MAX_REPORTED_CALLS: usize = 4_096;
+const DEFAULT_MAX_REPORTED_BRIDGES: usize = 4_096;
 const MAX_SCENARIO_NAME_BYTES: usize = 256;
 
 /// Resource bounds applied before and during one scenario replay.
@@ -38,6 +41,8 @@ pub struct ReplayConfig {
     pub max_wire_bytes: usize,
     /// Maximum final call snapshots retained in the report.
     pub max_reported_calls: usize,
+    /// Maximum final bridge snapshots retained in the report.
+    pub max_reported_bridges: usize,
 }
 
 impl Default for ReplayConfig {
@@ -46,13 +51,18 @@ impl Default for ReplayConfig {
             max_steps: DEFAULT_MAX_STEPS,
             max_wire_bytes: DEFAULT_MAX_WIRE_BYTES,
             max_reported_calls: DEFAULT_MAX_REPORTED_CALLS,
+            max_reported_bridges: DEFAULT_MAX_REPORTED_BRIDGES,
         }
     }
 }
 
 impl ReplayConfig {
     fn validate(self) -> Result<Self, ReplayError> {
-        if self.max_steps == 0 || self.max_wire_bytes == 0 || self.max_reported_calls == 0 {
+        if self.max_steps == 0
+            || self.max_wire_bytes == 0
+            || self.max_reported_calls == 0
+            || self.max_reported_bridges == 0
+        {
             return Err(ReplayError::InvalidConfig);
         }
         Ok(self)
@@ -109,6 +119,49 @@ pub enum ScenarioStep {
         /// Stable application call identifier.
         call_id: CallId,
     },
+    /// Create an AI-backed bridge for one stable inbound caller.
+    CreateBridge {
+        /// Stable inbound application call identity.
+        caller_call_id: CallId,
+        /// Stable inbound signaling/media leg identity.
+        caller_leg_id: LegId,
+        /// Retained AI media stream used for initial routing and fail-back.
+        ai_stream_id: StreamId,
+    },
+    /// Begin establishing a server-originated human second leg.
+    BeginHumanLeg {
+        /// Bridge that owns the stable inbound caller.
+        bridge_id: BridgeId,
+        /// Outbound human application call identity.
+        call_id: CallId,
+        /// Outbound human signaling/media leg identity.
+        leg_id: LegId,
+    },
+    /// Activate the pending human leg.
+    CompleteHumanLeg {
+        /// Bridge whose pending human leg connected.
+        bridge_id: BridgeId,
+    },
+    /// Fail a pending or active human leg and restore AI routing.
+    FailHumanLeg {
+        /// Bridge whose human leg failed.
+        bridge_id: BridgeId,
+    },
+    /// Explicitly switch an active human bridge back to AI.
+    ResumeBridgeAi {
+        /// Bridge to restore to its retained AI stream.
+        bridge_id: BridgeId,
+    },
+    /// End all forwarding for one bridge.
+    EndBridge {
+        /// Bridge to move into terminal state.
+        bridge_id: BridgeId,
+    },
+    /// Remove one terminal bridge and release all of its endpoint identities.
+    ReclaimTerminalBridge {
+        /// Terminal bridge to reclaim.
+        bridge_id: BridgeId,
+    },
     /// Advance transaction timers without sleeping or consulting wall time.
     Poll {
         /// Explicit monotonic scenario time.
@@ -155,6 +208,13 @@ impl ScenarioStep {
             | Self::ReceiveRtcp { at, .. } => Some(*at),
             Self::ApplyCallCommand { .. }
             | Self::ReclaimTerminalCall { .. }
+            | Self::CreateBridge { .. }
+            | Self::BeginHumanLeg { .. }
+            | Self::CompleteHumanLeg { .. }
+            | Self::FailHumanLeg { .. }
+            | Self::ResumeBridgeAi { .. }
+            | Self::EndBridge { .. }
+            | Self::ReclaimTerminalBridge { .. }
             | Self::PushAiAudio { .. }
             | Self::EmitAudioRtp { .. } => None,
         }
@@ -176,6 +236,13 @@ impl ScenarioStep {
                 .or(Some(usize::MAX)),
             Self::ApplyCallCommand { .. }
             | Self::ReclaimTerminalCall { .. }
+            | Self::CreateBridge { .. }
+            | Self::BeginHumanLeg { .. }
+            | Self::CompleteHumanLeg { .. }
+            | Self::FailHumanLeg { .. }
+            | Self::ResumeBridgeAi { .. }
+            | Self::EndBridge { .. }
+            | Self::ReclaimTerminalBridge { .. }
             | Self::Poll { .. }
             | Self::EmitAudioRtp { .. } => None,
         }
@@ -226,6 +293,10 @@ pub enum StepOutcome {
     },
     /// Snapshot removed by explicit terminal resource reclamation.
     CallReclaimed(CallSnapshot),
+    /// Ordered event emitted by one bridge transition.
+    BridgeTransition(BridgeEvent),
+    /// Snapshot removed by explicit terminal bridge reclamation.
+    BridgeReclaimed(BridgeSnapshot),
     /// Decoded media outcome from one RTP packet.
     MediaReceived(ReceivedMedia),
     /// Parsed packets from one RTCP compound datagram.
@@ -254,6 +325,8 @@ pub struct ReplayReport {
     pub steps: Vec<StepReport>,
     /// Final call snapshots ordered by stable application ID.
     pub calls: Vec<CallSnapshot>,
+    /// Final bridge snapshots ordered by stable bridge ID.
+    pub bridges: Vec<BridgeSnapshot>,
     /// Remaining live SIP client/server transactions.
     pub transaction_count: usize,
     /// Final media counters when a media session was configured.
@@ -269,12 +342,32 @@ impl ReplayReport {
             .filter_map(|step| match &step.outcome {
                 StepOutcome::Engine { events, .. } => Some(events.iter()),
                 StepOutcome::CallReclaimed(_)
+                | StepOutcome::BridgeTransition(_)
+                | StepOutcome::BridgeReclaimed(_)
                 | StepOutcome::MediaReceived(_)
                 | StepOutcome::RtcpReceived(_)
                 | StepOutcome::AiAudioQueued(_)
                 | StepOutcome::AudioRtpEmitted(_) => None,
             })
             .flatten()
+            .collect()
+    }
+
+    /// Returns all bridge events in scenario emission order.
+    #[must_use]
+    pub fn bridge_events(&self) -> Vec<&BridgeEvent> {
+        self.steps
+            .iter()
+            .filter_map(|step| match &step.outcome {
+                StepOutcome::BridgeTransition(event) => Some(event),
+                StepOutcome::Engine { .. }
+                | StepOutcome::CallReclaimed(_)
+                | StepOutcome::BridgeReclaimed(_)
+                | StepOutcome::MediaReceived(_)
+                | StepOutcome::RtcpReceived(_)
+                | StepOutcome::AiAudioQueued(_)
+                | StepOutcome::AudioRtpEmitted(_) => None,
+            })
             .collect()
     }
 
@@ -286,6 +379,8 @@ impl ReplayReport {
             .filter_map(|step| match &step.outcome {
                 StepOutcome::Engine { actions, .. } => Some(actions.iter()),
                 StepOutcome::CallReclaimed(_)
+                | StepOutcome::BridgeTransition(_)
+                | StepOutcome::BridgeReclaimed(_)
                 | StepOutcome::MediaReceived(_)
                 | StepOutcome::RtcpReceived(_)
                 | StepOutcome::AiAudioQueued(_)
@@ -296,16 +391,17 @@ impl ReplayReport {
     }
 }
 
-/// Bounded deterministic executor for signaling and media fixtures.
+/// Bounded deterministic executor for signaling, media, and bridge fixtures.
 #[derive(Clone, Debug)]
 pub struct ReplayRunner {
     config: ReplayConfig,
     engine: CallEngine,
+    bridges: BridgeRegistry,
     media: Option<MediaSession>,
 }
 
 impl ReplayRunner {
-    /// Creates a signaling-only replay runner.
+    /// Creates a replay runner with signaling and a default bounded bridge registry.
     ///
     /// # Errors
     ///
@@ -314,8 +410,16 @@ impl ReplayRunner {
         Ok(Self {
             config: config.validate()?,
             engine,
+            bridges: BridgeRegistry::new(BridgeRegistryConfig::default())?,
             media: None,
         })
+    }
+
+    /// Replaces the default bridge registry used by bridge operations.
+    #[must_use]
+    pub fn with_bridges(mut self, bridges: BridgeRegistry) -> Self {
+        self.bridges = bridges;
+        self
     }
 
     /// Adds the media session used by RTP and AI-audio operations.
@@ -330,7 +434,7 @@ impl ReplayRunner {
     /// # Errors
     ///
     /// Returns a step-indexed error for invalid bounds, non-monotonic time,
-    /// malformed wire input, missing media configuration, or engine/media
+    /// malformed wire input, missing media configuration, or engine/media/bridge
     /// rejection. The runner stops at the first rejected operation and commits
     /// no signaling or media state unless the complete scenario succeeds.
     pub fn run(&mut self, scenario: &Scenario) -> Result<ReplayReport, ReplayError> {
@@ -365,6 +469,7 @@ impl ReplayRunner {
             scenario: scenario.name.clone(),
             steps: reports,
             calls: self.engine.list(self.config.max_reported_calls)?,
+            bridges: self.bridges.list(self.config.max_reported_bridges)?,
             transaction_count: self.engine.transaction_count(),
             media: self.media.as_ref().map(MediaSession::stats),
         })
@@ -451,6 +556,23 @@ impl ReplayRunner {
             ScenarioStep::ReclaimTerminalCall { call_id } => Ok(StepOutcome::CallReclaimed(
                 self.engine.reclaim_terminal_call(call_id)?,
             )),
+            ScenarioStep::CreateBridge {
+                caller_call_id,
+                caller_leg_id,
+                ai_stream_id,
+            } => self.create_bridge(caller_call_id, caller_leg_id, ai_stream_id),
+            ScenarioStep::BeginHumanLeg {
+                bridge_id,
+                call_id,
+                leg_id,
+            } => self.begin_human_leg(bridge_id, call_id, leg_id),
+            ScenarioStep::CompleteHumanLeg { bridge_id } => self.complete_human_leg(bridge_id),
+            ScenarioStep::FailHumanLeg { bridge_id } => self.fail_human_leg(bridge_id),
+            ScenarioStep::ResumeBridgeAi { bridge_id } => self.resume_bridge_ai(bridge_id),
+            ScenarioStep::EndBridge { bridge_id } => self.end_bridge(bridge_id),
+            ScenarioStep::ReclaimTerminalBridge { bridge_id } => Ok(StepOutcome::BridgeReclaimed(
+                self.bridges.remove_terminal(bridge_id)?,
+            )),
             ScenarioStep::Poll { at } => Ok(engine_outcome(None, self.engine.poll(*at)?)),
             ScenarioStep::ReceiveRtp { at, source, wire } => {
                 let media = self.media.as_mut().ok_or(StepError::MediaNotConfigured)?;
@@ -475,6 +597,51 @@ impl ReplayRunner {
                 Ok(StepOutcome::AudioRtpEmitted(media.next_audio_rtp(*marker)?))
             }
         }
+    }
+
+    fn create_bridge(
+        &mut self,
+        caller_call_id: &CallId,
+        caller_leg_id: &LegId,
+        ai_stream_id: &StreamId,
+    ) -> Result<StepOutcome, StepError> {
+        let (_, event) = self.bridges.create_ai(
+            caller_call_id.clone(),
+            caller_leg_id.clone(),
+            ai_stream_id.clone(),
+        )?;
+        Ok(StepOutcome::BridgeTransition(event))
+    }
+
+    fn begin_human_leg(
+        &mut self,
+        bridge_id: &BridgeId,
+        call_id: &CallId,
+        leg_id: &LegId,
+    ) -> Result<StepOutcome, StepError> {
+        Ok(StepOutcome::BridgeTransition(self.bridges.begin_human(
+            bridge_id,
+            call_id.clone(),
+            leg_id.clone(),
+        )?))
+    }
+
+    fn complete_human_leg(&mut self, id: &BridgeId) -> Result<StepOutcome, StepError> {
+        Ok(StepOutcome::BridgeTransition(
+            self.bridges.complete_human(id)?,
+        ))
+    }
+
+    fn fail_human_leg(&mut self, id: &BridgeId) -> Result<StepOutcome, StepError> {
+        Ok(StepOutcome::BridgeTransition(self.bridges.fail_human(id)?))
+    }
+
+    fn resume_bridge_ai(&mut self, id: &BridgeId) -> Result<StepOutcome, StepError> {
+        Ok(StepOutcome::BridgeTransition(self.bridges.resume_ai(id)?))
+    }
+
+    fn end_bridge(&mut self, id: &BridgeId) -> Result<StepOutcome, StepError> {
+        Ok(StepOutcome::BridgeTransition(self.bridges.end(id)?))
     }
 }
 
@@ -519,6 +686,8 @@ pub enum ReplayError {
     },
     /// Final call snapshot collection failed.
     Engine(EngineError),
+    /// Bridge setup or final snapshot collection failed.
+    Bridge(BridgeError),
 }
 
 impl Display for ReplayError {
@@ -546,6 +715,7 @@ impl Display for ReplayError {
                 write!(formatter, "scenario step {index} failed: {source}")
             }
             Self::Engine(error) => Display::fmt(error, formatter),
+            Self::Bridge(error) => Display::fmt(error, formatter),
         }
     }
 }
@@ -555,6 +725,7 @@ impl Error for ReplayError {
         match self {
             Self::Step { source, .. } => Some(source),
             Self::Engine(error) => Some(error),
+            Self::Bridge(error) => Some(error),
             Self::InvalidConfig
             | Self::InvalidScenarioName
             | Self::TooManySteps { .. }
@@ -566,6 +737,12 @@ impl Error for ReplayError {
 impl From<EngineError> for ReplayError {
     fn from(error: EngineError) -> Self {
         Self::Engine(error)
+    }
+}
+
+impl From<BridgeError> for ReplayError {
+    fn from(error: BridgeError) -> Self {
+        Self::Bridge(error)
     }
 }
 
@@ -582,6 +759,8 @@ pub enum StepError {
     SipParse(ParseError),
     /// SIP transaction/dialog/call orchestration failed.
     Engine(EngineError),
+    /// Bridge state or resource validation failed.
+    Bridge(BridgeError),
     /// RTP/media processing failed.
     Media(MediaSessionError),
 }
@@ -596,6 +775,7 @@ impl Display for StepError {
             }
             Self::SipParse(error) => Display::fmt(error, formatter),
             Self::Engine(error) => Display::fmt(error, formatter),
+            Self::Bridge(error) => Display::fmt(error, formatter),
             Self::Media(error) => Display::fmt(error, formatter),
         }
     }
@@ -606,6 +786,7 @@ impl Error for StepError {
         match self {
             Self::SipParse(error) => Some(error),
             Self::Engine(error) => Some(error),
+            Self::Bridge(error) => Some(error),
             Self::Media(error) => Some(error),
             Self::NonMonotonicTime | Self::ExpectedRequest | Self::MediaNotConfigured => None,
         }
@@ -621,6 +802,12 @@ impl From<ParseError> for StepError {
 impl From<EngineError> for StepError {
     fn from(error: EngineError) -> Self {
         Self::Engine(error)
+    }
+}
+
+impl From<BridgeError> for StepError {
+    fn from(error: BridgeError) -> Self {
+        Self::Bridge(error)
     }
 }
 

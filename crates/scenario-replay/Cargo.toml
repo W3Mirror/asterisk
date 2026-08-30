@@ -7,6 +7,7 @@ rust-version.workspace = true
 
 [dependencies]
 call-api = { path = "../call-api" }
+call-bridge = { path = "../call-bridge" }
 call-core = { path = "../call-core" }
 call-engine = { path = "../call-engine" }
 media-core = { path = "../media-core" }
