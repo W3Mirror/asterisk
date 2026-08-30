@@ -1,5 +1,13 @@
 //! Bounded media queues and G.711 conversion primitives.
 
+mod recording;
+mod session;
+
+pub use recording::{AudioRecorder, RecorderConfig, RecordingError, RecordingMetadata};
+pub use session::{
+    MediaSession, MediaSessionConfig, MediaSessionError, MediaSessionStats, ReceivedMedia,
+};
+
 use std::{
     collections::VecDeque,
     error::Error,
@@ -81,6 +89,17 @@ impl<T> BoundedMediaQueue<T> {
 
     pub fn pop(&mut self) -> Option<T> {
         self.items.pop_front()
+    }
+
+    /// Borrows the oldest queued item without removing it.
+    #[must_use]
+    pub fn front(&self) -> Option<&T> {
+        self.items.front()
+    }
+
+    /// Iterates queued items from oldest to newest.
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        self.items.iter()
     }
 
     pub fn len(&self) -> usize {
@@ -189,6 +208,12 @@ impl AudioBridge {
 
     pub fn pop_for_rtp(&mut self) -> Option<AudioFrame> {
         self.from_ai.pop()
+    }
+
+    /// Borrows the next frame destined for RTP without removing it.
+    #[must_use]
+    pub fn peek_for_rtp(&self) -> Option<&AudioFrame> {
+        self.from_ai.front()
     }
 
     pub fn stats(&self) -> MediaBridgeStats {
