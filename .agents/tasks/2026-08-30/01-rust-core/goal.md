@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-071 — PR #28 published with hosted validation running
-**Last checkpoint (UTC):** 2026-08-30T21:53:33Z
+**Current checkpoint:** CP-072 — PR #28 hosted validation green
+**Last checkpoint (UTC):** 2026-08-30T21:57:38Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Multi-leg AI-to-human bridge control-plane foundation<br>
-**Next resume action:** Verify all hosted checks on PR #28's final checkpoint head, then integrate deterministic bridge transitions into scenario replay
+**Next resume action:** Create the next tracked stacked-PR worktree from `origin/call-bridge-core` and integrate deterministic bridge transitions into scenario replay
 **Active PR:** [#28](https://github.com/W3Mirror/asterisk/pull/28); branch `call-bridge-core` targets `sip-scenario-transfer-reclamation`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-28`
@@ -3627,6 +3627,27 @@ blockers: Hosted validation is pending on the publication checkpoint's final hea
 next_action: Push this publication checkpoint, verify all three hosted Rust quality gates on the final PR #28 head, then create the next tracked stacked worktree for deterministic bridge scenario replay
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #28 if the bridge contract is superseded
 notes: PR #28 contains its five relevant bridge tests and GitHub runs the complete repository suite on the PR, not an affected-module-only subset. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-072 — PR #28 hosted validation green
+
+~~~yaml
+checkpoint_id: CP-072
+recorded_at_utc: 2026-08-30T21:57:38Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Multi-leg AI-to-human bridge control-plane foundation
+scope: Verify the published bounded bridge foundation through every repository-hosted Rust quality gate before beginning deterministic bridge replay integration
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-28
+branch: call-bridge-core
+base_branch: sip-scenario-transfer-reclamation
+pr: https://github.com/W3Mirror/asterisk/pull/28
+head_sha: 181eec9a2b79674adc936166db3b664de5dfced9 before this green-check reconciliation commit
+evidence: PR #28 is OPEN/non-draft/CLEAN with exact stacked base `sip-scenario-transfer-reclamation` at `bfb0d7421`; hosted run `33337669615` passed Workspace checks in 15 seconds (formatting, 144 tests, workspace Clippy), Protocol fuzz checks in 53 seconds (all six address-sanitizer targets), and Dependency audit in 3 minutes 3 seconds
+blockers: Runtime SIP origination and RTP-to-RTP bridge composition remain incomplete; deterministic bridge replay, property invariants, local SIPp, differential replay, load, soak, and real Asterisk/provider interoperability remain active goal work; real provider evidence remains mandatory before enabling Rust traffic; Asterisk remains the fallback
+next_action: Push this green-check reconciliation commit, verify the final PR #28 head, then create a tracked stacked worktree from `origin/call-bridge-core` for deterministic bridge scenario replay
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #28 if the bridge contract is superseded
+notes: Relevant bridge tests shipped in the same PR as their code. Hosted PR CI and pushes to `aistack/main` continue to run the complete repository suite rather than affected-module selection. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
