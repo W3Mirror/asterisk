@@ -10,12 +10,15 @@ call-api = { path = "../call-api" }
 call-bridge = { path = "../call-bridge" }
 call-core = { path = "../call-core" }
 call-engine = { path = "../call-engine" }
+media-core = { path = "../media-core" }
+media-runtime = { path = "../media-runtime" }
 sip-transaction = { path = "../sip-transaction" }
 sip-transport = { path = "../sip-transport" }
 sip-types = { path = "../sip-types" }
 sip-security = { path = "../sip-security" }
 
 [dev-dependencies]
+rtp = { path = "../rtp" }
 sip-parser = { path = "../sip-parser" }
 
 [lints]

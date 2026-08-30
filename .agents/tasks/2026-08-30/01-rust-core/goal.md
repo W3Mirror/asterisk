@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-091 — PR #34 hosted runtime-orchestration validation green
-**Last checkpoint (UTC):** 2026-08-30T23:40:12Z
+**Current checkpoint:** CP-093 — runtime caller/human RTP audio bridge locally green
+**Last checkpoint (UTC):** 2026-08-30T23:48:44Z
 **Active phase:** Phase 1 — Rust media engine
-**Active milestone:** Runtime human-leg SIP and bridge composition<br>
-**Next resume action:** Push the PR #34 green-check reconciliation, verify all three hosted jobs on that documentation-only final head, then create the next tracked stacked worktree and implement bounded RTP-to-RTP caller/human forwarding
-**Active PR:** [#34](https://github.com/W3Mirror/asterisk/pull/34) — `runtime-human-leg-bridge` targets `synthetic-differential-replay`
+**Active milestone:** Runtime caller/human RTP audio composition<br>
+**Next resume action:** Commit and publish `runtime-rtp-leg-bridge` as stacked PR #35 against `runtime-human-leg-bridge`, then verify every hosted Rust quality gate on its final head
+**Active PR:** pending publication; branch `runtime-rtp-leg-bridge` targets `runtime-human-leg-bridge`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-34`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-35`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -4047,6 +4047,48 @@ blockers: Runtime SIP signaling and bridge lifecycle are composed, but caller-to
 next_action: Push this reconciliation checkpoint, verify all three hosted jobs on that documentation-only final head, then create the next tracked stacked worktree and implement bounded RTP-to-RTP caller/human forwarding tied to `BridgeState::HumanActive`
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #34 if the orchestration contract is superseded
 notes: Relevant tests shipped with the implementation. Hosted PR CI and pushes to `aistack/main` continue to run the complete repository suite rather than affected-module selection. The only hosted annotation is the known non-blocking `actions/checkout@v4` Node.js 20 runtime deprecation notice. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-092 — PR #34 final reconciliation head hosted green
+
+~~~yaml
+checkpoint_id: CP-092
+recorded_at_utc: 2026-08-30T23:48:44Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Runtime human-leg SIP and bridge composition
+scope: Reconcile PR #34's documentation-only checkpoint head before beginning caller/human RTP audio composition
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-34
+branch: runtime-human-leg-bridge
+base_branch: synthetic-differential-replay
+pr: https://github.com/W3Mirror/asterisk/pull/34
+head_sha: 3b29122b05eb61da0fbe7c7967f7f13158e377ca
+evidence: PR #34 remains OPEN/non-draft/CLEAN against exact base `synthetic-differential-replay` at `5cc75e1c0`, with local, origin, and GitHub final-head parity; hosted run `33342451168` passed Workspace checks in 42 seconds, including formatting, all 175 tests, local SIPp, the 512-call reclamation smoke, and workspace Clippy; Protocol fuzz checks passed in 47 seconds across all six address-sanitizer targets; Dependency audit passed in 3 minutes 8 seconds
+blockers: Caller/human RTP forwarding was not included in PR #34; DTMF/RTCP relay, media/WebSocket load, soak/memory, sanitized captures, provider compatibility, rollback proof, and production evidence remain active goal work; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Create tracked PR #35 worktree from `runtime-human-leg-bridge` and implement state-gated bounded caller/human RTP audio forwarding
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #34 if the runtime orchestration contract is superseded
+notes: The only hosted annotations are the known non-blocking `actions/checkout@v4` Node.js 20 runtime deprecation notices. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-093 — runtime caller/human RTP audio bridge locally green
+
+~~~yaml
+checkpoint_id: CP-093
+recorded_at_utc: 2026-08-30T23:48:44Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Runtime caller/human RTP audio composition
+scope: Compose an answered bridge record with two bounded UDP media sessions so caller and human G.711 audio forwards bidirectionally only while the exact endpoint pair remains `HumanActive`
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-35
+branch: runtime-rtp-leg-bridge
+base_branch: runtime-human-leg-bridge
+pr: pending publication
+head_sha: 3b29122b05eb61da0fbe7c7967f7f13158e377ca before the implementation commit
+evidence: New `HumanMediaBridgeRuntime` checks bridge state and exact caller/human call-leg identities before every socket read, requires the opposite RTP destination before consuming input, validates and decodes inbound RTP through the source `MediaSession`, crosses one decoded frame through the destination session's bounded queue, and re-encodes with the destination payload/SSRC/sequence/timestamp state; results expose inbound and outbound `PushOutcome` values; seven new localhost UDP tests cover bidirectional audio and per-leg RTP identity, construction rejection during `ConnectingHuman`, fail-back rejection before datagram consumption, stale human endpoint rejection, observable bounded drop-newest behavior, missing-destination preflight without input consumption, and bounded DTMF retention without accidental audio forwarding; all 18 call-runtime tests and all 182 locked workspace tests pass; strict call-runtime Clippy with `--no-deps -- -D warnings`, workspace Clippy/all targets, formatting, workflow YAML parsing, and `git diff --check` pass
+blockers: This slice forwards negotiated G.711 audio only; telephone-event packets remain bounded and observable on the source session but DTMF relay, RTCP relay, jitter playout, broader codec/transcoding support, media/WebSocket load, long-duration soak/memory, sanitized captures, provider/Asterisk compatibility, and rollback proof remain active goal work; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Commit and publish `runtime-rtp-leg-bridge` as stacked PR #35 against `runtime-human-leg-bridge`, then verify all hosted Rust quality gates on its final head
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the RTP bridge PR or remove the new runtime composition if its contract is superseded
+notes: Relevant implementation, seven directly affected-module tests, documentation, manifest, and lockfile update ship together. Every PR and push to `aistack/main` runs the complete repository suite rather than affected-module selection. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
