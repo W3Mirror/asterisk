@@ -1,12 +1,12 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-036 — SIP source policy runtime integration committed
-**Last checkpoint (UTC):** 2026-08-30T15:05:08Z
+**Current checkpoint:** CP-037 — PR13 published and stacked remote parity verified
+**Last checkpoint (UTC):** 2026-08-30T15:06:57Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Milestone 4 — Dialog + SDP + Basic Calls<br>
-**Next resume action:** Publish branch `sip-runtime-security` and create stacked PR13 against `sip-security-policy`
-**Active PR:** pending PR13; branch `sip-runtime-security` targets `sip-security-policy`
+**Next resume action:** Collect sanitized provider interoperability/runtime evidence before enabling any Rust route, then add the next bounded security or media-interop slice
+**Active PR:** [#13](https://github.com/W3Mirror/asterisk/pull/13); branch `sip-runtime-security` targets `sip-security-policy`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-13-runtime-security`
 **Primary language:** Rust  
@@ -2566,7 +2566,7 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 10 | [#10](https://github.com/W3Mirror/asterisk/pull/10) | sip-auth-routing | sip-engine-runtime | /home/ashutosh/.worktrees/w3mirror/asterisk/pr-10-sip-auth | Milestone 4 security/provider primitive: bounded SIP Digest challenge/authorization parsing, RFC 2617 MD5 auth/auth-int responses, redacted credentials, constant-time verification, and bounded failure throttling | in_progress | 80e0368cc | workspace format/tests/clippy green; local HEAD equals origin/sip-auth-routing at 80e0368cc; PR #10 is OPEN/non-draft against sip-engine-runtime at 9cac8d21f; no GitHub checks are configured; no provider/runtime or live-call evidence; Asterisk fallback remains active | Preserve Asterisk fallback and continue with provider-routing/interoperability evidence and separate bounded slices |
 | 11 | [#11](https://github.com/W3Mirror/asterisk/pull/11) | provider-routing | sip-auth-routing | /home/ashutosh/.worktrees/w3mirror/asterisk/pr-11-provider-routing | Milestone 4 provider abstraction: bounded provider profiles for signaling/media/auth/NAT policy plus deterministic inbound/outbound routing and mandatory Asterisk fallback | in_progress | `0a3ab4c5b` | workspace format/tests/clippy green; local HEAD equals origin/provider-routing at `0a3ab4c5b`; PR #11 is OPEN/non-draft against sip-auth-routing at 5677ca7ed; no GitHub checks are configured; provider profile is repository-derived only; no provider/runtime or live-call evidence; Asterisk fallback remains active | Preserve Asterisk fallback and continue with provider interoperability evidence and security/load slices |
 | 12 | [#12](https://github.com/W3Mirror/asterisk/pull/12) | `sip-security-policy` | `provider-routing` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-12-sip-security` | Milestone 4 security primitive: bounded IPv4/IPv6 CIDR parsing and canonicalization, source allow/deny policy, deny precedence, and fail-closed configured allowlists | in_progress | `b8d81f63e` | workspace format/tests/clippy/diff checks pass; local HEAD equals origin/sip-security-policy at `b8d81f63e`; PR #12 is OPEN/non-draft against provider-routing at `0a3ab4c5b`; no GitHub checks are configured; no provider/runtime or live-call evidence; Asterisk fallback remains active | Preserve Asterisk fallback and continue with provider interoperability evidence and runtime security slices |
-| 13 | pending | `sip-runtime-security` | `sip-security-policy` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-13-runtime-security` | Milestone 4 runtime security integration: apply bounded source-IP policy to observed UDP/TCP peers before `CallEngine` dispatch with backward-compatible default allow | in_progress | `1014cfa31` | focused runtime tests, format, clippy, and diff checks pass; no provider/runtime or live-call evidence; Asterisk fallback remains active | Publish `sip-runtime-security` and create stacked PR13 against `sip-security-policy` |
+| 13 | [#13](https://github.com/W3Mirror/asterisk/pull/13) | `sip-runtime-security` | `sip-security-policy` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-13-runtime-security` | Milestone 4 runtime security integration: apply bounded source-IP policy to observed UDP/TCP peers before `CallEngine` dispatch with backward-compatible default allow | in_progress | `71b982ec2` | workspace format/tests/clippy/diff checks pass; local HEAD equals origin/sip-runtime-security at `71b982ec2`; PR #13 is OPEN/non-draft against sip-security-policy at `b8d81f63e`; no GitHub checks are configured; no provider/runtime or live-call evidence; Asterisk fallback remains active | Collect sanitized provider interoperability/runtime evidence before enabling any Rust route, then add the next bounded security or media-interop slice |
 
 ### CP-026 — PR10 published and stacked remote parity verified
 
@@ -2797,6 +2797,27 @@ blockers: No Asterisk binary, provider credentials/runtime, SIPp/live-call path,
 next_action: Run full workspace validation, publish `sip-runtime-security`, and create stacked PR13 against `sip-security-policy`
 rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
 notes: The runtime policy is opt-in through new constructors or `with_source_policy`; existing constructors retain default-allow compatibility; provider interoperability, fuzzing, load, and production evidence remain follow-up work
+~~~
+
+### CP-037 — PR13 published and stacked remote parity verified
+
+~~~yaml
+checkpoint_id: CP-037
+recorded_at_utc: 2026-08-30T15:06:57Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Milestone 4 — Dialog + SDP + Basic Calls
+scope: Publish runtime source-address enforcement as stacked PR13 and verify exact branch, base, head, worktree, and validation state
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-13-runtime-security
+branch: sip-runtime-security
+base_branch: sip-security-policy
+pr: https://github.com/W3Mirror/asterisk/pull/13
+head_sha: 71b982ec2ce0c5da13a6daaa8a765881f660d384
+evidence: `git push -u origin sip-runtime-security` succeeded; local HEAD equals origin/sip-runtime-security at 71b982ec2; `gh pr view 13` reports OPEN/non-draft with base sip-security-policy at b8d81f63e and matching head; `gh pr checks 13` reports no checks; `git diff --check origin/sip-security-policy...HEAD` passed; worktree clean
+blockers: No Asterisk binary, provider credentials/runtime, SIPp/live-call path, or sanitized SIP/SDP/RTP fixtures are available from this host; Asterisk routing remains the fallback
+next_action: Collect sanitized provider interoperability/runtime evidence before enabling any Rust route, then add the next bounded security or media-interop slice
+rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
+notes: PR13 is independently reviewable and unmerged; no provider credentials, runtime configuration, or live traffic were modified; fuzzing, load, and production evidence remain follow-up work
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
