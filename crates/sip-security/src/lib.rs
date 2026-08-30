@@ -299,7 +299,7 @@ impl SourceIpPolicy {
         &self.denylist
     }
 
-    /// Returns whether at least one allow rule is configured.
+    /// Returns whether an allowlist has been explicitly configured.
     #[must_use]
     pub fn has_allowlist(&self) -> bool {
         self.allowlist_configured
