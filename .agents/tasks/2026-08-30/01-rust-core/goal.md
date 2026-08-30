@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-046 — PR18 validation and evidence-boundary recheck
-**Last checkpoint (UTC):** 2026-08-30T16:23:38Z
+**Current checkpoint:** CP-047 — bounded WebSocket stream transport
+**Last checkpoint (UTC):** 2026-08-30T16:36:10Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Milestone 4 — Dialog + SDP + Basic Calls<br>
 **Next resume action:** Obtain read-only access to the actual Asterisk/provider host or sanitized captures, then record successful and failed interoperability fixtures before enabling any Rust route
-**Active PR:** [#18](https://github.com/W3Mirror/asterisk/pull/18); branch `media-websocket` targets `sip-media-rtcp`
+**Active PR:** PR19 (pending publication); branch `media-websocket-transport` targets `media-websocket`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-18-media-websocket`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-19-media-websocket-transport`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -1915,7 +1915,7 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 | Workstream | Status | Evidence / checkpoint | PR | Next action |
 | --- | --- | --- | --- | --- |
 | Phase 0 — current Asterisk surface | in_progress | CP-004/CP-010/CP-045; `docs/current-asterisk-surface.md` (commit `edba8386c` plus fresh 2026-08-30 recheck); no Asterisk runtime, target SIP/RTP/8088 listeners, `.env.aistack`, or sanitized capture corpus; DNS/config/host address drift remains | #1 | Obtain provider/runtime access and sanitized successful/failed fixtures |
-| Phase 1 — Rust media engine | in_progress | CP-005/CP-008/CP-019; PR #2 safe protocol/media foundation plus PR #8 bounded RTP↔AI media session, DTMF bridge, and PCM recorder; workspace tests and clippy green | [#8](https://github.com/W3Mirror/asterisk/pull/8) | Add a concrete network AI transport and validate against provider media fixtures |
+| Phase 1 — Rust media engine | in_progress | CP-005/CP-008/CP-019/CP-042/CP-047; PR #2 safe protocol/media foundation, PR #8 bounded RTP↔AI media session/DTMF/PCM recorder, PR #18 bounded WebSocket adapter, and PR #19 stream driver; focused and workspace tests green | [#19](https://github.com/W3Mirror/asterisk/pull/19) (pending) | Obtain provider/runtime access and sanitized media fixtures, then validate the transport without enabling Rust traffic |
 | Phase 2 — SIP edge shadow mode | not_started | — | — | Build sanitized replay and comparison fixtures |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
 | Phase 4 — expanded provider coverage | not_started | — | — | Add one provider compatibility suite per rollout target |
@@ -3012,6 +3012,27 @@ blockers: No Asterisk binary, provider credentials/runtime, SIPp/live-call path,
 next_action: Obtain read-only access to the actual Asterisk/provider host or sanitized captures, then record successful and failed interoperability fixtures before enabling any Rust route
 rollback: Keep all call routing and media on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
 notes: Validation produced only existing dependency documentation warnings; no source, credential, production configuration, or live traffic was modified. PR18 remains offline/provider-neutral and unmerged; fuzzing, load, production, and real telephony evidence remain follow-up work
+~~~
+
+### CP-047 — Bounded WebSocket stream transport
+
+~~~yaml
+checkpoint_id: CP-047
+recorded_at_utc: 2026-08-30T16:36:10Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Milestone 2 — Rust RTP Core / Milestone 4 — Dialog + SDP + Basic Calls
+scope: Drive the bounded PR18 WebSocket/media adapter over an already-upgraded Read + Write stream without coupling it to an async runtime or changing Asterisk routing
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-19-media-websocket-transport
+branch: media-websocket-transport
+base_branch: media-websocket
+pr: pending
+head_sha: 91566d26075707f04dd11d727efb014d33599d9d
+evidence: `cargo fmt --all -- --check` passed; `git diff --check` passed; focused `cargo test -p media-websocket --locked --quiet` passed with 17 tests; full `cargo test --workspace --locked --quiet` passed; `cargo clippy -p media-websocket --all-targets --no-deps -- -D warnings` completed without new-crate findings; stream-driver tests cover partial reads/writes, automatic pong and close replies, client masking via injected keys, bounded write backpressure preserving queued audio, and EOF reporting
+blockers: No Asterisk binary, provider credentials/runtime, SIPp/live-call path, sanitized SIP/SDP/RTP/RTCP/WebSocket fixtures, provider dashboard access, or valid load/memory baseline are available from this host; the transport intentionally stops before HTTP upgrade/TLS and live provider interoperability; Asterisk routing remains the fallback
+next_action: Publish PR19 against `media-websocket`, then obtain read-only access to the actual Asterisk/provider host or sanitized captures before enabling any Rust route
+rollback: Keep all call routing and media on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
+notes: The driver is generic over `Read + Write`, bounds incomplete input and pending output bytes, requires a fresh caller-supplied mask source for client frames (with a Linux `/dev/urandom` implementation), and owns no HTTP upgrade or TLS. No provider credentials, runtime configuration, or live traffic were modified; fuzzing, load, production, and real telephony evidence remain follow-up work
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
