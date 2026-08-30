@@ -7,4 +7,4 @@ on:
 jobs:
   PRAction:
     name: "Action"
-    uses: W3Mirror/asterisk-ci-actions/.github/workflows/AsteriskPRAction.yml@main
+    uses: asterisk/asterisk-ci-actions/.github/workflows/AsteriskPRAction.yml@main

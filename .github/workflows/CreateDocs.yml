@@ -17,7 +17,8 @@ jobs:
       fail-fast: false
       matrix:
         branch: ${{ fromJSON(inputs.branches || vars.WIKIDOC_BRANCHES) }}
-    uses: W3Mirror/asterisk-ci-actions/.github/workflows/AsteriskCreateDocs.yml@main
+    uses: asterisk/asterisk-ci-actions/.github/workflows/AsteriskCreateDocs.yml@main
     with:
       asterisk_repo:     ${{ github.repository }}
       base_branch:       ${{ matrix.branch }}
+

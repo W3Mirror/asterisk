@@ -73,7 +73,7 @@ on:
 
 jobs:
   Releaser:
-    uses: W3Mirror/asterisk-ci-actions/.github/workflows/AsteriskRelease.yml@main
+    uses: asterisk/asterisk-ci-actions/.github/workflows/AsteriskRelease.yml@main
     with:
       release_type: ${{inputs.release_type}}
       new_version: ${{inputs.new_version}}
