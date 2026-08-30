@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-027 — PR10 ledger reconciliation published
-**Last checkpoint (UTC):** 2026-08-30T14:25:20Z
+**Current checkpoint:** CP-028 — Provider routing profile implementation committed
+**Last checkpoint (UTC):** 2026-08-30T14:40:00Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Milestone 4 — Dialog + SDP + Basic Calls<br>
-**Next resume action:** Add the next bounded offline-verifiable security/provider slice while preserving the runtime/provider evidence gate
-**Active PR:** [#10](https://github.com/W3Mirror/asterisk/pull/10); branch `sip-auth-routing` targets `sip-engine-runtime`
+**Next resume action:** Publish PR11 against sip-auth-routing and verify exact remote/PR parity
+**Active PR:** pending; branch `provider-routing` targets `sip-auth-routing`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-10-sip-auth`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-11-provider-routing`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -2564,6 +2564,7 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 9 | [#9](https://github.com/W3Mirror/asterisk/pull/9) | `sip-engine-runtime` | `media-session-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-9-sip-runtime` | Milestone 4 runtime integration: bounded blocking UDP/TCP transport dispatch into `CallEngine`, outbound origination, application response wrappers, and atomic delivery | in_progress | `be51704c0` | workspace format/tests/clippy green; `git diff --check` passes; local HEAD equals origin/sip-engine-runtime; PR #9 is OPEN against media-session-core with matching head/base; no provider/runtime or live-call evidence; Asterisk fallback remains active | Add the next bounded offline-verifiable security/provider slice while preserving the runtime/provider evidence gate |
 
 | 10 | [#10](https://github.com/W3Mirror/asterisk/pull/10) | sip-auth-routing | sip-engine-runtime | /home/ashutosh/.worktrees/w3mirror/asterisk/pr-10-sip-auth | Milestone 4 security/provider primitive: bounded SIP Digest challenge/authorization parsing, RFC 2617 MD5 auth/auth-int responses, redacted credentials, constant-time verification, and bounded failure throttling | in_progress | 80e0368cc | workspace format/tests/clippy green; local HEAD equals origin/sip-auth-routing at 80e0368cc; PR #10 is OPEN/non-draft against sip-engine-runtime at 9cac8d21f; no GitHub checks are configured; no provider/runtime or live-call evidence; Asterisk fallback remains active | Preserve Asterisk fallback and continue with provider-routing/interoperability evidence and separate bounded slices |
+| 11 | pending | provider-routing | sip-auth-routing | /home/ashutosh/.worktrees/w3mirror/asterisk/pr-11-provider-routing | Milestone 4 provider abstraction: bounded provider profiles for signaling/media/auth/NAT policy plus deterministic inbound/outbound routing and mandatory Asterisk fallback | in_progress | ec386d831 | focused provider-routing tests and clippy green; PR not yet published; provider profile is repository-derived only; no provider/runtime or live-call evidence; Asterisk fallback remains active | Publish PR11 against sip-auth-routing and verify exact remote/PR parity |
 
 ### CP-026 — PR10 published and stacked remote parity verified
 
@@ -2605,6 +2606,27 @@ blockers: No Asterisk binary, provider credentials/runtime, SIPp/live-call path,
 next_action: Continue with the next bounded provider-routing or interoperability slice only after preserving the Asterisk fallback
 rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
 notes: PR10 remains independently reviewable and unmerged; provider interoperability, fuzzing/security coverage, load, and production evidence remain follow-up work
+~~~
+
+### CP-028 — Provider routing profile implementation committed
+
+~~~yaml
+checkpoint_id: CP-028
+recorded_at_utc: 2026-08-30T14:40:00Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Milestone 4 — Dialog + SDP + Basic Calls
+scope: Add bounded provider profiles and deterministic inbound/outbound routing policy with explicit Asterisk fallback, without enabling Rust traffic or embedding credentials
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-11-provider-routing
+branch: provider-routing
+base_branch: sip-auth-routing
+pr: pending
+head_sha: ec386d831cccb403f15eaf6b0dfef96a526baeee
+evidence: cargo fmt --all -- --check passed; cargo test -p provider-routing passed with five profile/routing validation tests; cargo clippy -p provider-routing --all-targets exited 0; git diff --check passed; provider values are derived from checked-in repository declarations and no credentials or runtime state were inspected
+blockers: No Asterisk binary, provider credentials/runtime, SIPp/live-call path, or sanitized SIP/SDP/RTP fixtures are available from this host; Asterisk routing remains the fallback
+next_action: Publish branch provider-routing and create stacked PR11 against sip-auth-routing
+rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
+notes: The route table defaults unknown routes to Asterisk and rejects profiles without an Asterisk fallback; live provider interoperability remains unavailable
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
