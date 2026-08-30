@@ -1,12 +1,12 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-049 — bounded UDP RTP/RTCP runtime committed
-**Last checkpoint (UTC):** 2026-08-30T16:51:39Z
+**Current checkpoint:** CP-050 — PR20 publication and remote-parity verification
+**Last checkpoint (UTC):** 2026-08-30T16:53:05Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Milestone 4 — Dialog + SDP + Basic Calls<br>
-**Next resume action:** Publish PR20 against `media-websocket-transport`, then obtain read-only access to the actual Asterisk/provider host or sanitized captures before enabling any Rust route
-**Active PR:** PR20 (pending publication); branch `media-udp-runtime` targets `media-websocket-transport`
+**Next resume action:** Obtain read-only access to the actual Asterisk/provider host or sanitized captures, then record successful and failed interoperability fixtures before enabling any Rust route
+**Active PR:** [#20](https://github.com/W3Mirror/asterisk/pull/20); branch `media-udp-runtime` targets `media-websocket-transport`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-20-media-udp-runtime`
 **Primary language:** Rust  
@@ -1915,7 +1915,7 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 | Workstream | Status | Evidence / checkpoint | PR | Next action |
 | --- | --- | --- | --- | --- |
 | Phase 0 — current Asterisk surface | in_progress | CP-004/CP-010/CP-045; `docs/current-asterisk-surface.md` (commit `edba8386c` plus fresh 2026-08-30 recheck); no Asterisk runtime, target SIP/RTP/8088 listeners, `.env.aistack`, or sanitized capture corpus; DNS/config/host address drift remains | #1 | Obtain provider/runtime access and sanitized successful/failed fixtures |
-| Phase 1 — Rust media engine | in_progress | CP-005/CP-008/CP-019/CP-042/CP-047/CP-048/CP-049; PR #2 safe protocol/media foundation, PR #8 bounded RTP↔AI media session/DTMF/PCM recorder, PR #18 bounded WebSocket adapter, PR #19 stream driver, and PR #20 UDP RTP/RTCP runtime; focused and workspace tests green | PR #20 (pending) | Publish PR20, then obtain provider/runtime access and sanitized media fixtures before enabling Rust traffic |
+| Phase 1 — Rust media engine | in_progress | CP-005/CP-008/CP-019/CP-042/CP-047/CP-048/CP-049/CP-050; PR #2 safe protocol/media foundation, PR #8 bounded RTP↔AI media session/DTMF/PCM recorder, PR #18 bounded WebSocket adapter, PR #19 stream driver, and PR #20 UDP RTP/RTCP runtime; focused and workspace tests green | [#20](https://github.com/W3Mirror/asterisk/pull/20) | Obtain provider/runtime access and sanitized media fixtures, then validate the transport without enabling Rust traffic |
 | Phase 2 — SIP edge shadow mode | not_started | — | — | Build sanitized replay and comparison fixtures |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
 | Phase 4 — expanded provider coverage | not_started | — | — | Add one provider compatibility suite per rollout target |
@@ -2573,7 +2573,7 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 17 | [#17](https://github.com/W3Mirror/asterisk/pull/17) | `sip-media-rtcp` | `sip-rtcp-quality` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-17-media-rtcp` | Milestone 2/4 media-plane integration: wire the bounded RTCP session into `MediaSession`, expose RTCP receive/send APIs and report-derived quality stats, and share packet/SSRC/source-policy bounds | in_progress | `b82aa8113` | workspace format/tests/clippy/diff checks pass; 10 media-core tests pass including RTCP quality and source-policy integration; local HEAD equals origin/sip-media-rtcp at `b82aa8113`; PR #17 is OPEN/non-draft against sip-rtcp-quality at `678bfa141`; no GitHub checks are configured; no provider/runtime or live-call evidence; Asterisk fallback remains active | Collect sanitized provider interoperability/runtime evidence before enabling any Rust route, then add the next bounded security or media-interop slice |
 | 18 | [#18](https://github.com/W3Mirror/asterisk/pull/18) | `media-websocket` | `sip-media-rtcp` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-18-media-websocket` | Milestone 2/4 AI media transport: add bounded RFC 6455 WebSocket framing, Asterisk plain-text `chan_websocket` controls, and raw PCMU/PCMA bridging to `MediaSession` without enabling Rust traffic | in_progress | `3fb9d638b` | implementation 89b47610b plus ledger commits; local HEAD equals origin/media-websocket at 3fb9d638b before this ledger-only reconciliation; PR #18 is OPEN/non-draft against sip-media-rtcp at 9f4b65287 with matching head; `gh pr checks 18` reports no checks; workspace tests, formatting, and diff checks pass; no provider/runtime or live-call evidence; Asterisk fallback remains active | Collect sanitized provider interoperability/runtime evidence before enabling any Rust route, then add the next bounded security or media-interop slice |
 | 19 | [#19](https://github.com/W3Mirror/asterisk/pull/19) | `media-websocket-transport` | `media-websocket` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-19-media-websocket-transport` | Milestone 2/4 AI media transport: drive the bounded WebSocket adapter over a generic `Read + Write` stream with bounded reads/writes, masking, and close handling | in_progress | `35f50e1a8` | implementation 91566d260 plus checkpoint commit; local HEAD equals origin/media-websocket-transport at 35f50e1a8; PR #19 is OPEN/non-draft against media-websocket at 039f143d0 with CLEAN merge state; focused and workspace tests, formatting, diff, and clippy checks pass; no provider/runtime or live-call evidence | Publish PR20 from `media-udp-runtime`, then collect sanitized provider interoperability/runtime evidence before enabling any Rust route |
-| 20 | pending | `media-udp-runtime` | `media-websocket-transport` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-20-media-udp-runtime` | Milestone 2/4 media-plane runtime: bounded UDP RTP/RTCP ingress and egress, source-policy enforcement, symmetric endpoint learning, and DTMF/report delivery around `MediaSession` | in_progress | `f04b1ff2c` | `cargo fmt --all -- --check`, `git diff --check`, focused `cargo test -p media-runtime --locked --quiet` (7 tests), workspace tests, and package clippy with `-D warnings` pass; no provider/runtime or live-call evidence; Asterisk fallback remains active | Publish PR20 against `media-websocket-transport` and verify exact branch, base, head, worktree, and CI state |
+| 20 | [#20](https://github.com/W3Mirror/asterisk/pull/20) | `media-udp-runtime` | `media-websocket-transport` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-20-media-udp-runtime` | Milestone 2/4 media-plane runtime: bounded UDP RTP/RTCP ingress and egress, source-policy enforcement, symmetric endpoint learning, and DTMF/report delivery around `MediaSession` | in_progress | `6c3628e91` | implementation f04b1ff2c plus checkpoint commit; local HEAD equals origin/media-udp-runtime at 6c3628e91; PR #20 is OPEN/non-draft against media-websocket-transport at 35f50e1a8 with CLEAN merge state and no configured checks; focused/workspace tests, formatting, diff, and package clippy pass; no provider/runtime or live-call evidence | Obtain read-only provider/runtime access or sanitized captures before enabling any Rust route |
 
 ### CP-026 — PR10 published and stacked remote parity verified
 
@@ -3077,6 +3077,27 @@ blockers: No Asterisk binary, provider credentials/runtime, SIPp/live-call path,
 next_action: Publish PR20 against `media-websocket-transport`, verify exact branch/base/head/worktree/CI state, then obtain read-only provider/runtime access or sanitized captures before enabling any Rust route
 rollback: Keep all call routing and media on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
 notes: `MediaUdpRuntime` owns only two UDP sockets and one bounded reusable receive buffer; `MediaSession` remains responsible for parsing, source authorization, SSRC/sequence metrics, queues, DTMF, and RTCP quality. Endpoint learning is configurable and defaults on for symmetric NAT behavior; outbound audio is removed from the bounded queue when serialized before the UDP write, and socket errors are surfaced. No provider credentials, runtime configuration, or live traffic were modified; DTLS-SRTP, TLS, fuzzing, load, production, and real telephony evidence remain follow-up work
+~~~
+
+### CP-050 — PR20 publication and remote-parity verification
+
+~~~yaml
+checkpoint_id: CP-050
+recorded_at_utc: 2026-08-30T16:53:05Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Milestone 2 — Rust RTP Core / Milestone 4 — Dialog + SDP + Basic Calls
+scope: Publish the bounded UDP RTP/RTCP runtime and reconcile the stacked PR metadata with the exact pushed head
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-20-media-udp-runtime
+branch: media-udp-runtime
+base_branch: media-websocket-transport
+pr: https://github.com/W3Mirror/asterisk/pull/20
+head_sha: 6c3628e919530fd4e16ca3153135d27b40b4863a
+evidence: PR20 is OPEN, non-draft, and CLEAN with base `media-websocket-transport` at `35f50e1a8e6732b162c74c9c43b68e88816bf311`; local `HEAD` and `origin/media-udp-runtime` both resolve to `6c3628e919530fd4e16ca3153135d27b40b4863a`; `gh pr checks 20` has no configured checks; focused and workspace tests, formatting, diff, and package clippy checks pass
+blockers: No Asterisk binary, provider credentials/runtime, SIPp/live-call path, sanitized SIP/SDP/RTP/RTCP/WebSocket fixtures, provider dashboard access, or valid load/memory baseline are available from this host; DTLS-SRTP/TLS and live provider interoperability remain separate evidence-gated work; Asterisk routing remains the fallback
+next_action: Obtain read-only access to the actual Asterisk/provider host or sanitized captures, then record successful and failed interoperability fixtures before enabling any Rust route
+rollback: Keep all call routing and media on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
+notes: PR20 adds no provider credentials, runtime configuration, or live traffic. Its UDP boundary is localhost-verified only; provider interoperability, DTLS-SRTP/TLS, fuzzing, load, production, and real telephony evidence remain follow-up work
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
