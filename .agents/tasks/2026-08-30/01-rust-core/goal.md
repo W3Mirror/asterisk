@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-090 — PR #34 published with hosted validation running
-**Last checkpoint (UTC):** 2026-08-30T23:36:19Z
+**Current checkpoint:** CP-091 — PR #34 hosted runtime-orchestration validation green
+**Last checkpoint (UTC):** 2026-08-30T23:40:12Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Runtime human-leg SIP and bridge composition<br>
-**Next resume action:** Push the PR #34 publication checkpoint, then verify Workspace/SIPp/load, Protocol fuzz, and Dependency audit checks on its documentation-only final head before implementing bounded RTP-to-RTP caller/human forwarding
+**Next resume action:** Push the PR #34 green-check reconciliation, verify all three hosted jobs on that documentation-only final head, then create the next tracked stacked worktree and implement bounded RTP-to-RTP caller/human forwarding
 **Active PR:** [#34](https://github.com/W3Mirror/asterisk/pull/34) — `runtime-human-leg-bridge` targets `synthetic-differential-replay`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-34`
@@ -4026,6 +4026,27 @@ blockers: Hosted validation is pending on the publication checkpoint's final hea
 next_action: Push this publication checkpoint and verify all three hosted Rust quality gates on the final PR #34 head, then implement bounded RTP-to-RTP caller/human forwarding as the next runtime-composition slice
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #34 if the orchestration contract is superseded
 notes: PR #34 contains the relevant runtime implementation, five localhost UDP tests, documentation, manifest, and lockfile update. Every PR and push to `aistack/main` runs the complete repository suite rather than affected-module-only selection. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-091 — PR #34 hosted runtime-orchestration validation green
+
+~~~yaml
+checkpoint_id: CP-091
+recorded_at_utc: 2026-08-30T23:40:12Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Runtime human-leg SIP and bridge composition
+scope: Verify the published runtime human-leg orchestration slice through every repository-hosted Rust quality gate before beginning bounded RTP-to-RTP caller/human forwarding
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-34
+branch: runtime-human-leg-bridge
+base_branch: synthetic-differential-replay
+pr: https://github.com/W3Mirror/asterisk/pull/34
+head_sha: 5d61689fcf893d4f1e5b020e67375991bbcfafc2 before this green-check reconciliation commit
+evidence: PR #34 is OPEN/non-draft/CLEAN against exact base `synthetic-differential-replay` at `5cc75e1c0`, with local, origin, and GitHub head parity; hosted run `33342286329` passed Workspace checks in 45 seconds, including formatting, all 175 tests, all three local SIPp scenarios, the 512-call reclamation smoke, and workspace Clippy; Protocol fuzz checks passed in 56 seconds across all six address-sanitizer targets; Dependency audit passed in 2 minutes 59 seconds
+blockers: Runtime SIP signaling and bridge lifecycle are composed, but caller-to-human RTP forwarding is not; provider-specific SIP identities, provider authentication, sanitized captures, media/WebSocket load, long-duration soak/memory, Asterisk/carrier compatibility, and rollback proof remain active goal work; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Push this reconciliation checkpoint, verify all three hosted jobs on that documentation-only final head, then create the next tracked stacked worktree and implement bounded RTP-to-RTP caller/human forwarding tied to `BridgeState::HumanActive`
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #34 if the orchestration contract is superseded
+notes: Relevant tests shipped with the implementation. Hosted PR CI and pushes to `aistack/main` continue to run the complete repository suite rather than affected-module selection. The only hosted annotation is the known non-blocking `actions/checkout@v4` Node.js 20 runtime deprecation notice. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
