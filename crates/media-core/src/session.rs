@@ -3,6 +3,7 @@
 use std::collections::VecDeque;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
+use std::net::SocketAddr;
 use std::time::Duration;
 
 use dtmf::{Deduplicator, DtmfEvent, EncodeError, Notification, ParseError, encode, parse};
@@ -10,6 +11,7 @@ use rtp::{
     ParseConfig, RtpPacket, RtpSession, RtpSessionConfig, RtpSessionStats, SessionError,
     parse_with_config,
 };
+use sip_security::SourceIpPolicy;
 
 use crate::{
     AudioBridge, AudioCodec, AudioFrame, MediaBridgeConfig, MediaBridgeStats, PushOutcome,
@@ -232,9 +234,33 @@ impl MediaSession {
         initial_sequence: u16,
         initial_timestamp: u32,
     ) -> Result<Self, MediaSessionError> {
+        Self::new_with_source_policy(
+            config,
+            initial_sequence,
+            initial_timestamp,
+            SourceIpPolicy::default(),
+        )
+    }
+
+    /// Creates a media session with an explicit observed RTP-source policy.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the media, queue, or RTP configuration is invalid.
+    pub fn new_with_source_policy(
+        config: MediaSessionConfig,
+        initial_sequence: u16,
+        initial_timestamp: u32,
+        source_policy: SourceIpPolicy,
+    ) -> Result<Self, MediaSessionError> {
         let config = config.validate()?;
         Ok(Self {
-            rtp: RtpSession::new(config.rtp, initial_sequence, initial_timestamp)?,
+            rtp: RtpSession::new_with_source_policy(
+                config.rtp,
+                initial_sequence,
+                initial_timestamp,
+                source_policy,
+            )?,
             bridge: AudioBridge::new(config.bridge)?,
             pending_dtmf: VecDeque::with_capacity(config.max_pending_dtmf),
             config,
@@ -246,10 +272,23 @@ impl MediaSession {
         })
     }
 
+    /// Replaces the observed RTP-source policy while preserving session state.
+    #[must_use]
+    pub fn with_source_policy(mut self, source_policy: SourceIpPolicy) -> Self {
+        self.rtp = self.rtp.with_source_policy(source_policy);
+        self
+    }
+
     /// Returns the immutable negotiated media configuration.
     #[must_use]
     pub fn config(&self) -> MediaSessionConfig {
         self.config
+    }
+
+    /// Borrows the observed RTP-source policy applied by source-aware receives.
+    #[must_use]
+    pub fn source_policy(&self) -> &SourceIpPolicy {
+        self.rtp.source_policy()
     }
 
     /// Accepts one serialized RTP packet from the remote media endpoint.
@@ -259,6 +298,34 @@ impl MediaSession {
     /// Returns an error for malformed RTP, an unexpected payload/source, or a
     /// malformed telephone-event payload.
     pub fn receive_rtp(
+        &mut self,
+        input: &[u8],
+        arrival: Duration,
+    ) -> Result<ReceivedMedia, MediaSessionError> {
+        self.receive_rtp_inner(input, arrival)
+    }
+
+    /// Accepts one serialized RTP packet from an observed remote media peer.
+    ///
+    /// The source policy is checked before RTP parsing, so denied packets do
+    /// not alter parse counters, bridge queues, DTMF state, or RTP metrics.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SessionError::SourceAddressDenied`] wrapped in
+    /// [`MediaSessionError::Rtp`] when the source is rejected, or forwards the
+    /// usual media and RTP validation errors.
+    pub fn receive_rtp_from(
+        &mut self,
+        input: &[u8],
+        source: SocketAddr,
+        arrival: Duration,
+    ) -> Result<ReceivedMedia, MediaSessionError> {
+        self.rtp.authorize_source(source)?;
+        self.receive_rtp_inner(input, arrival)
+    }
+
+    fn receive_rtp_inner(
         &mut self,
         input: &[u8],
         arrival: Duration,
@@ -449,6 +516,7 @@ mod tests {
     use crate::{AudioCodec, AudioFrame};
     use dtmf::{DtmfDigit, DtmfEvent};
     use rtp::{RtpPacket, RtpSession, RtpSessionConfig, serialize};
+    use sip_security::SourceIpPolicy;
 
     fn rtp_sender() -> RtpSession {
         RtpSession::new(
@@ -580,5 +648,31 @@ mod tests {
             Err(MediaSessionError::CodecMismatch { .. })
         ));
         assert_eq!(media.stats().bridge.from_ai.depth, 1);
+    }
+
+    #[test]
+    fn source_policy_guards_media_before_rtp_parse() {
+        let mut policy = SourceIpPolicy::default();
+        policy.add_allow("2001:db8::/32").unwrap();
+        let mut media =
+            MediaSession::new_with_source_policy(MediaSessionConfig::default(), 20, 2_000, policy)
+                .unwrap();
+        let baseline = media.stats();
+        let denied = "192.0.2.10:4000".parse().unwrap();
+        assert_eq!(
+            media.receive_rtp_from(&[], denied, Duration::ZERO),
+            Err(MediaSessionError::Rtp(SessionError::SourceAddressDenied {
+                source: denied
+            }))
+        );
+        assert_eq!(media.stats(), baseline);
+
+        let mut sender = rtp_sender();
+        let input = sender.send(&[0xff, 0xce], 2, false).unwrap();
+        let allowed = "[2001:db8::10]:4000".parse().unwrap();
+        assert!(matches!(
+            media.receive_rtp_from(&input, allowed, Duration::from_millis(1)),
+            Ok(ReceivedMedia::Audio { samples: 2, .. })
+        ));
     }
 }

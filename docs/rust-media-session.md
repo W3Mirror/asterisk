@@ -8,6 +8,15 @@ outside the crate.
 
 ## Receive path
 
+For socket-backed ingress, call `receive_rtp_from` with the observed
+`SocketAddr`. The configured `sip-security::SourceIpPolicy` is evaluated before
+RTP parsing, so denied peers cannot change parse counters, SSRC/sequence state,
+queues, DTMF state, or quality metrics. `new` remains default-allow for callers
+that already enforce source policy at a lower transport boundary; use
+`new_with_source_policy` or `with_source_policy` to attach an explicit policy.
+
+After source authorization:
+
 1. Parse and size-check the RTP packet.
 2. Accept the negotiated audio payload or the negotiated RFC 4733
    `telephone-event` payload while sharing SSRC, sequence, loss, and jitter

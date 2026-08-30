@@ -3,8 +3,11 @@
 use std::{
     error::Error,
     fmt::{Display, Formatter},
+    net::SocketAddr,
     time::Duration,
 };
+
+use sip_security::SourceIpPolicy;
 
 #[derive(Clone, Copy, Debug)]
 pub struct ParseConfig {
@@ -418,6 +421,7 @@ pub enum SessionError {
     PacketTooLarge { actual: usize, maximum: usize },
     UnexpectedPayloadType { expected: u8, actual: u8 },
     UnexpectedSsrc { expected: u32, actual: u32 },
+    SourceAddressDenied { source: SocketAddr },
     Parse(ParseError),
     Serialize(SerializeError),
     Stats(StatsError),
@@ -453,6 +457,9 @@ impl Display for SessionError {
                     formatter,
                     "RTP session expected SSRC {expected}, received {actual}"
                 )
+            }
+            Self::SourceAddressDenied { source } => {
+                write!(formatter, "RTP source address {source} is not allowed")
             }
             Self::Parse(error) => Display::fmt(error, formatter),
             Self::Serialize(error) => Display::fmt(error, formatter),
@@ -494,6 +501,7 @@ pub struct RtpSessionStats {
 #[derive(Clone, Debug)]
 pub struct RtpSession {
     config: RtpSessionConfig,
+    source_policy: SourceIpPolicy,
     next_sequence: u16,
     next_timestamp: u32,
     remote_ssrc: Option<u32>,
@@ -510,6 +518,25 @@ impl RtpSession {
         initial_sequence: u16,
         initial_timestamp: u32,
     ) -> Result<Self, SessionError> {
+        Self::new_with_source_policy(
+            config,
+            initial_sequence,
+            initial_timestamp,
+            SourceIpPolicy::default(),
+        )
+    }
+
+    /// Creates a session with an explicit observed-source policy.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same configuration errors as [`Self::new`].
+    pub fn new_with_source_policy(
+        config: RtpSessionConfig,
+        initial_sequence: u16,
+        initial_timestamp: u32,
+        source_policy: SourceIpPolicy,
+    ) -> Result<Self, SessionError> {
         if config.payload_type > 127 {
             return Err(SessionError::InvalidPayloadType(config.payload_type));
         }
@@ -524,6 +551,7 @@ impl RtpSession {
         Ok(Self {
             remote_ssrc: config.remote_ssrc,
             config,
+            source_policy,
             next_sequence: initial_sequence,
             next_timestamp: initial_timestamp,
             received: RtpStats::default(),
@@ -531,6 +559,33 @@ impl RtpSession {
             octets_sent: 0,
             last_received: None,
         })
+    }
+
+    /// Replaces the observed-source policy while preserving session state.
+    #[must_use]
+    pub fn with_source_policy(mut self, source_policy: SourceIpPolicy) -> Self {
+        self.source_policy = source_policy;
+        self
+    }
+
+    /// Borrows the observed-source policy applied by source-aware receives.
+    #[must_use]
+    pub fn source_policy(&self) -> &SourceIpPolicy {
+        &self.source_policy
+    }
+
+    /// Checks an observed source address before packet parsing or state changes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SessionError::SourceAddressDenied`] when the source policy
+    /// rejects `source`.
+    pub fn authorize_source(&self, source: SocketAddr) -> Result<(), SessionError> {
+        if self.source_policy.allows_socket(source) {
+            Ok(())
+        } else {
+            Err(SessionError::SourceAddressDenied { source })
+        }
     }
 
     /// Serializes one RTP payload using the configured payload type and
@@ -621,6 +676,25 @@ impl RtpSession {
         self.receive_packet(packet, arrival, self.config.payload_type)
     }
 
+    /// Parses and validates one received RTP packet from an observed peer.
+    ///
+    /// The source policy is evaluated before parsing, so a denied peer cannot
+    /// affect parse counters, SSRC state, sequence state, or receive metrics.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SessionError::SourceAddressDenied`] before parsing when the
+    /// source is rejected, or forwards the usual RTP validation errors.
+    pub fn receive_from(
+        &mut self,
+        input: &[u8],
+        source: SocketAddr,
+        arrival: Duration,
+    ) -> Result<RtpPacket, SessionError> {
+        self.authorize_source(source)?;
+        self.receive(input, arrival)
+    }
+
     /// Parses and validates one received RTP packet for an alternate payload
     /// type while preserving the session's shared SSRC and quality metrics.
     pub fn receive_with_payload_type(
@@ -646,6 +720,25 @@ impl RtpSession {
             }
         };
         self.receive_packet(packet, arrival, payload_type)
+    }
+
+    /// Parses and validates an alternate payload type from an observed peer.
+    ///
+    /// The source policy is evaluated before parsing.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SessionError::SourceAddressDenied`] before parsing when the
+    /// source is rejected, or forwards the usual RTP validation errors.
+    pub fn receive_with_payload_type_from(
+        &mut self,
+        input: &[u8],
+        source: SocketAddr,
+        arrival: Duration,
+        payload_type: u8,
+    ) -> Result<RtpPacket, SessionError> {
+        self.authorize_source(source)?;
+        self.receive_with_payload_type(input, arrival, payload_type)
     }
 
     /// Validates a parsed RTP packet and updates quality metrics.
@@ -694,6 +787,27 @@ impl RtpSession {
             .observe(&packet, arrival, self.config.clock_rate)?;
         self.last_received = Some(arrival);
         Ok(packet)
+    }
+
+    /// Validates a parsed RTP packet from an observed peer.
+    ///
+    /// Callers that must inspect the payload type before dispatching (for
+    /// example, a media session handling telephone-event) should authorize the
+    /// source first, then parse, and finally call [`Self::receive_packet`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SessionError::SourceAddressDenied`] when the source is
+    /// rejected, or forwards the usual RTP validation errors.
+    pub fn receive_packet_from(
+        &mut self,
+        packet: RtpPacket,
+        source: SocketAddr,
+        arrival: Duration,
+        expected_payload_type: u8,
+    ) -> Result<RtpPacket, SessionError> {
+        self.authorize_source(source)?;
+        self.receive_packet(packet, arrival, expected_payload_type)
     }
 
     /// Returns a snapshot of sent and received metrics.
@@ -867,6 +981,52 @@ mod tests {
             })
         ));
         assert_eq!(session.stats().received.invalid_packets, 2);
+    }
+
+    #[test]
+    fn source_policy_rejects_before_parse_and_state_mutation() {
+        let mut policy = SourceIpPolicy::default();
+        policy.add_allow("198.51.100.0/24").unwrap();
+        policy.add_deny("198.51.100.128/25").unwrap();
+        let mut session =
+            RtpSession::new_with_source_policy(RtpSessionConfig::default(), 9, 900, policy)
+                .unwrap();
+        let baseline = session.stats();
+        let denied = "198.51.100.200:4000".parse().unwrap();
+        assert_eq!(
+            session.receive_from(&[], denied, Duration::ZERO),
+            Err(SessionError::SourceAddressDenied { source: denied })
+        );
+        assert_eq!(session.stats(), baseline);
+        assert_eq!(session.remote_ssrc(), None);
+        assert_eq!(session.next_sequence(), 9);
+        assert_eq!(session.next_timestamp(), 900);
+
+        let allowed = "198.51.100.10:4000".parse().unwrap();
+        let wire = serialize(&packet(1, 80, 42)).unwrap();
+        session
+            .receive_from(&wire, allowed, Duration::from_millis(10))
+            .unwrap();
+        assert_eq!(session.stats().received.packets_received, 1);
+        assert_eq!(session.remote_ssrc(), Some(42));
+    }
+
+    #[test]
+    fn source_policy_keeps_ipv4_and_ipv6_families_separate() {
+        let mut policy = SourceIpPolicy::default();
+        policy.add_allow("2001:db8::/32").unwrap();
+        let mut session =
+            RtpSession::new_with_source_policy(RtpSessionConfig::default(), 0, 0, policy).unwrap();
+        let wire = serialize(&packet(1, 0, 7)).unwrap();
+        let ipv6 = "[2001:db8::10]:4000".parse().unwrap();
+        session.receive_from(&wire, ipv6, Duration::ZERO).unwrap();
+        let before_ipv4 = session.stats();
+        let ipv4 = "192.0.2.10:4000".parse().unwrap();
+        assert_eq!(
+            session.receive_from(&wire, ipv4, Duration::from_millis(1)),
+            Err(SessionError::SourceAddressDenied { source: ipv4 })
+        );
+        assert_eq!(session.stats(), before_ipv4);
     }
 
     #[test]
