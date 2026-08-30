@@ -63,6 +63,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "media-websocket"
+version = "0.1.0"
+dependencies = [
+ "media-core",
+ "rtp",
+]
+
+[[package]]
 name = "provider-routing"
 version = "0.1.0"
 dependencies = [
