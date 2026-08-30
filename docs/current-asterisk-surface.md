@@ -1,8 +1,8 @@
 # Current Asterisk surface
 
-Status: Phase 0 inventory, recorded 2026-08-30 (UTC)  
+Status: Phase 0 inventory, recorded 2026-08-30 (UTC)
 Repository: `W3Mirror/asterisk`, branch `aistack/main`, source baseline
-`Asterisk 22.10.1`  
+`Asterisk 22.10.1`
 Inventory commit: `251c42618c4c5a07ccc84550cb09a82b63662901`
 
 This is the evidence boundary for the Rust SIP/RTP migration. It describes what
