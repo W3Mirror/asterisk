@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-065 — Signaling and media fault corpus published as PR #26
-**Last checkpoint (UTC):** 2026-08-30T21:25:07Z
+**Current checkpoint:** CP-066 — PR #26 hosted validation green
+**Last checkpoint (UTC):** 2026-08-30T21:29:00Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Offline deterministic verification foundation across Milestones 2–5<br>
-**Next resume action:** Verify hosted Workspace checks, Protocol fuzz checks, and Dependency audit on PR #26, then add transfer/bridge state and broader resource-reclamation scenarios
+**Next resume action:** Add transfer/bridge state and broader resource-reclamation scenarios in the next tracked stacked-PR worktree from `origin/sip-scenario-faults`
 **Active PR:** [#26](https://github.com/W3Mirror/asterisk/pull/26); branch `sip-scenario-faults` targets `sip-scenario-replay`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-26`
@@ -3501,6 +3501,27 @@ blockers: Hosted PR #26 checks are pending; provider/Asterisk access and sanitiz
 next_action: Push this reconciliation commit and verify all three hosted Rust quality gates on the final PR #26 head, then extend replay coverage for transfer/bridge state and resource reclamation
 rollback: Keep all call routing and media on Asterisk; do not enable Rust traffic; close PR #26 if the corpus slice is superseded
 notes: No provider credentials, runtime configuration, production routing, or live traffic changed. The same repository-hosted full suite runs for PRs and pushes to `aistack/main`; there is no affected-module-only CI path today.
+~~~
+
+### CP-066 — PR #26 hosted validation green
+
+~~~yaml
+checkpoint_id: CP-066
+recorded_at_utc: 2026-08-30T21:29:00Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Offline deterministic verification foundation across Milestones 2–5
+scope: Verify the published fault-corpus PR through the repository-hosted full Rust quality suite before starting the next dependent test slice
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-26
+branch: sip-scenario-faults
+base_branch: sip-scenario-replay
+pr: https://github.com/W3Mirror/asterisk/pull/26
+head_sha: d8e6e03f47b8325b59d73849c3f2e35c97492172 before this green-check reconciliation commit
+evidence: PR #26 is OPEN/non-draft/CLEAN with exact base `sip-scenario-replay` at `36b063ceb`; hosted run `33336400347` passed Workspace checks in 23 seconds (formatting, 136 tests, workspace Clippy), Protocol fuzz checks in 1 minute 4 seconds (all six address-sanitizer targets), and Dependency audit in 2 minutes 50 seconds
+blockers: Provider/Asterisk access and sanitized real captures remain unavailable and continue to block only provider interoperability proof and Rust traffic enablement; they do not block the remaining offline test layers; Asterisk routing remains the fallback
+next_action: Push this green-check reconciliation commit, verify the final head, then create the next tracked stacked-PR worktree from `origin/sip-scenario-faults` for transfer/bridge state and broader resource-reclamation scenarios
+rollback: Keep all call routing and media on Asterisk; do not enable Rust traffic; close PR #26 if the corpus slice is superseded
+notes: No provider credentials, runtime configuration, production routing, or live traffic changed. Only known non-blocking action-runtime deprecation annotations remain. Property-based testing, local SIPp, differential replay, load, and soak remain active follow-up work.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
