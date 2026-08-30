@@ -2451,6 +2451,27 @@ rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain 
 notes: All existing migration worktrees and the root checkout remain clean; PR9 remains independently reviewable and unmerged
 ```
 
+### CP-025 — SIP Digest authentication implementation committed
+
+~~~yaml
+checkpoint_id: CP-025
+recorded_at_utc: 2026-08-30T14:20:00Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Milestone 4 — Dialog + SDP + Basic Calls
+scope: Add a bounded sip-auth crate for SIP Digest challenge/authorization parsing, RFC 2617 MD5 auth/auth-int response construction and verification, redacted credentials, constant-time comparison, and per-identity failure throttling with expiry
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-10-sip-auth
+branch: sip-auth-routing
+base_branch: sip-engine-runtime
+pr: pending
+head_sha: f2167f774b95f5510c648bb992bf217dbc7b21c8
+evidence: cargo fmt --all -- --check passed; cargo test -p sip-auth passed with RFC 2617, auth-int, bounds, redaction, constant-time comparison, and throttle-expiry tests; cargo clippy -p sip-auth --all-targets exited 0; implementation commit f2167f774; workspace and remote publication remain pending
+blockers: No Asterisk binary, provider credentials/runtime, SIPp/live-call path, or sanitized SIP/SDP/RTP fixtures are available from this host; Asterisk routing remains the fallback
+next_action: Publish branch sip-auth-routing and create stacked PR10 against sip-engine-runtime
+rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
+notes: No provider credentials or runtime configuration were inspected or modified; external interoperability, fuzzing, load, and production evidence remain follow-up work
+~~~
+
 ### Checkpoint template
 
 Copy this template, assign the next checkpoint ID, fill every field, and append it after each meaningful state change:
@@ -2541,6 +2562,8 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 7 | [#7](https://github.com/W3Mirror/asterisk/pull/7) | `call-engine-core` | `sdp-media-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-7-call-engine` | Milestone 4 provider-neutral call engine: bounded registry/dialog/transaction orchestration, INVITE/ACK/BYE/CANCEL/OPTIONS handling, retransmission, and deterministic timeout polling | in_progress | `32c5fb5a9` | workspace format/tests/clippy green; `git diff --check` passes; local HEAD equals origin/call-engine-core; PR #7 is OPEN against sdp-media-core with matching head/base; no provider/runtime or live-call evidence; Asterisk fallback remains active | Collect redacted runtime/provider evidence and sanitized SIP/SDP/RTP fixtures on the actual Asterisk host |
 | 8 | [#8](https://github.com/W3Mirror/asterisk/pull/8) | `media-session-core` | `call-engine-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-8-media-session` | Milestone 2 media-plane integration: bounded RTP↔AI audio session, RFC 4733 DTMF handling, and non-blocking PCM/WAV recording sink | in_progress | `84ac6c852` | focused media/RTP tests green; workspace tests and clippy green; local HEAD equals origin/media-session-core; PR #8 is OPEN against call-engine-core with matching head/base; no provider/runtime or live-call evidence; Asterisk fallback remains active | Add the next bounded offline-verifiable engine slice while preserving the runtime/provider evidence gate |
 | 9 | [#9](https://github.com/W3Mirror/asterisk/pull/9) | `sip-engine-runtime` | `media-session-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-9-sip-runtime` | Milestone 4 runtime integration: bounded blocking UDP/TCP transport dispatch into `CallEngine`, outbound origination, application response wrappers, and atomic delivery | in_progress | `be51704c0` | workspace format/tests/clippy green; `git diff --check` passes; local HEAD equals origin/sip-engine-runtime; PR #9 is OPEN against media-session-core with matching head/base; no provider/runtime or live-call evidence; Asterisk fallback remains active | Add the next bounded offline-verifiable security/provider slice while preserving the runtime/provider evidence gate |
+
+| 10 | pending | sip-auth-routing | sip-engine-runtime | /home/ashutosh/.worktrees/w3mirror/asterisk/pr-10-sip-auth | Milestone 4 security/provider primitive: bounded SIP Digest challenge/authorization parsing, RFC 2617 MD5 auth/auth-int responses, redacted credentials, constant-time verification, and bounded failure throttling | in_progress | f2167f774 | focused SIP-auth tests and clippy green; workspace lockfile updated for md5 0.7.0; PR not yet published; no provider/runtime or live-call evidence; Asterisk fallback remains active | Publish PR10 against sip-engine-runtime and verify exact remote/PR parity |
 
 ## 59.4 Stacked-PR Checkpoints
 
