@@ -1,12 +1,12 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-085 — synthetic differential replay locally green
-**Last checkpoint (UTC):** 2026-08-30T23:14:56Z
+**Current checkpoint:** CP-086 — PR #33 published with hosted validation running
+**Last checkpoint (UTC):** 2026-08-30T23:16:11Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Synthetic semantic differential replay<br>
-**Next resume action:** Commit and publish `synthetic-differential-replay` as stacked PR #33 against `rust-load-reclamation-smoke`, then verify Workspace/SIPp/load, Protocol fuzz, and Dependency audit checks on its final head
-**Active PR:** pending publication; branch `synthetic-differential-replay` targets `rust-load-reclamation-smoke`
+**Next resume action:** Push CP-086 and verify Workspace/SIPp/load, Protocol fuzz, and Dependency audit checks on PR #33's final head
+**Active PR:** [#33](https://github.com/W3Mirror/asterisk/pull/33); branch `synthetic-differential-replay` targets `rust-load-reclamation-smoke`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-33`
 **Primary language:** Rust  
@@ -3921,6 +3921,27 @@ blockers: The checked-in oracle is synthetic and is not Asterisk/provider intero
 next_action: Commit and publish `synthetic-differential-replay` as stacked PR #33 against `rust-load-reclamation-smoke`, verify hosted Workspace/SIPp/load, Protocol fuzz, and Dependency audit checks on its final head, then select the next smallest media-load or runtime-composition slice
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the differential-replay PR if the fixture contract is superseded
 notes: Relevant code, five fixture files, six directly affected-module tests, documentation, and lockfile changes ship together. Every PR and push to `aistack/main` runs the complete suite; no affected-module-only selector is implemented. The synthetic oracle proves only the comparison machinery, and mismatches remain investigation evidence rather than automatic Rust defects. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-086 — PR #33 published with hosted validation running
+
+~~~yaml
+checkpoint_id: CP-086
+recorded_at_utc: 2026-08-30T23:16:11Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Synthetic semantic differential replay
+scope: Publish the locally green synthetic differential-replay slice as a stacked PR and reconcile its exact worktree, branch, base, head, and hosted-check state
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-33
+branch: synthetic-differential-replay
+base_branch: rust-load-reclamation-smoke
+pr: https://github.com/W3Mirror/asterisk/pull/33
+head_sha: d67b375cb05bec941e44f924a73a9f13854a66a0 before this publication checkpoint commit
+evidence: Implementation/checkpoint commit `d67b375cb` was pushed normally with local and `origin/synthetic-differential-replay` parity; PR #33 is OPEN/non-draft against exact base `rust-load-reclamation-smoke` at `99ff881ab`; GitHub assigned predicted #33, so the required worktree path already matches; hosted run `33341363287` queued Workspace checks, Protocol fuzz checks, and Dependency audit
+blockers: Hosted validation is pending on the publication checkpoint's final head; the oracle is synthetic rather than Asterisk/provider evidence; sanitized real captures, explained material differences, media/WebSocket load, long-duration soak/memory, runtime human-leg SIP origination/RTP composition, real provider interoperability, and rollback proof remain active goal work; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Push this publication checkpoint and verify all three hosted Rust quality gates on the final PR #33 head, then select the next smallest media-load or runtime-composition slice
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #33 if the fixture contract is superseded
+notes: PR #33 contains the relevant replay code, five fixtures, six directly affected-module tests, documentation, and lockfile update. GitHub runs the complete repository suite on the PR, not an affected-module-only subset. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
