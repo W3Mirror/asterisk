@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-063 — PR #25 hosted validation green
-**Last checkpoint (UTC):** 2026-08-30T21:14:44Z
+**Current checkpoint:** CP-064 — Signaling and media fault corpus locally green
+**Last checkpoint (UTC):** 2026-08-30T21:23:32Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Offline deterministic verification foundation across Milestones 2–5<br>
-**Next resume action:** Create the next tracked stacked-PR worktree from `origin/sip-scenario-replay` and extend the deterministic corpus with failure/retransmission, RTCP/DTMF fault, and cleanup scenarios
-**Active PR:** [#25](https://github.com/W3Mirror/asterisk/pull/25); branch `sip-scenario-replay` targets `rust-quality-ci`
+**Next resume action:** Commit and publish `sip-scenario-faults` as a stacked PR against `sip-scenario-replay`, reconcile its GitHub-assigned PR/worktree number, and verify all hosted Rust quality gates
+**Active PR:** Pre-publication branch `sip-scenario-faults` targets PR [#25](https://github.com/W3Mirror/asterisk/pull/25)'s branch `sip-scenario-replay`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-25`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-26` (pre-publication predicted PR path)
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -3459,6 +3459,27 @@ blockers: Provider/Asterisk access and sanitized real captures remain unavailabl
 next_action: Create the next tracked worktree and branch from `origin/sip-scenario-replay` for deterministic failure/retransmission, RTCP/DTMF fault, and cleanup scenarios
 rollback: Keep all call routing and media on Asterisk; do not enable Rust traffic; close PR #25 if the offline foundation is superseded
 notes: No provider credentials, runtime configuration, production routing, or live traffic changed. PR #25 supplies the reusable boundary only; local SIPp, property-based testing, differential replay, load, and soak remain active follow-up work.
+~~~
+
+### CP-064 — Signaling and media fault corpus locally green
+
+~~~yaml
+checkpoint_id: CP-064
+recorded_at_utc: 2026-08-30T21:23:32Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Offline deterministic verification foundation across Milestones 2–5
+scope: Extend deterministic replay with synthetic INVITE retransmission, CANCEL/final-response cleanup, RTP loss/reordering, DTMF duplicate suppression, and RTCP receiver-report ingestion scenarios
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-26
+branch: sip-scenario-faults
+base_branch: sip-scenario-replay
+pr: pre-publication
+head_sha: 36b063ceb50e05ece99bd0edf0b52d93ad37521f before implementation/checkpoint commit
+evidence: `ScenarioStep::ReceiveRtcp` parses RTCP through the configured bounded media session and exposes ordered packets in the replay report; checked-in synthetic CANCEL/INVITE fixtures exercise duplicate INVITE handling, `100, 100, 200, 487, 487` response ordering, failed-call state, and transaction reclamation after the deterministic final-response retransmission; media fixtures exercise sequence order `20, 22, 21`, one reported lost packet, DTMF start deduplication, and RTCP receiver-report metrics; seven focused replay tests pass; `cargo test --workspace --locked` passes all 136 tests; workspace Clippy exits 0 with existing dependency documentation/pedantic warnings; strict scenario-replay Clippy with `--no-deps -- -D warnings`, formatting, and `git diff --check` pass
+blockers: Provider/Asterisk access and sanitized real captures remain unavailable and continue to block only provider interoperability proof and Rust traffic enablement; they do not block offline testing; Asterisk routing remains the fallback
+next_action: Commit and push `sip-scenario-faults`, open a stacked PR against `sip-scenario-replay`, reconcile the actual PR number/worktree path, and verify hosted Workspace checks, Protocol fuzz checks, and Dependency audit
+rollback: Keep all call routing and media on Asterisk; do not enable Rust traffic; close the downstream PR if this corpus slice is superseded
+notes: Tests ship in the same branch as their relevant replay support. Current CI has no affected-module selector or path filter: every pull request and every push to `aistack/main` runs the complete locked workspace tests, formatting, workspace Clippy/all targets, dependency audit, and all six fuzz-target checks. Local SIPp, property-based invariants, transfer/bridge state tests, differential replay, load, soak, and broader resource-reclamation coverage remain active goal work.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
