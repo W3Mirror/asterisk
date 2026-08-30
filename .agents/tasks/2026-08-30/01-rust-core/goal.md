@@ -1,12 +1,12 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: Proposed**  
-**Current checkpoint:** CP-001 — repository surface inventory captured; production evidence outstanding
-**Last checkpoint (UTC):** 2026-08-30T11:05:32Z
+**Current checkpoint:** CP-002 — Phase 0 inventory published as stacked PR #1; production evidence outstanding
+**Last checkpoint (UTC):** 2026-08-30T11:08:37Z
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
 **Active milestone:** Milestone 1 — Scope Baseline  
 **Next resume action:** Collect redacted runtime/provider evidence and the first sanitized SIP/SDP/RTP fixtures on the actual Asterisk host
-**Active PR:** TBD; first stack branch `sip-rtp-engine-rust` targets `aistack/main`
+**Active PR:** [#1](https://github.com/W3Mirror/asterisk/pull/1); first stack branch `sip-rtp-engine-rust` targets `aistack/main`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/sip-rtp-engine-rust`
 **Primary language:** Rust  
@@ -1914,7 +1914,7 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 
 | Workstream | Status | Evidence / checkpoint | PR | Next action |
 | --- | --- | --- | --- | --- |
-| Phase 0 — current Asterisk surface | in_progress | CP-001; `docs/current-asterisk-surface.md` (commit `ae6c11dcc`); live probe found no runtime and DNS/config address drift | TBD | Collect provider/runtime evidence and sanitized fixtures |
+| Phase 0 — current Asterisk surface | in_progress | CP-002; `docs/current-asterisk-surface.md` (commit `ae6c11dcc`); live probe found no runtime and DNS/config address drift | #1 | Collect provider/runtime evidence and sanitized fixtures |
 | Phase 1 — Rust media engine | not_started | — | — | Define media-core scope from the Phase 0 inventory |
 | Phase 2 — SIP edge shadow mode | not_started | — | — | Build sanitized replay and comparison fixtures |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
@@ -1965,6 +1965,28 @@ blockers: production provider/call-flow evidence and sanitized packet corpus una
 next_action: Run the listed asterisk CLI inventory and capture sanitized successful/failed SIP scenarios on the actual Asterisk host
 rollback: Keep all call routing on Asterisk; no Rust traffic has been enabled
 notes: Checked-in Meta advertised address is 195.201.246.125 and does not match current host/DNS evidence; no production conclusion is inferred
+```
+
+
+### CP-002 — Phase 0 inventory published as first stacked PR
+
+```yaml
+checkpoint_id: CP-002
+recorded_at_utc: 2026-08-30T11:08:37Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 1 — Scope Baseline
+scope: Publish the repository inventory and establish the first stacked-PR worktree
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/sip-rtp-engine-rust
+branch: sip-rtp-engine-rust
+base_branch: aistack/main
+pr: https://github.com/W3Mirror/asterisk/pull/1
+head_sha: 7e98b5c7011f74887fd90308f655c17044f0715e
+evidence: PR #1 created against aistack/main; origin/aistack/main=251c42618c4c5a07ccc84550cb09a82b63662901; origin/sip-rtp-engine-rust=7e98b5c7011f74887fd90308f655c17044f0715e; worktree clean at publication; docs inventory and live probe evidence recorded
+blockers: production provider/call-flow evidence and sanitized packet corpus unavailable from this host
+next_action: Run the listed asterisk CLI inventory and capture sanitized successful/failed SIP scenarios on the actual Asterisk host
+rollback: Keep all call routing on Asterisk; close or leave PR #1 without enabling Rust traffic
+notes: No downstream PR may start until production scope evidence is collected and this foundation slice has a stable reviewed contract
 ```
 
 ### Checkpoint template
@@ -2048,7 +2070,7 @@ Populate one row per PR before implementation begins, then update it at every ch
 
 | Order | PR | Branch | Base / target | Worktree | Scope | Status | Head SHA | CI / evidence | Next action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | TBD | `sip-rtp-engine-rust` | `aistack/main` | `/home/ashutosh/.worktrees/w3mirror/asterisk/sip-rtp-engine-rust` | Phase 0 repository surface inventory and evidence boundary | in_progress | `ae6c11dcc` | `docs/current-asterisk-surface.md`; focused `git diff --check` passed; production runtime unavailable | Collect redacted provider/runtime evidence before Rust implementation |
+| 1 | [#1](https://github.com/W3Mirror/asterisk/pull/1) | `sip-rtp-engine-rust` | `aistack/main` | `/home/ashutosh/.worktrees/w3mirror/asterisk/sip-rtp-engine-rust` | Phase 0 repository surface inventory and evidence boundary | in_progress | `7e98b5c70` | `docs/current-asterisk-surface.md`; `git diff --check` passed; remote branch parity verified; production runtime unavailable | Collect redacted provider/runtime evidence before Rust implementation |
 | 2+ | TBD | `<branch-n>` | `<immediately preceding branch>` | `~/.worktrees/w3mirror/asterisk/pr-<n>-<slug>` | One bounded follow-on slice | not_started | — | — | Add only after the preceding slice has a stable contract |
 
 ## 59.4 Stacked-PR Checkpoints
