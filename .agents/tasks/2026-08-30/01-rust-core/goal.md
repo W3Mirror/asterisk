@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-074 — PR #29 published with hosted validation running
-**Last checkpoint (UTC):** 2026-08-30T22:08:29Z
+**Current checkpoint:** CP-075 — PR #29 hosted validation green
+**Last checkpoint (UTC):** 2026-08-30T22:12:52Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Deterministic multi-leg bridge replay and failure verification<br>
-**Next resume action:** Verify all hosted checks on PR #29's final checkpoint head, then implement the next offline bridge/runtime composition slice
+**Next resume action:** Select the next bounded offline bridge/runtime composition slice from the remaining milestone requirements
 **Active PR:** [#29](https://github.com/W3Mirror/asterisk/pull/29); branch `call-bridge-scenario-replay` targets `call-bridge-core`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-29`
@@ -3690,6 +3690,27 @@ blockers: Hosted validation is pending on the publication checkpoint's final hea
 next_action: Push this publication checkpoint, verify all three hosted Rust quality gates on the final PR #29 head, then select the next bounded offline bridge/runtime composition slice
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #29 if the replay contract is superseded
 notes: PR #29 contains all three relevant bridge replay tests and GitHub runs the complete repository suite on the PR, not an affected-module-only subset. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-075 — PR #29 hosted validation green
+
+~~~yaml
+checkpoint_id: CP-075
+recorded_at_utc: 2026-08-30T22:12:52Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Deterministic multi-leg bridge replay and failure verification
+scope: Verify the published bridge replay integration through every repository-hosted Rust quality gate before continuing bridge/runtime composition
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-29
+branch: call-bridge-scenario-replay
+base_branch: call-bridge-core
+pr: https://github.com/W3Mirror/asterisk/pull/29
+head_sha: 574cfb8835e0dbb4d23fd421e28e1952f42be0b6 before this green-check reconciliation commit
+evidence: PR #29 is OPEN/non-draft/CLEAN with exact stacked base `call-bridge-core` at `564f04beb`; hosted run `33338350897` passed Workspace checks in 15 seconds (formatting, 147 tests, workspace Clippy), Protocol fuzz checks in 53 seconds (all six address-sanitizer targets), and Dependency audit in 3 minutes 33 seconds
+blockers: Runtime human SIP origination and RTP-to-RTP bridge composition remain incomplete; property invariants, local SIPp, differential replay, load, soak, real Asterisk/provider interoperability, and rollback proof remain active goal work; real provider evidence remains mandatory before enabling Rust traffic; Asterisk remains the fallback
+next_action: Push this green-check reconciliation commit, verify the final PR #29 head, then select the next smallest bounded offline bridge/runtime composition slice
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #29 if the replay contract is superseded
+notes: Relevant replay tests shipped in the same PR as their code. Hosted PR CI and pushes to `aistack/main` continue to run the complete repository suite rather than affected-module selection. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
