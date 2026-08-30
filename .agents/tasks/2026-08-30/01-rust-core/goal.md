@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: Proposed**  
-**Current checkpoint:** CP-017 — PR7 published and stacked remote parity verified
-**Last checkpoint (UTC):** 2026-08-30T13:33:22Z
+**Current checkpoint:** CP-018 — PR7 ledger reconciliation published
+**Last checkpoint (UTC):** 2026-08-30T13:36:16Z
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
 **Active milestone:** Milestone 4 — Dialog + SDP + Basic Calls<br>
 **Next resume action:** Collect redacted runtime/provider evidence and sanitized SIP/SDP/RTP fixtures on the actual Asterisk host
@@ -2304,6 +2304,27 @@ rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain 
 notes: PR7 is stacked directly on PR6; no provider credentials, runtime configuration, or live traffic were modified
 ```
 
+### CP-018 — PR7 ledger reconciliation published
+
+```yaml
+checkpoint_id: CP-018
+recorded_at_utc: 2026-08-30T13:36:16Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 4 — Dialog + SDP + Basic Calls
+scope: Reconcile the PR7 checkpoint commit with the subsequent ledger commit and publish the current exact head SHA
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-7-call-engine
+branch: call-engine-core
+base_branch: sdp-media-core
+pr: https://github.com/W3Mirror/asterisk/pull/7
+head_sha: 32c5fb5a9c633afccac08d8fed096f9cc3b98c00
+evidence: local HEAD equals origin/call-engine-core at 32c5fb5a; `git diff --check origin/sdp-media-core...HEAD` passed; `gh pr view 7` reports OPEN/non-draft with base sdp-media-core at c983cb86f and matching head; no PR checks are configured
+blockers: No Asterisk binary, provider credentials/runtime, SIPp/live-call path, or sanitized SIP/SDP/RTP fixtures are available from this host; Asterisk routing remains the fallback
+next_action: Create the next stacked worktree from call-engine-core for bounded RTP/AI media-session and recording work while preserving the runtime evidence gate
+rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
+notes: All existing migration worktrees and the root checkout are clean; PR7 remains independently reviewable and unmerged
+```
+
 ### Checkpoint template
 
 Copy this template, assign the next checkpoint ID, fill every field, and append it after each meaningful state change:
@@ -2391,7 +2412,7 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 4 | [#4](https://github.com/W3Mirror/asterisk/pull/4) | `sip-dialog-core` | `sip-transaction-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-4-sip-dialog` | Milestone 4 dialog identity/state: bounded tags, route sets, remote targets, CSeq sequencing, UAC/UAS lifecycle | in_progress | `d26d4116` | workspace format/tests/clippy green; `git diff --check` passes; remote branch parity verified; PR open; no provider/runtime or live-call evidence; Asterisk fallback remains active | Collect redacted provider/runtime evidence and sanitized SIP/SDP/RTP fixtures before basic call/API integration |
 | 5 | [#5](https://github.com/W3Mirror/asterisk/pull/5) | `call-api-core` | `sip-dialog-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-5-call-api` | Milestone 4 call-control/API boundary: bounded call registry, validated lifecycle commands, stable IDs/events, dialog binding, deterministic snapshots, and terminal reclamation | in_progress | `10b5a8c72` | workspace format/tests/clippy green; `git diff --check` passes; remote parity verified; PR open with no configured checks; no provider/runtime or live-call evidence; Asterisk fallback remains active | Collect redacted provider/runtime evidence and sanitized SIP/SDP/RTP fixtures before SDP/basic call integration |
 | 6 | [#6](https://github.com/W3Mirror/asterisk/pull/6) | `sdp-media-core` | `call-api-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-6-sdp-media` | Milestone 4 SDP/media binding: retain negotiated audio codec mappings, direction, remote RTP endpoint, and safe SDP update replacement in `call-api` | in_progress | `c983cb86f` | workspace format/tests/clippy green; `git diff --check` passes; remote parity verified; PR open with no configured checks; no provider/runtime or live-call evidence; Asterisk fallback remains active | Collect redacted provider/runtime evidence and sanitized SIP/SDP/RTP fixtures before basic call transport/orchestration |
-| 7 | [#7](https://github.com/W3Mirror/asterisk/pull/7) | `call-engine-core` | `sdp-media-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-7-call-engine` | Milestone 4 provider-neutral call engine: bounded registry/dialog/transaction orchestration, INVITE/ACK/BYE/CANCEL/OPTIONS handling, retransmission, and deterministic timeout polling | in_progress | `e5fc7a241` | workspace format/tests/clippy green; `git diff --check` passes; local HEAD equals origin/call-engine-core; PR #7 is OPEN against sdp-media-core with matching head/base; no provider/runtime or live-call evidence; Asterisk fallback remains active | Collect redacted runtime/provider evidence and sanitized SIP/SDP/RTP fixtures on the actual Asterisk host |
+| 7 | [#7](https://github.com/W3Mirror/asterisk/pull/7) | `call-engine-core` | `sdp-media-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-7-call-engine` | Milestone 4 provider-neutral call engine: bounded registry/dialog/transaction orchestration, INVITE/ACK/BYE/CANCEL/OPTIONS handling, retransmission, and deterministic timeout polling | in_progress | `32c5fb5a9` | workspace format/tests/clippy green; `git diff --check` passes; local HEAD equals origin/call-engine-core; PR #7 is OPEN against sdp-media-core with matching head/base; no provider/runtime or live-call evidence; Asterisk fallback remains active | Collect redacted runtime/provider evidence and sanitized SIP/SDP/RTP fixtures on the actual Asterisk host |
 
 ## 59.4 Stacked-PR Checkpoints
 
