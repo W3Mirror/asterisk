@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: Proposed**  
-**Current checkpoint:** CP-009 — SIP transaction state machines and bounded UDP/TCP transport published on PR #3; production evidence outstanding
-**Last checkpoint (UTC):** 2026-08-30T12:04:19Z
+**Current checkpoint:** CP-010 — Phase 0 runtime/provider probe re-run; production evidence remains unavailable
+**Last checkpoint (UTC):** 2026-08-30T12:08:25Z
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
 **Active milestone:** Milestone 3 — SIP Parser + Transactions<br>
 **Next resume action:** Collect redacted runtime/provider evidence and the first sanitized SIP/SDP/RTP fixtures on the actual Asterisk host
@@ -1914,7 +1914,7 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 
 | Workstream | Status | Evidence / checkpoint | PR | Next action |
 | --- | --- | --- | --- | --- |
-| Phase 0 — current Asterisk surface | in_progress | CP-004; `docs/current-asterisk-surface.md` (commit `edba8386c`); full branch `git diff --check` passes; live probe found no runtime and DNS/config address drift | #1 | Collect provider/runtime evidence and sanitized fixtures |
+| Phase 0 — current Asterisk surface | in_progress | CP-004/CP-010; `docs/current-asterisk-surface.md` (commit `edba8386c`); fresh read-only probe again found no runtime, no SIP/RTP/8088 listeners, missing `.env.aistack`, and DNS/config address drift | #1 | Collect provider/runtime evidence and sanitized fixtures |
 | Phase 1 — Rust media engine | in_progress | CP-005/CP-008; PR #2 safe protocol/media foundation, RTP session, and bounded audio bridge; workspace tests and clippy green | [#2](https://github.com/W3Mirror/asterisk/pull/2) | Add a concrete AI transport and recording adapter after provider fixtures |
 | Phase 2 — SIP edge shadow mode | not_started | — | — | Build sanitized replay and comparison fixtures |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
@@ -2134,6 +2134,27 @@ blockers: production provider/call-flow evidence, sanitized packet corpus, and l
 next_action: Collect redacted provider/runtime evidence and sanitized SIP/SDP/RTP fixtures on the actual Asterisk host before starting dialog/API integration
 rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
 notes: Reliable INVITE server transactions wait for ACK with Timer H without retransmitting over reliable transports; no production/provider configuration was modified
+```
+
+### CP-010 — Phase 0 runtime/provider probe re-run
+
+```yaml
+checkpoint_id: CP-010
+recorded_at_utc: 2026-08-30T12:08:25Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 3 — SIP Parser + Transactions
+scope: Re-run the documented read-only Asterisk/provider evidence collection from the active host without exposing credentials or changing runtime state
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-3-sip-transactions
+branch: sip-transaction-core
+base_branch: rust-core-foundation
+pr: https://github.com/W3Mirror/asterisk/pull/3
+head_sha: 6a101f3f83fb6a4396dc94520d23e87f7bb4d17c
+evidence: `command -v asterisk` and `asterisk -V` failed because the binary is absent; `docker compose ps` reports missing `.env.aistack`; `ss -ltnup` shows no listeners on SIP 5060/5061, RTP 10000–10100, or Asterisk HTTP 8088; `dig +short sip-trunk.w3.run @1.1.1.1` returns 65.1.135.111; host interfaces remain 135.181.5.36 and 100.99.75.85; read-only TCP/5061 probe is unreachable; no SSH config or credential values were inspected
+blockers: The actual Asterisk host, provider dashboard/credentials, sanitized SIP/SDP/RTP corpus, and live SIPp/telephony path are unavailable from this host
+next_action: Run the same redacted CLI inventory and capture sanitized successful/failed SIP scenarios on the actual Asterisk host when access is available
+rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
+notes: This confirms the prior evidence gap rather than establishing a production outage or provider absence; no repository runtime configuration was modified
 ```
 
 ### Checkpoint template
