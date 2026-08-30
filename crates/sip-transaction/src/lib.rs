@@ -431,6 +431,12 @@ impl ServerTransaction {
         self.kind
     }
 
+    /// Returns whether this transaction uses a reliable or unreliable transport.
+    #[must_use]
+    pub fn reliability(&self) -> TransportReliability {
+        self.reliability
+    }
+
     pub fn state(&self) -> ServerState {
         self.state
     }
