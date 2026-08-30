@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-075 — PR #29 hosted validation green
-**Last checkpoint (UTC):** 2026-08-30T22:12:52Z
+**Current checkpoint:** CP-081 — PR #31 hosted SIPp validation green
+**Last checkpoint (UTC):** 2026-08-30T22:48:46Z
 **Active phase:** Phase 1 — Rust media engine
-**Active milestone:** Deterministic multi-leg bridge replay and failure verification<br>
-**Next resume action:** Select the next bounded offline bridge/runtime composition slice from the remaining milestone requirements
-**Active PR:** [#29](https://github.com/W3Mirror/asterisk/pull/29); branch `call-bridge-scenario-replay` targets `call-bridge-core`
+**Active milestone:** Milestone 3/4 offline SIP interoperability<br>
+**Next resume action:** Verify CP-081's final hosted run, then create the next tracked stacked worktree for a deterministic load/reclamation smoke harness or synthetic differential runner
+**Active PR:** [#31](https://github.com/W3Mirror/asterisk/pull/31); branch `sipp-local-integration` targets `rust-property-invariants`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-29`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-31`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -1771,7 +1771,7 @@ The intended CI tiers are:
 | --- | --- | --- |
 | Fast PR | Every pull request | Tests introduced by the change; affected module and dependent-module tests; API/event contracts; deterministic fixtures; short fault/reclamation smoke tests; format and Clippy |
 | Full branch | Every push to `aistack/main` | Complete locked workspace tests, all deterministic integration/fixture tests, all fuzz-target checks, and dependency/security audit |
-| Scheduled | Nightly or weekly | Extended fuzzing, local SIPp matrices, differential replay, larger load tests, and long-duration soak/memory tests |
+| Scheduled | Nightly or weekly | Extended fuzzing, broader SIPp/load matrices, differential replay, larger load tests, and long-duration soak/memory tests |
 | Evidence gate | Before enabling or expanding Rust traffic | Sanitized Asterisk/provider replay plus real provider interoperability and rollback proof |
 
 Until affected-module selection is implemented and proven safe, PR CI must keep
@@ -3816,6 +3816,27 @@ blockers: Hosted validation is pending on the publication checkpoint's final hea
 next_action: Push this publication checkpoint and verify all three hosted Rust quality gates, including the SIPp step, on the final PR #31 head, then continue with the next bounded offline load/reclamation or differential-verification slice
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #31 if the SIPp harness is superseded
 notes: PR #31 contains its runtime fixture, exact SIPp scenarios, pinned test image, executable runner, CI wiring, and documentation. All workflow jobs continue to use hosted `ubuntu-latest`; Docker is invoked only within the Workspace job for this isolated test dependency. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-081 — PR #31 hosted SIPp validation green
+
+~~~yaml
+checkpoint_id: CP-081
+recorded_at_utc: 2026-08-30T22:48:46Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Milestone 3/4 offline SIP interoperability
+scope: Reconcile the hosted-run portability repair and verify the published local SIPp integration matrix through every repository-hosted Rust quality gate
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-31
+branch: sipp-local-integration
+base_branch: rust-property-invariants
+pr: https://github.com/W3Mirror/asterisk/pull/31
+head_sha: 728d3a92fa8974b5513cff5a05995973f8d54a97 before this green-check reconciliation commit
+evidence: The first hosted Workspace run reached the new SIPp step after formatting and all 160 workspace tests passed, then exposed only that the hosted Ubuntu image lacks `rg`; commit `728d3a92f` replaced readiness detection with portable `grep`; final-head run `33339979566` passed Workspace checks in 35 seconds, including formatting, all 160 tests, all three success/busy/cancel SIPp scenarios, and workspace Clippy; Protocol fuzz checks passed in 58 seconds across all six address-sanitizer targets; Dependency audit passed in 2 minutes 42 seconds; PR #31 is OPEN/non-draft/CLEAN against exact base `rust-property-invariants`, with local, origin, and GitHub head parity at `728d3a92f`
+blockers: This local provider-neutral SIPp matrix is not real Asterisk/provider evidence; runtime human-leg SIP origination and RTP-to-RTP bridge composition, broader signaling/load/soak and differential testing, sanitized captures, and real provider interoperability remain active goal work; Asterisk remains the fallback and Rust traffic stays disabled
+next_action: Push this reconciliation checkpoint, verify all three hosted jobs on that final documentation-only head, then create the next tracked stacked worktree for a deterministic load/reclamation smoke harness or synthetic differential runner
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #31 if the isolated SIPp harness is superseded
+notes: Relevant runtime fixture code, SIPp scenarios, CI wiring, and documentation ship in the same PR. Every pull request and every push to `aistack/main` currently runs the complete locked workspace tests, formatting, workspace Clippy/all targets, the three-scenario SIPp matrix, dependency audit, and all six fuzz-target checks; there is no affected-module-only selection. Only the deeper 4,096-case property run is scheduled. Docker is used only as an isolated test dependency inside the hosted `ubuntu-latest` Workspace job.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
