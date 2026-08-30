@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-086 — PR #33 published with hosted validation running
-**Last checkpoint (UTC):** 2026-08-30T23:16:11Z
+**Current checkpoint:** CP-087 — PR #33 hosted differential validation green
+**Last checkpoint (UTC):** 2026-08-30T23:20:35Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Synthetic semantic differential replay<br>
-**Next resume action:** Push CP-086 and verify Workspace/SIPp/load, Protocol fuzz, and Dependency audit checks on PR #33's final head
+**Next resume action:** Push CP-087, verify all three hosted jobs on that documentation-only head, then select the next smallest media-load or runtime-composition slice
 **Active PR:** [#33](https://github.com/W3Mirror/asterisk/pull/33); branch `synthetic-differential-replay` targets `rust-load-reclamation-smoke`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-33`
@@ -3942,6 +3942,27 @@ blockers: Hosted validation is pending on the publication checkpoint's final hea
 next_action: Push this publication checkpoint and verify all three hosted Rust quality gates on the final PR #33 head, then select the next smallest media-load or runtime-composition slice
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #33 if the fixture contract is superseded
 notes: PR #33 contains the relevant replay code, five fixtures, six directly affected-module tests, documentation, and lockfile update. GitHub runs the complete repository suite on the PR, not an affected-module-only subset. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-087 — PR #33 hosted differential validation green
+
+~~~yaml
+checkpoint_id: CP-087
+recorded_at_utc: 2026-08-30T23:20:35Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Synthetic semantic differential replay
+scope: Verify the published synthetic differential-replay slice through every repository-hosted Rust quality gate before continuing offline media/load or runtime-composition work
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-33
+branch: synthetic-differential-replay
+base_branch: rust-load-reclamation-smoke
+pr: https://github.com/W3Mirror/asterisk/pull/33
+head_sha: 9283a11c3e618e9a7f2a256a7018c8224e76ace7 before this green-check reconciliation commit
+evidence: PR #33 is OPEN/non-draft/CLEAN against exact base `rust-load-reclamation-smoke` at `99ff881ab`, with local, origin, and GitHub head parity; hosted run `33341391742` passed Workspace checks in 1 minute 6 seconds, including formatting, all 170 tests, all three local SIPp scenarios, the 512-call reclamation smoke, and workspace Clippy; Protocol fuzz checks passed in 42 seconds across all six address-sanitizer targets; Dependency audit passed in 3 minutes 11 seconds
+blockers: The checked-in oracle remains synthetic rather than Asterisk/provider evidence; sanitized real captures, explained material differences, media/WebSocket load, long-duration soak/memory, runtime human-leg SIP origination/RTP composition, real provider interoperability, and rollback proof remain active goal work; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Push this reconciliation checkpoint, verify all three hosted jobs on that documentation-only head, then select the next smallest media-load or runtime-composition slice
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #33 if the fixture contract is superseded
+notes: Relevant tests shipped with the implementation. Hosted PR CI and pushes to `aistack/main` continue to run the complete repository suite rather than affected-module selection. The only hosted annotations are the known non-blocking `actions/checkout@v4` Node.js 20 runtime deprecation notices. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
