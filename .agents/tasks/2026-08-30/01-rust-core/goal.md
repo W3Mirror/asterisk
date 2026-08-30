@@ -3755,6 +3755,27 @@ rollback: Keep all signaling, media, and call routing on Asterisk; do not enable
 notes: PR #30 contains the relevant property tests, counterexample policy, and documentation. GitHub runs the complete repository suite on the PR, not an affected-module-only subset. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
+### CP-078 — PR #30 hosted validation green
+
+~~~yaml
+checkpoint_id: CP-078
+recorded_at_utc: 2026-08-30T22:30:16Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Property-based protocol, state-machine, and bounded-resource verification
+scope: Verify the published property-invariants harness through every repository-hosted Rust quality gate before continuing offline interoperability and load verification
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-30
+branch: rust-property-invariants
+base_branch: call-bridge-scenario-replay
+pr: https://github.com/W3Mirror/asterisk/pull/30
+head_sha: 5de7944e8d6ae51092ff109259852aedab5607ac before this green-check reconciliation commit
+evidence: PR #30 is OPEN/non-draft/CLEAN with exact stacked base `call-bridge-scenario-replay` at `54436dece`; hosted run `33339164778` passed Workspace checks in 41 seconds (formatting, all 160 tests including the 13 ordinary property tests, workspace Clippy), Protocol fuzz checks in 49 seconds (all six address-sanitizer targets), and Dependency audit in 3 minutes 9 seconds; the scheduled-only 4,096-case step was correctly skipped for the pull-request event
+blockers: Runtime human SIP origination and RTP-to-RTP bridge composition, local SIPp, differential replay, load, soak, sanitized captures, and real Asterisk/provider interoperability remain active goal work; real provider evidence remains mandatory before enabling Rust traffic; Asterisk remains the fallback
+next_action: Push this green-check reconciliation commit, verify the final PR #30 head, then create the next tracked stacked worktree for the smallest bounded offline interoperability or load-verification slice
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #30 if the property-testing contract is superseded
+notes: The only hosted annotation is the known non-blocking `actions/checkout@v4` Node.js 20 runtime deprecation. Relevant tests ship with the harness. PR CI and pushes to `aistack/main` continue to run the complete repository suite; the deeper property run remains scheduled-only.
+~~~
+
 ## 59.4 Stacked-PR Checkpoints
 
 Each PR should leave a green checkpoint before the next PR depends on it:
