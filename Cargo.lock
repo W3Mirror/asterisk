@@ -103,6 +103,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "scenario-replay"
+version = "0.1.0"
+dependencies = [
+ "call-api",
+ "call-core",
+ "call-engine",
+ "media-core",
+ "rtp",
+ "sip-parser",
+ "sip-transaction",
+ "sip-types",
+]
+
+[[package]]
 name = "sdp"
 version = "0.1.0"
 

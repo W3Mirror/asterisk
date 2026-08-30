@@ -1,12 +1,12 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-060 — offline verification foundation added to the goal
-**Last checkpoint (UTC):** 2026-08-30T20:57:18Z
+**Current checkpoint:** CP-061 — deterministic synthetic replay foundation validated locally
+**Last checkpoint (UTC):** 2026-08-30T21:08:18Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Offline deterministic verification foundation across Milestones 2–5<br>
-**Next resume action:** Implement deterministic synthetic SIP scenario fixtures and a replay harness with transaction, dialog, call-state, API-event, and media assertions; provider captures remain a later interoperability evidence gate
-**Active PR:** [#22](https://github.com/W3Mirror/asterisk/pull/22); branch `rust-quality-ci` targets `protocol-fuzz`
+**Next resume action:** Commit and publish branch `sip-scenario-replay` as stacked PR #23 against `rust-quality-ci`, then verify hosted workspace, fuzz, and audit checks
+**Active PR:** Pending #23 publication; branch `sip-scenario-replay` targets `rust-quality-ci`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-22-rust-quality-ci`
 **Primary language:** Rust  
@@ -1999,8 +1999,8 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 | Workstream | Status | Evidence / checkpoint | PR | Next action |
 | --- | --- | --- | --- | --- |
 | Phase 0 — current Asterisk surface | in_progress | CP-004/CP-010/CP-045/CP-051; `docs/current-asterisk-surface.md` (commit `edba8386c` plus 2026-08-30 rechecks); no Asterisk runtime, target SIP/RTP/8088 listeners, `.env.aistack`, or sanitized capture corpus; DNS/config/host address drift remains | #1 | Obtain provider/runtime access and sanitized successful/failed fixtures |
-| Phase 1 — Rust media engine | in_progress | CP-005/CP-008/CP-019/CP-042/CP-047/CP-048/CP-049/CP-050/CP-051/CP-052/CP-053/CP-054/CP-055/CP-056/CP-057/CP-058/CP-059/CP-060; PR #2 safe protocol/media foundation, PR #8 bounded RTP↔AI media session/DTMF/PCM recorder, PR #18 bounded WebSocket adapter, PR #19 stream driver, PR #20 UDP RTP/RTCP runtime, and PR #21 parser fuzz harnesses; repository-native hosted Rust CI is present on `aistack/main`, and all hosted checks through PR #22 are green | [#22](https://github.com/W3Mirror/asterisk/pull/22) OPEN, documentation-only reconciliation | Implement the offline deterministic SIP fixture/replay foundation; keep provider evidence as the later traffic-enablement gate |
-| Offline deterministic verification | not_started | CP-060 defines synthetic replay, local SIPp, property invariants, API/event contracts, media fault injection, bridge/transfer state tests, differential tooling, and load/soak/reclamation tiers | Next stacked PR after #22 | Implement the smallest reusable synthetic SIP scenario format and replay/state assertion harness |
+| Phase 1 — Rust media engine | in_progress | CP-005/CP-008/CP-019/CP-042/CP-047/CP-048/CP-049/CP-050/CP-051/CP-052/CP-053/CP-054/CP-055/CP-056/CP-057/CP-058/CP-059/CP-060/CP-061; PR #2 safe protocol/media foundation, PR #8 bounded RTP↔AI media session/DTMF/PCM recorder, PR #18 bounded WebSocket adapter, PR #19 stream driver, PR #20 UDP RTP/RTCP runtime, PR #21 parser fuzz harnesses, and locally validated `scenario-replay` foundation; repository-native hosted Rust CI is present on `aistack/main`, and all hosted checks through PR #22 are green | Pending #23 publication | Publish and verify the deterministic replay foundation; keep provider evidence as the later traffic-enablement gate |
+| Offline deterministic verification | in_progress | CP-060 defined the workstream; CP-061 adds a bounded atomic `scenario-replay` runner, synthetic SIP fixtures, explicit monotonic time, transaction/dialog/call/event reports, RTP/AI-media outcomes, five focused tests, and 134 passing workspace tests | Pending #23 publication | Publish PR #23, then extend the corpus with deterministic failure/retransmission, RTCP/DTMF fault, transfer, and reclamation scenarios |
 | Phase 2 — SIP edge shadow mode | not_started | — | — | Extend offline differential tooling with sanitized Asterisk/provider captures when available |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
 | Phase 4 — expanded provider coverage | not_started | — | — | Add one provider compatibility suite per rollout target |
@@ -2661,6 +2661,7 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 20 | [#20](https://github.com/W3Mirror/asterisk/pull/20) | `media-udp-runtime` | `media-websocket-transport` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-20-media-udp-runtime` | Milestone 2/4 media-plane runtime: bounded UDP RTP/RTCP ingress and egress, source-policy enforcement, symmetric endpoint learning, and DTMF/report delivery around `MediaSession` | in_progress | `6c3628e91` | implementation f04b1ff2c plus checkpoint commit; local HEAD equals origin/media-udp-runtime at 6c3628e91; PR #20 is OPEN/non-draft against media-websocket-transport at 35f50e1a8 with CLEAN merge state and no configured checks; focused/workspace tests, formatting, diff, and package clippy pass; no provider/runtime or live-call evidence | Obtain read-only provider/runtime access or sanitized captures before enabling any Rust route |
 | 21 | [#21](https://github.com/W3Mirror/asterisk/pull/21) | `protocol-fuzz` | `media-udp-runtime` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-21-protocol-fuzz` | Milestone 3/4 safety acceptance: isolated `cargo-fuzz` targets for the safe SIP, SDP, RTP, RTCP, DTMF, and WebSocket parsers | in_progress | `b67c7cd7b` | PR21 is OPEN/non-draft/CLEAN against `media-udp-runtime` at `4e6d7dde`; local HEAD equals `origin/protocol-fuzz` at `b67c7cd7`; `gh pr checks 21` reports no configured checks; sanitizer-backed six-target fuzz checks and smoke passes, workspace tests, formatting, clippy, and diff checks pass; no provider/runtime or live-call evidence | Obtain provider/runtime access and sanitized media fixtures before enabling any Rust route |
 | 22 | [#22](https://github.com/W3Mirror/asterisk/pull/22) | `rust-quality-ci` | `protocol-fuzz` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-22-rust-quality-ci` | Documentation-only reconciliation of the hosted Rust CI rollout and explicit offline verification/CI tiers | in_progress | `1f22d5b39` before CP-060 ledger commit | PR22 is OPEN/non-draft/CLEAN at `1f22d5b39`; inherited hosted Workspace checks, Protocol fuzz checks, and Dependency audit all passed in run `33334469075`; repository-native workflow commit `534de1996` remains on `aistack/main` | Publish CP-060, then implement the deterministic synthetic SIP fixture/replay foundation in the next stacked PR |
+| 23 | pending | `sip-scenario-replay` | `rust-quality-ci` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-23` | Offline deterministic replay foundation: bounded atomic scenario execution across raw SIP parsing, transactions, dialogs, calls, lifecycle events, RTP, and AI-media queues | in_progress | pending implementation/checkpoint commit | Five focused replay tests and all 134 workspace tests pass; formatting, strict package Clippy, workspace Clippy, lockfile, and diff checks pass; existing dependency documentation/pedantic warnings remain baseline | Commit, push, open stacked PR #23, and verify hosted checks |
 
 ### CP-026 — PR10 published and stacked remote parity verified
 
@@ -3395,6 +3396,27 @@ blockers: Provider/Asterisk access and sanitized real captures remain unavailabl
 next_action: Create the next tracked stacked-PR worktree from `origin/rust-quality-ci` and implement deterministic synthetic SIP scenario fixtures plus replay assertions for transaction, dialog, call state, API events, and media outcomes
 rollback: Keep all call routing and media on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
 notes: Current PR CI is stronger than affected-module-only testing: it runs the complete locked workspace tests, workspace Clippy/all targets, formatting, dependency audit, and all six fuzz-target checks on every PR. Pushes to `aistack/main` run the same full set. A future affected-module fast path may be introduced only with dependency/dependent closure and fail-safe fallback to the full workspace. Real provider calls remain final interoperability evidence rather than a prerequisite for building offline tests.
+~~~
+
+### CP-061 — Deterministic synthetic replay foundation validated locally
+
+~~~yaml
+checkpoint_id: CP-061
+recorded_at_utc: 2026-08-30T21:08:18Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Offline deterministic verification foundation across Milestones 2–5
+scope: Add the first reusable offline scenario runner and synthetic fixtures across raw SIP parsing, transaction/dialog/call state, API lifecycle events, RTP input, and AI-media output without sockets, sleeps, provider access, or live traffic
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-23
+branch: sip-scenario-replay
+base_branch: rust-quality-ci
+pr: pending #23 publication
+head_sha: 51abbf9cfcb94bec5dc9ade810dd19cbb6c19b20 before implementation/checkpoint commit
+evidence: New workspace crate `scenario-replay` enforces maximum steps, fixture bytes, reported calls, monotonic timestamps, first-error context, and atomic all-or-nothing runner state; `ScenarioStep` drives inbound/outbound raw SIP, invite responses, call commands, timer polls, RTP receives, AI-frame queueing, and RTP emission; `ReplayReport` exposes ordered actions/events, final call/dialog snapshots, transaction count, and media stats; checked-in synthetic INVITE/ACK fixtures exercise parser, transaction, dialog, call state, 100/180/200 output, and lifecycle events; five focused tests cover answered calls, RTP/AI media, contextual time rejection, failed-replay atomicity, and fixture bounds; `cargo fmt --all -- --check`, `cargo test -p scenario-replay --locked`, strict package Clippy with `--no-deps -- -D warnings`, `cargo test --workspace --locked` with 134 tests, workspace Clippy, and `git diff --check` pass
+blockers: Provider/Asterisk access and sanitized real captures remain unavailable and block provider interoperability proof and any Rust traffic enablement, but do not block offline scenario expansion; Asterisk routing remains the fallback
+next_action: Commit and push `sip-scenario-replay`, open stacked PR #23 against `rust-quality-ci`, and verify repository-hosted Workspace checks, Protocol fuzz checks, and Dependency audit
+rollback: Keep all call routing and media on Asterisk; do not enable Rust traffic; close the offline-only PR if superseded
+notes: Existing dependency missing-documentation and pedantic Clippy warnings remain baseline and non-fatal; the new crate passes strict no-dependency Clippy. The first slice deliberately establishes the common deterministic execution/reporting boundary; local SIPp, property-based invariants, broader failure/fault fixtures, differential comparison, load, and soak layers remain ordered follow-up work.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
