@@ -6,7 +6,7 @@ on:
 
 jobs:
   triage:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - name: initial labeling
         uses: andymckay/labeler@master
