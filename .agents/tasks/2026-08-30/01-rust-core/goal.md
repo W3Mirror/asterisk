@@ -1723,6 +1723,10 @@ are picked up by the full workspace invocation. The current workflow does not
 detect changed files or run only an affected module, so a PR does **not** get a
 module-only test shortcut.
 
+Protocol fuzz-target checks and dependency audits are also configured for these
+events when their respective workspaces exist; stack-layer detection may mark
+them skipped when the Rust workspace has not reached that branch yet.
+
 Every push to `aistack/main` runs that same complete ordinary hosted suite
 against the integrated stack whenever a Rust workspace is present. “All tests”
 here means the complete ordinary Rust workspace and its offline checks, not
@@ -1730,7 +1734,7 @@ every long-running or credentialed test.
 
 Scheduled or manually dispatched workflows provide the extended gates:
 
-- fuzzing and dependency/security audits (when their workspaces exist);
+- extended fuzz campaigns and additional dependency/security review;
 - SIPp interoperability and other deterministic fixture replay;
 - large capacity matrices and high-case property tests;
 - long-duration soak and memory-reclamation tests; and
