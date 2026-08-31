@@ -2,7 +2,7 @@
 
 **Status: in_progress**
 **Current checkpoint:** CP-181 — CI test-scope contract clarified
-**Last checkpoint (UTC):** 2026-08-31T13:29:24Z
+**Last checkpoint (UTC):** 2026-08-31T13:30:33Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Graceful drain/restart and Asterisk fallback<br>
 **Next resume action:** Start the next bounded offline acceptance slice from the green `graceful-drain` head while retaining the provider/Asterisk evidence gate
@@ -6043,10 +6043,10 @@ worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-60-graceful-drain
 branch: graceful-drain
 base_branch: audit-signals
 pr: https://github.com/W3Mirror/asterisk/pull/60
-head_sha: 2f96e753c2fdbc4c5b0f38756ab6e6661be3dd2e
+head_sha: 2585449e561653c28a09e563056e35658435211f
 evidence: `.github/workflows/rust-quality.yml` declares `pull_request:` and `push` to `aistack/main`. The PR trigger therefore runs on opened, reopened, and synchronized updates. Its ordinary hosted jobs run the complete locked workspace tests, focused tests included, plus SIPp, reclamation smokes, fuzz-target checks, dependency audit, formatting, and Clippy. The push to `aistack/main` repeats that same ordinary suite. No affected-module-only selector is currently implemented; larger capacity/property/soak jobs remain schedule/manual-only.
 blockers: This clarification does not change provider-neutral implementation status. Provider credentials/runtime access, sanitized real captures, production rollout/rollback execution, and live provider interoperability remain later evidence gates; Rust traffic remains disabled and Asterisk remains the fallback.
-next_action: Commit and publish this goal clarification with the active stack, then continue the next bounded offline acceptance slice from `graceful-drain`.
+next_action: Continue the next bounded offline acceptance slice from `graceful-drain` while preserving the provider/Asterisk evidence gate.
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; revert this documentation-only checkpoint if the CI contract changes.
 notes: Every implementation slice must add or update its relevant tests in the same change. “Affected-module test” means the focused tests owned by that module are required and included in the full PR workspace run; it does not mean CI currently skips unrelated packages.
 ~~~
