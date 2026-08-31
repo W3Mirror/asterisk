@@ -1705,6 +1705,31 @@ Before production:
 
 # 52. CI Requirements
 
+## 52.1 Test coverage that ships with implementation code
+
+Real-time provider calls are not the only required test evidence. Each
+implementation pull request must add or update every applicable test layer for
+the behavior it changes:
+
+- unit and state-machine tests for local logic and invalid transitions;
+- cross-crate contract and integration tests for API, event, and lifecycle
+  behavior;
+- deterministic SIP, SDP, RTP, RTCP, DTMF, and packet-capture replay fixtures;
+- negative, authorization, replay/idempotency, redaction, and rate-limit tests;
+- property-based tests and parser fuzz targets for protocol invariants;
+- timeout, disconnect, restart, duplicate-delivery, and resource-reclamation
+  tests;
+- bounded-capacity, backpressure, load, and memory-stability tests;
+- differential comparisons against the corresponding Asterisk behavior; and
+- deployment/configuration validation plus a tested routing rollback to
+  Asterisk when the change affects operations.
+
+The test layer must match the risk of the change: focused tests directly cover
+the affected crate/module, while cross-cutting changes also require the
+appropriate integration, resilience, security, or operational evidence. A
+green workflow without the applicable test addition is not sufficient
+acceptance.
+
 Every implementation pull request must include focused tests for each affected
 crate/module, and every pull request event (`opened`, `reopened`, or
 `synchronize`) must run the hosted ordinary suite on `ubuntu-latest` whenever
