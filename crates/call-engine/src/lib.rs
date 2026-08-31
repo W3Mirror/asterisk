@@ -1041,7 +1041,7 @@ impl CallEngine {
             .ok_or(EngineError::NotInboundInvite)?;
         let transaction_reliability = transaction.reliability();
         let actions = if status_code < 200 {
-            transaction.send_provisional(response.clone())?
+            transaction.send_provisional_at(response.clone(), now)?
         } else {
             transaction.send_final(response.clone(), now)?
         };
@@ -1051,16 +1051,18 @@ impl CallEngine {
         if status_code >= 300 {
             registry.apply(id, CallCommand::End)?;
         }
-        let final_server_invite = (status_code < 300).then(|| FinalServerInvite {
-            request: request.clone(),
-            response: response.clone(),
-            destination,
-            call_id: id.clone(),
-            acknowledged: false,
-            next_retransmit: (transaction_reliability == TransportReliability::Unreliable)
-                .then(|| now.saturating_add(self.config.timers.t1)),
-            retransmit_interval: self.config.timers.t1,
-        });
+        let final_server_invite = (200..300)
+            .contains(&status_code)
+            .then(|| FinalServerInvite {
+                request: request.clone(),
+                response: response.clone(),
+                destination,
+                call_id: id.clone(),
+                acknowledged: false,
+                next_retransmit: (transaction_reliability == TransportReliability::Unreliable)
+                    .then(|| now.saturating_add(self.config.timers.t1)),
+                retransmit_interval: self.config.timers.t1,
+            });
         self.registry = registry;
         if actions
             .iter()
@@ -1468,6 +1470,26 @@ impl CallEngine {
         if (rseq, invite_sequence) != (reliable.rseq, reliable.invite_sequence) {
             return Err(EngineError::InvalidPrack);
         }
+        let invite_branch = self
+            .server_calls
+            .iter()
+            .find_map(|(candidate, candidate_call_id)| {
+                (candidate_call_id == &call_id
+                    && self
+                        .server_transactions
+                        .get(candidate)
+                        .is_some_and(|transaction| {
+                            transaction.kind() == sip_transaction::TransactionKind::Invite
+                        }))
+                .then_some(candidate.clone())
+            })
+            .ok_or(EngineError::PrackNotExpected)?;
+        let mut invite_transaction = self
+            .server_transactions
+            .get(&invite_branch)
+            .cloned()
+            .ok_or(EngineError::PrackNotExpected)?;
+        invite_transaction.acknowledge_reliable_provisional()?;
         let key = transaction_key(&branch, &SipMethod::Prack);
         self.ensure_transaction_capacity()?;
         self.ensure_new_transaction(&key)?;
@@ -1485,6 +1507,8 @@ impl CallEngine {
 
         self.dialogs.insert(call_id.clone(), dialog);
         self.reliable_provisionals.remove(&call_id);
+        self.server_transactions
+            .insert(invite_branch, invite_transaction);
         if !terminated {
             self.server_transactions.insert(key.clone(), transaction);
             self.server_destinations.insert(key.clone(), source);
@@ -2553,6 +2577,154 @@ mod tests {
             .respond_to_invite(&call_id, 200, "OK", Vec::new(), Duration::from_millis(5))
             .unwrap();
         assert!(!engine.reliable_provisionals.contains_key(&call_id));
+    }
+
+    #[test]
+    fn inbound_reliable_provisional_retransmits_with_backoff_until_prack() {
+        let mut engine = CallEngine::new(EngineConfig::default()).unwrap();
+        let mut request = invite(
+            "prack-timer-1",
+            "sip-call-prack-timer",
+            "Bob <sip:bob@example.com>",
+            "42 INVITE",
+        );
+        request.headers.push("Require", "100rel");
+        let source = address(5060);
+        let created = engine
+            .receive_request(
+                source,
+                request.clone(),
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        let call_id = created.events()[0].call_id.clone();
+        let provisional = engine
+            .respond_to_invite(
+                &call_id,
+                183,
+                "Session Progress",
+                Vec::new(),
+                Duration::from_millis(100),
+            )
+            .unwrap();
+        let SipMessage::Response(provisional_response) = &provisional.actions()[0].message else {
+            panic!("expected reliable provisional response");
+        };
+
+        assert!(
+            engine
+                .poll(Duration::from_millis(599))
+                .unwrap()
+                .actions()
+                .is_empty()
+        );
+        let retransmitted = engine.poll(Duration::from_millis(600)).unwrap();
+        assert!(retransmitted.actions().iter().any(|action| matches!(
+            &action.message,
+            SipMessage::Response(response) if response.status_code == 183
+                && response.headers.get("RSeq") == Some("1")
+        )));
+        assert!(
+            engine
+                .poll(Duration::from_millis(1_599))
+                .unwrap()
+                .actions()
+                .is_empty()
+        );
+        assert!(
+            engine
+                .poll(Duration::from_millis(1_600))
+                .unwrap()
+                .actions()
+                .iter()
+                .any(|action| matches!(
+                    &action.message,
+                    SipMessage::Response(response) if response.status_code == 183
+                ))
+        );
+
+        let prack = inbound_prack(
+            &request,
+            provisional_response,
+            "prack-timer-2",
+            43,
+            "1 42 INVITE",
+        );
+        engine
+            .receive_request(
+                source,
+                prack,
+                Duration::from_millis(1_700),
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        assert!(!engine.reliable_provisionals.contains_key(&call_id));
+        assert!(
+            engine
+                .poll(Duration::from_millis(32_200))
+                .unwrap()
+                .actions()
+                .is_empty()
+        );
+        assert_eq!(engine.snapshot(&call_id).unwrap().state, CallState::Early);
+    }
+
+    #[test]
+    fn inbound_reliable_provisional_timeout_fails_and_reclaims_call_state() {
+        let mut engine = CallEngine::new(EngineConfig::default()).unwrap();
+        let mut request = invite(
+            "prack-timeout-1",
+            "sip-call-prack-timeout",
+            "Bob <sip:bob@example.com>",
+            "42 INVITE",
+        );
+        request.headers.push("Require", "100rel");
+        let source = address(5060);
+        let created = engine
+            .receive_request(
+                source,
+                request,
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        let call_id = created.events()[0].call_id.clone();
+        engine
+            .respond_to_invite(
+                &call_id,
+                183,
+                "Session Progress",
+                Vec::new(),
+                Duration::ZERO,
+            )
+            .unwrap();
+
+        assert!(
+            engine
+                .poll(Duration::from_millis(31_999))
+                .unwrap()
+                .events()
+                .is_empty()
+        );
+        let timed_out = engine.poll(Duration::from_secs(32)).unwrap();
+        assert!(
+            timed_out
+                .events()
+                .iter()
+                .any(|event| { event.call_id == call_id && event.kind == CallEventKind::Failed })
+        );
+        assert_eq!(engine.snapshot(&call_id).unwrap().state, CallState::Ended);
+        assert_eq!(engine.transaction_count(), 0);
+        assert_eq!(engine.dialog_count(), 0);
+        assert!(!engine.reliable_provisionals.contains_key(&call_id));
+        assert!(
+            engine
+                .poll(Duration::from_secs(33))
+                .unwrap()
+                .actions()
+                .is_empty()
+        );
     }
 
     #[test]

@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use sip_types::{SipMethod, SipRequest, SipResponse};
+use sip_types::{Headers, SipMethod, SipRequest, SipResponse};
 
 /// Whether a transaction uses a reliable stream or an unreliable datagram.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -45,6 +45,8 @@ pub enum TimerKind {
     I,
     J,
     K,
+    /// Retransmission timer for a reliable provisional response (RFC 3262).
+    ReliableProvisional,
 }
 
 /// Base timer values. Timer B/F/H use 64*T1; retransmit timers are capped at T2.
@@ -413,6 +415,7 @@ pub struct ServerTransaction {
     timers_config: TimerConfig,
     timers: Vec<TimerEntry>,
     last_response: Option<SipResponse>,
+    reliable_provisional_timeout: Option<Duration>,
 }
 
 impl ServerTransaction {
@@ -430,6 +433,7 @@ impl ServerTransaction {
             timers_config: timers_config.validate()?,
             timers: Vec::with_capacity(3),
             last_response: None,
+            reliable_provisional_timeout: None,
         })
     }
 
@@ -464,6 +468,7 @@ impl ServerTransaction {
         actions.push(ServerAction::StateChanged { from, to: next });
         if next == ServerState::Terminated {
             self.timers.clear();
+            self.reliable_provisional_timeout = None;
             actions.push(ServerAction::Terminated);
         }
     }
@@ -473,16 +478,51 @@ impl ServerTransaction {
         &mut self,
         response: SipResponse,
     ) -> Result<Vec<ServerAction>, TransactionError> {
+        self.send_provisional_at(response, Duration::ZERO)
+    }
+
+    /// Records and sends a provisional response at a deterministic time.
+    ///
+    /// A response carrying `Require: 100rel` arms the reliable-provisional
+    /// retransmission timer. On an unreliable transport it is retransmitted
+    /// from T1 with exponential backoff capped at T2 until PRACK arrives or
+    /// 64*T1 elapses. Reliable transports skip retransmission but retain the
+    /// same timeout bound.
+    pub fn send_provisional_at(
+        &mut self,
+        response: SipResponse,
+        now: Duration,
+    ) -> Result<Vec<ServerAction>, TransactionError> {
         validate_status(response.status_code)?;
         if response.status_code >= 200
             || !matches!(self.state, ServerState::Trying | ServerState::Proceeding)
         {
             return Err(TransactionError::InvalidState);
         }
+        if self.reliable_provisional_timeout.is_some() {
+            return Err(TransactionError::InvalidState);
+        }
         self.last_response = Some(response);
         let mut actions = Vec::new();
         if self.state == ServerState::Trying {
             self.transition(ServerState::Proceeding, &mut actions);
+        }
+        if self
+            .last_response
+            .as_ref()
+            .is_some_and(is_reliable_provisional)
+        {
+            self.reliable_provisional_timeout =
+                Some(now.saturating_add(self.timers_config.sixty_four_t1()));
+            if self.reliability == TransportReliability::Unreliable {
+                schedule(
+                    &mut self.timers,
+                    TimerKind::ReliableProvisional,
+                    now,
+                    self.timers_config.t1,
+                    Some(self.timers_config.t1),
+                );
+            }
         }
         Ok(actions)
     }
@@ -499,6 +539,8 @@ impl ServerTransaction {
         {
             return Err(TransactionError::InvalidState);
         }
+        cancel(&mut self.timers, TimerKind::ReliableProvisional);
+        self.reliable_provisional_timeout = None;
         self.last_response = Some(response.clone());
         let mut actions = Vec::new();
         if self.kind == TransactionKind::Invite && response.status_code < 300 {
@@ -550,6 +592,17 @@ impl ServerTransaction {
         Ok(actions)
     }
 
+    /// Marks the outstanding reliable provisional response as acknowledged by
+    /// PRACK and stops its retransmission/timeout timers.
+    pub fn acknowledge_reliable_provisional(&mut self) -> Result<(), TransactionError> {
+        if self.reliable_provisional_timeout.is_none() {
+            return Err(TransactionError::InvalidState);
+        }
+        cancel(&mut self.timers, TimerKind::ReliableProvisional);
+        self.reliable_provisional_timeout = None;
+        Ok(())
+    }
+
     /// Applies an ACK or retransmitted request from the network.
     pub fn on_request(
         &mut self,
@@ -592,6 +645,17 @@ impl ServerTransaction {
     /// Fires all timers whose deadlines are at or before `now`.
     pub fn poll(&mut self, now: Duration) -> Vec<ServerAction> {
         let mut actions = Vec::new();
+        if self.state == ServerState::Proceeding
+            && self
+                .reliable_provisional_timeout
+                .is_some_and(|deadline| now >= deadline)
+        {
+            self.reliable_provisional_timeout = None;
+            cancel(&mut self.timers, TimerKind::ReliableProvisional);
+            self.transition(ServerState::Terminated, &mut actions);
+            actions.push(ServerAction::TimedOut);
+            return actions;
+        }
         while let Some(index) = self.timers.iter().position(|entry| entry.deadline <= now) {
             let entry = self.timers.remove(index);
             match entry.kind {
@@ -620,11 +684,43 @@ impl ServerTransaction {
                 TimerKind::J if self.state == ServerState::Completed => {
                     self.transition(ServerState::Terminated, &mut actions);
                 }
+                TimerKind::ReliableProvisional
+                    if self.state == ServerState::Proceeding
+                        && self.reliable_provisional_timeout.is_some() =>
+                {
+                    actions.push(ServerAction::RetransmitResponse);
+                    let interval = entry
+                        .interval
+                        .map(double_duration)
+                        .unwrap_or(self.timers_config.t1)
+                        .min(self.timers_config.t2);
+                    schedule(
+                        &mut self.timers,
+                        TimerKind::ReliableProvisional,
+                        now,
+                        interval,
+                        Some(interval),
+                    );
+                }
                 _ => {}
             }
         }
         actions
     }
+}
+
+fn is_reliable_provisional(response: &SipResponse) -> bool {
+    (101..200).contains(&response.status_code)
+        && header_has_token(&response.headers, "Require", "100rel")
+        && response.headers.get("RSeq").is_some()
+}
+
+fn header_has_token(headers: &Headers, name: &str, token: &str) -> bool {
+    headers.get(name).is_some_and(|value| {
+        value
+            .split(',')
+            .any(|part| part.trim().eq_ignore_ascii_case(token))
+    })
 }
 
 #[cfg(test)]
@@ -650,6 +746,13 @@ mod tests {
             headers: Headers::new(),
             body: Vec::new(),
         }
+    }
+
+    fn reliable_provisional() -> SipResponse {
+        let mut response = response(183);
+        response.headers.push("Require", "100rel");
+        response.headers.push("RSeq", "1");
+        response
     }
 
     fn fast_timers() -> TimerConfig {
@@ -784,6 +887,81 @@ mod tests {
             transaction.send_provisional(response(180)),
             Err(TransactionError::InvalidState)
         ));
+    }
+
+    #[test]
+    fn reliable_provisional_retransmits_with_backoff_and_prack_stops_timer() {
+        let mut transaction = ServerTransaction::new(
+            request(SipMethod::Invite),
+            TransportReliability::Unreliable,
+            fast_timers(),
+        )
+        .unwrap();
+        transaction
+            .send_provisional_at(reliable_provisional(), Duration::from_millis(100))
+            .unwrap();
+        assert_eq!(transaction.state(), ServerState::Proceeding);
+        assert_eq!(
+            transaction.poll(Duration::from_millis(109)),
+            Vec::<ServerAction>::new()
+        );
+        assert_eq!(
+            transaction.poll(Duration::from_millis(110)),
+            vec![ServerAction::RetransmitResponse]
+        );
+        assert_eq!(
+            transaction.poll(Duration::from_millis(129)),
+            Vec::<ServerAction>::new()
+        );
+        assert_eq!(
+            transaction.poll(Duration::from_millis(130)),
+            vec![ServerAction::RetransmitResponse]
+        );
+        transaction.acknowledge_reliable_provisional().unwrap();
+        assert!(transaction.poll(Duration::from_millis(1_000)).is_empty());
+        assert_eq!(transaction.state(), ServerState::Proceeding);
+        assert!(matches!(
+            transaction.acknowledge_reliable_provisional(),
+            Err(TransactionError::InvalidState)
+        ));
+    }
+
+    #[test]
+    fn reliable_provisional_times_out_at_64_t1_and_terminates() {
+        let mut transaction = ServerTransaction::new(
+            request(SipMethod::Invite),
+            TransportReliability::Unreliable,
+            fast_timers(),
+        )
+        .unwrap();
+        transaction
+            .send_provisional_at(reliable_provisional(), Duration::from_millis(100))
+            .unwrap();
+        let before_timeout = transaction.poll(Duration::from_millis(739));
+        assert!(!before_timeout.contains(&ServerAction::TimedOut));
+        assert_eq!(transaction.state(), ServerState::Proceeding);
+        let actions = transaction.poll(Duration::from_millis(740));
+        assert!(actions.contains(&ServerAction::TimedOut));
+        assert!(actions.contains(&ServerAction::Terminated));
+        assert_eq!(transaction.state(), ServerState::Terminated);
+        assert!(transaction.poll(Duration::from_millis(1_000)).is_empty());
+    }
+
+    #[test]
+    fn reliable_provisional_on_reliable_transport_waits_without_retransmitting() {
+        let mut transaction = ServerTransaction::new(
+            request(SipMethod::Invite),
+            TransportReliability::Reliable,
+            fast_timers(),
+        )
+        .unwrap();
+        transaction
+            .send_provisional_at(reliable_provisional(), Duration::from_millis(100))
+            .unwrap();
+        assert!(transaction.poll(Duration::from_millis(739)).is_empty());
+        let actions = transaction.poll(Duration::from_millis(740));
+        assert!(actions.contains(&ServerAction::TimedOut));
+        assert_eq!(transaction.state(), ServerState::Terminated);
     }
 
     #[test]
