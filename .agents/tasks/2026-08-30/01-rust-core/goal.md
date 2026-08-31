@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-102 — PR #37 published with hosted validation running
-**Last checkpoint (UTC):** 2026-08-31T00:27:11Z
+**Current checkpoint:** CP-103 — PR #37 hosted clock-continuity validation green
+**Last checkpoint (UTC):** 2026-08-31T00:31:24Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** DTMF-to-audio RTP clock continuity<br>
-**Next resume action:** Push the PR #37 publication checkpoint, then verify Workspace, Protocol fuzz, and Dependency audit on its final head
+**Next resume action:** Push the PR #37 green-check reconciliation and verify all three hosted jobs on its documentation-only final head; then select the next bounded offline media reliability slice
 **Active PR:** [#37](https://github.com/W3Mirror/asterisk/pull/37) — `runtime-dtmf-timeline` targets `runtime-dtmf-leg-bridge`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-37`
@@ -4281,6 +4281,27 @@ blockers: Hosted validation is pending on the publication checkpoint's final hea
 next_action: Push this publication checkpoint and verify all three hosted Rust quality gates on the final PR #37 head
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #37 or remove the explicit-timestamp relay layer if its contract is superseded
 notes: PR #37 contains the relevant timestamp-continuity tests and documentation. GitHub runs the complete repository suite on the PR, not an affected-module-only subset. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-103 — PR #37 hosted clock-continuity validation green
+
+~~~yaml
+checkpoint_id: CP-103
+recorded_at_utc: 2026-08-31T00:31:24Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: DTMF-to-audio RTP clock continuity
+scope: Verify the complete hosted Rust quality suite on PR #37's publication-checkpoint head
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-37
+branch: runtime-dtmf-timeline
+base_branch: runtime-dtmf-leg-bridge
+pr: https://github.com/W3Mirror/asterisk/pull/37
+head_sha: 3fdf6ad387c97b05a0f20617a4487a4cef30e0b5 before this green-check reconciliation commit
+evidence: PR #37 is OPEN/non-draft/CLEAN against exact base `runtime-dtmf-leg-bridge` at `9ba7e6e05`, with local, origin, and GitHub publication-head parity; hosted run `33344642500` passed Workspace checks in 36 seconds, including formatting, all 187 tests, all three local SIPp scenarios, the 512-call reclamation smoke, and workspace Clippy; Protocol fuzz checks passed in 50 seconds across all six address-sanitizer targets; Dependency audit passed in 3 minutes 14 seconds
+blockers: RTCP relay, jitter playout, media/WebSocket load, long-duration soak/memory, sanitized captures, provider/Asterisk interoperability, rollback proof, and production evidence remain active goal work; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Push this reconciliation checkpoint, verify all three hosted jobs on that documentation-only final head, then select the next bounded offline media reliability slice
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #37 or remove the explicit-timestamp relay layer if its contract is superseded
+notes: Relevant tests shipped with the implementation. Hosted PR CI and pushes to `aistack/main` continue to run the complete repository suite rather than affected-module selection. The scheduled-only extended load and property steps were correctly skipped for the pull-request event. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
