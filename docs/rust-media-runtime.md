@@ -31,6 +31,11 @@ event loop, or set them non-blocking through the mutable socket accessors:
 3. call `send_audio`, `send_dtmf`, or `send_rtcp` when a destination is
    configured or learned.
 
+`send_receiver_report` checks the leg's RTCP destination before advancing its
+report interval, builds a Receiver Report from that leg's accepted RTP/RTCP
+state, and sends it on the RTCP socket. It fails explicitly until both an RTCP
+destination and a valid remote RTP source exist.
+
 The runtime deliberately has no async-runtime, TLS/DTLS, SRTP, provider, call
 routing, or Asterisk dependency. DTLS-SRTP and live provider interoperability
 remain separate evidence-gated slices; existing call routing continues to use

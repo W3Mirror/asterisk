@@ -498,6 +498,25 @@ impl MediaUdpRuntime {
         self.send_datagram(MediaChannel::Rtcp, &wire, destination)
     }
 
+    /// Builds and sends one Receiver Report for this leg's observed RTP source.
+    ///
+    /// The RTCP destination is checked before report interval state advances.
+    ///
+    /// # Errors
+    ///
+    /// Returns a missing destination, missing received RTP source, media
+    /// serialization, or socket error.
+    pub fn send_receiver_report(&mut self, now: Duration) -> Result<usize, MediaRuntimeError> {
+        let destination = self
+            .remote_rtcp
+            .ok_or(MediaRuntimeError::NoRemoteEndpoint {
+                channel: MediaChannel::Rtcp,
+            })?;
+        let packet = self.media.receiver_report(now)?;
+        let wire = self.media.send_rtcp(&packet)?;
+        self.send_datagram(MediaChannel::Rtcp, &wire, destination)
+    }
+
     fn send_datagram(
         &self,
         channel: MediaChannel,
@@ -578,11 +597,15 @@ mod tests {
     }
 
     fn audio_packet() -> Vec<u8> {
+        audio_packet_at(7)
+    }
+
+    fn audio_packet_at(sequence_number: u16) -> Vec<u8> {
         serialize(&RtpPacket {
             padding: false,
             marker: false,
             payload_type: 0,
-            sequence_number: 7,
+            sequence_number,
             timestamp: 100,
             ssrc: 77,
             csrcs: Vec::new(),
@@ -651,6 +674,58 @@ mod tests {
         let (length, source) = peer.recv_from(&mut output).unwrap();
         assert_eq!(source, runtime.local_rtcp_addr().unwrap());
         assert_eq!(length, wire.len());
+    }
+
+    #[test]
+    fn sends_generated_receiver_report_to_the_leg_rtcp_peer() {
+        let (mut runtime, audio_peer, control_peer) = runtime();
+        runtime.set_remote_rtcp(control_peer.local_addr().unwrap());
+        assert!(matches!(
+            runtime.send_receiver_report(Duration::ZERO),
+            Err(MediaRuntimeError::Media(
+                MediaSessionError::NoRtpForReceiverReport
+            ))
+        ));
+        runtime.clear_remote_rtcp();
+        for (sequence, arrival) in [
+            (7, Duration::from_millis(20)),
+            (9, Duration::from_millis(60)),
+        ] {
+            audio_peer
+                .send_to(
+                    &audio_packet_at(sequence),
+                    runtime.local_rtp_addr().unwrap(),
+                )
+                .unwrap();
+            runtime.receive_rtp(arrival).unwrap();
+        }
+        assert!(matches!(
+            runtime.send_receiver_report(Duration::from_millis(70)),
+            Err(MediaRuntimeError::NoRemoteEndpoint {
+                channel: MediaChannel::Rtcp
+            })
+        ));
+        runtime.set_remote_rtcp(control_peer.local_addr().unwrap());
+        assert_eq!(
+            runtime
+                .send_receiver_report(Duration::from_millis(80))
+                .unwrap(),
+            32
+        );
+
+        let mut output = [0; 1_024];
+        let (length, source) = control_peer.recv_from(&mut output).unwrap();
+        assert_eq!(source, runtime.local_rtcp_addr().unwrap());
+        let packets = rtcp::parse(&output[..length]).unwrap();
+        let [RtcpPacket::ReceiverReport(report)] = packets.as_slice() else {
+            panic!("expected one receiver report");
+        };
+        assert_eq!(report.ssrc, 88);
+        assert_eq!(report.reports.len(), 1);
+        assert_eq!(report.reports[0].source_ssrc, 77);
+        assert_eq!(report.reports[0].highest_sequence, 9);
+        assert_eq!(report.reports[0].cumulative_lost, 1);
+        assert_eq!(report.reports[0].fraction_lost, 85);
     }
 
     #[test]

@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-103 — PR #37 hosted clock-continuity validation green
-**Last checkpoint (UTC):** 2026-08-31T00:31:24Z
+**Current checkpoint:** CP-104 — per-leg RTCP Receiver Reports locally green
+**Last checkpoint (UTC):** 2026-08-31T00:46:54Z
 **Active phase:** Phase 1 — Rust media engine
-**Active milestone:** DTMF-to-audio RTP clock continuity<br>
-**Next resume action:** Push the PR #37 green-check reconciliation and verify all three hosted jobs on its documentation-only final head; then select the next bounded offline media reliability slice
-**Active PR:** [#37](https://github.com/W3Mirror/asterisk/pull/37) — `runtime-dtmf-timeline` targets `runtime-dtmf-leg-bridge`
+**Active milestone:** Per-leg RTCP termination and Receiver Reports<br>
+**Next resume action:** Commit and publish stacked PR #38 against `runtime-dtmf-timeline`, then verify Workspace, Protocol fuzz, and Dependency audit on its final head
+**Active PR:** pending publication — `runtime-rtcp-leg-reports` targets `runtime-dtmf-timeline`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-37`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-38`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -4302,6 +4302,27 @@ blockers: RTCP relay, jitter playout, media/WebSocket load, long-duration soak/m
 next_action: Push this reconciliation checkpoint, verify all three hosted jobs on that documentation-only final head, then select the next bounded offline media reliability slice
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #37 or remove the explicit-timestamp relay layer if its contract is superseded
 notes: Relevant tests shipped with the implementation. Hosted PR CI and pushes to `aistack/main` continue to run the complete repository suite rather than affected-module selection. The scheduled-only extended load and property steps were correctly skipped for the pull-request event. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-104 — per-leg RTCP Receiver Reports locally green
+
+~~~yaml
+checkpoint_id: CP-104
+recorded_at_utc: 2026-08-31T00:46:54Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Per-leg RTCP termination and Receiver Reports
+scope: Terminate inbound RTCP on each active caller/human leg and generate bounded Receiver Reports for that leg's rewritten RTP identity without raw cross-leg RTCP forwarding
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-38
+branch: runtime-rtcp-leg-reports
+base_branch: runtime-dtmf-timeline
+pr: pending publication
+head_sha: f310a152504e3ab5c7e6295e5e92a6ae88462eee before the implementation commit
+evidence: PR #37 is OPEN/non-draft/CLEAN at final head `f310a1525`, with local, origin, and GitHub parity; hosted run `33344845692` passed Workspace checks with all 187 prior tests, Protocol fuzz checks, and Dependency audit. The new RTP reception snapshot retains constant-size current-source sequence, loss, and jitter state and resets interval state on SSRC changes; RTCP tracks LSR/DLSR timing with saturated 16.16 conversion; media-core and media-runtime generate per-leg Receiver Reports only after RTP source and RTCP destination preconditions pass; the active human bridge consumes RTCP through exact state-gated caller/human endpoints and never forwards raw reports across rewritten RTP identities. Focused suites pass with 25 call-runtime, 11 media-core, 8 media-runtime, 11 RTCP, and 9 RTP tests; all 193 locked workspace tests pass; strict changed-package Clippy with `--no-deps -- -D warnings`, workspace Clippy/all targets, formatting, workflow YAML parsing, and `git diff --check` pass
+blockers: Sender Report scheduling, jitter playout, media/WebSocket load, long-duration soak/memory, sanitized captures, provider/Asterisk interoperability, rollback proof, and production evidence remain active goal work; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Commit and publish stacked PR #38 against `runtime-dtmf-timeline`, record its exact implementation head, and verify every hosted Rust quality job on the final PR head
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the RTCP Receiver Report PR or remove the per-leg reporting layer if its contract is superseded
+notes: Relevant implementation, directly affected-module tests, and documentation ship together. Every PR and push to `aistack/main` runs the complete repository suite rather than affected-module selection; the scheduled workflow additionally deepens property and reclamation coverage. Real provider/Asterisk calls remain an evidence gate for traffic enablement, not a substitute for offline unit, state-machine, fault, integration, property, fuzz, load, soak, and reclamation tests.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints

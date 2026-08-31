@@ -44,6 +44,14 @@ plus the largest validated event duration. This covers lost event-end packets,
 keeps late retransmissions on the original timestamp, and never moves subsequent
 audio backward. Source timestamp rollover uses wrapping RTP ordering.
 
+RTCP terminates independently on each attached media leg because forwarded RTP
+uses the destination leg's SSRC, sequence, and timestamp state. The bridge can
+state-gate and account for one caller or human RTCP compound datagram without
+copying it to the opposite peer. It can also generate an identity-correct
+Receiver Report back to either peer using that same leg's accepted RTP loss,
+highest extended sequence, jitter, and Sender Report timing. Bridge fail-back
+or endpoint replacement rejects RTCP before consuming the stale socket.
+
 Run the focused verification with:
 
 ```sh
@@ -51,7 +59,7 @@ cargo test -p call-runtime --locked
 cargo clippy -p call-runtime --all-targets --no-deps --locked -- -D warnings
 ```
 
-This localhost composition is not jitter playout, RTCP relay, transcoding
+This localhost composition is not jitter playout, RTCP Sender Report scheduling, transcoding
 beyond the existing negotiated G.711 session behavior, provider authentication,
 Asterisk/carrier interoperability, or load/soak evidence. Production traffic
 remains on Asterisk until the later compatibility, reliability, and rollback

@@ -7,7 +7,9 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use dtmf::{Deduplicator, DtmfEvent, EncodeError, Notification, ParseError, encode, parse};
-use rtcp::{RtcpPacket, RtcpSession, RtcpSessionConfig, RtcpSessionStats};
+use rtcp::{
+    ReceiverReport, ReceptionReport, RtcpPacket, RtcpSession, RtcpSessionConfig, RtcpSessionStats,
+};
 use rtp::{
     ParseConfig, RtpPacket, RtpSession, RtpSessionConfig, RtpSessionStats, SessionError,
     parse_with_config,
@@ -105,6 +107,8 @@ pub enum MediaSessionError {
     },
     /// DTMF was requested without a negotiated telephone-event payload type.
     DtmfNotNegotiated,
+    /// A receiver report was requested before any valid remote RTP packet.
+    NoRtpForReceiverReport,
     /// A frame count could not fit in an RTP timestamp increment.
     TimestampIncrementOverflow,
 }
@@ -138,6 +142,9 @@ impl Display for MediaSessionError {
             }
             Self::DtmfNotNegotiated => {
                 formatter.write_str("telephone-event payload type was not negotiated")
+            }
+            Self::NoRtpForReceiverReport => {
+                formatter.write_str("cannot build an RTCP receiver report before receiving RTP")
             }
             Self::TimestampIncrementOverflow => {
                 formatter.write_str("audio frame sample count cannot fit in an RTP timestamp")
@@ -239,6 +246,14 @@ pub struct MediaSession {
     audio_frames_received: u64,
     audio_frames_sent: u64,
     dtmf_notifications: u64,
+    last_receiver_report: Option<ReceiverReportInterval>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ReceiverReportInterval {
+    source_ssrc: u32,
+    expected_packets: u64,
+    packets_lost: u64,
 }
 
 impl MediaSession {
@@ -297,6 +312,7 @@ impl MediaSession {
             audio_frames_received: 0,
             audio_frames_sent: 0,
             dtmf_notifications: 0,
+            last_receiver_report: None,
         })
     }
 
@@ -379,6 +395,64 @@ impl MediaSession {
     /// Serializes one RTCP packet using the session's configured datagram bound.
     pub fn send_rtcp(&mut self, packet: &RtcpPacket) -> Result<Vec<u8>, MediaSessionError> {
         Ok(self.rtcp.send(packet)?)
+    }
+
+    /// Builds an RTCP Receiver Report for the currently observed RTP source.
+    ///
+    /// The report uses the local RTP SSRC as its reporter identity and includes
+    /// loss, highest extended sequence, jitter, and the latest Sender Report
+    /// timing. Fraction loss covers only packets since the prior generated
+    /// report for the same source.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MediaSessionError::NoRtpForReceiverReport`] until one valid
+    /// remote RTP packet has been accepted.
+    pub fn receiver_report(&mut self, now: Duration) -> Result<RtcpPacket, MediaSessionError> {
+        let snapshot = self
+            .rtp
+            .reception_snapshot()
+            .ok_or(MediaSessionError::NoRtpForReceiverReport)?;
+        let previous = self
+            .last_receiver_report
+            .filter(|previous| previous.source_ssrc == snapshot.source_ssrc);
+        let previous_expected = previous.map_or(0, |previous| previous.expected_packets);
+        let previous_lost = previous.map_or(0, |previous| previous.packets_lost);
+        let expected_interval = snapshot.expected_packets.saturating_sub(previous_expected);
+        let lost_interval = snapshot.packets_lost.saturating_sub(previous_lost);
+        let fraction_lost = if expected_interval == 0 {
+            0
+        } else {
+            u8::try_from(
+                lost_interval
+                    .saturating_mul(256)
+                    .checked_div(expected_interval)
+                    .unwrap_or(0)
+                    .min(u64::from(u8::MAX)),
+            )
+            .unwrap_or(u8::MAX)
+        };
+        let cumulative_lost =
+            i32::try_from(snapshot.packets_lost.min(0x7f_ffff)).unwrap_or(0x7f_ffff);
+        let (last_sender_report, delay_since_last_sender_report) =
+            self.rtcp.reception_report_timing(now);
+        self.last_receiver_report = Some(ReceiverReportInterval {
+            source_ssrc: snapshot.source_ssrc,
+            expected_packets: snapshot.expected_packets,
+            packets_lost: snapshot.packets_lost,
+        });
+        Ok(RtcpPacket::ReceiverReport(ReceiverReport {
+            ssrc: self.config.rtp.local_ssrc,
+            reports: vec![ReceptionReport {
+                source_ssrc: snapshot.source_ssrc,
+                fraction_lost,
+                cumulative_lost,
+                highest_sequence: snapshot.highest_sequence,
+                jitter: snapshot.jitter,
+                last_sender_report,
+                delay_since_last_sender_report,
+            }],
+        }))
     }
 
     fn receive_rtp_inner(
@@ -741,6 +815,75 @@ mod tests {
         assert_eq!(stats.rtcp.packets_lost, 3);
         assert_eq!(stats.rtcp.jitter, 160);
         assert_eq!(stats.rtcp.round_trip, Some(Duration::from_millis(1_500)));
+    }
+
+    #[test]
+    fn generates_interval_receiver_reports_for_the_observed_rtp_source() {
+        let mut media = session();
+        assert_eq!(
+            media.receiver_report(Duration::ZERO),
+            Err(MediaSessionError::NoRtpForReceiverReport)
+        );
+        let sender_report = RtcpPacket::SenderReport(SenderReport {
+            ssrc: 77,
+            ntp_msw: 1,
+            ntp_lsw: 0,
+            rtp_timestamp: 0,
+            packets_sent: 2,
+            octets_sent: 320,
+            reports: Vec::new(),
+        });
+        media
+            .receive_rtcp(
+                &rtcp::serialize(&sender_report).unwrap(),
+                Duration::from_secs(10),
+            )
+            .unwrap();
+        for (sequence_number, arrival) in [
+            (1, Duration::from_millis(20)),
+            (3, Duration::from_millis(60)),
+        ] {
+            let packet = RtpPacket {
+                padding: false,
+                marker: false,
+                payload_type: 0,
+                sequence_number,
+                timestamp: u32::from(sequence_number) * 160,
+                ssrc: 77,
+                csrcs: Vec::new(),
+                extension: None,
+                payload: vec![0xff; 160],
+            };
+            media
+                .receive_rtp(&serialize(&packet).unwrap(), arrival)
+                .unwrap();
+            let _ = media.pop_for_ai();
+        }
+
+        let jitter = media.stats().rtp.received.jitter;
+        assert_eq!(
+            media.receiver_report(Duration::from_secs(12)).unwrap(),
+            RtcpPacket::ReceiverReport(ReceiverReport {
+                ssrc: 1,
+                reports: vec![ReceptionReport {
+                    source_ssrc: 77,
+                    fraction_lost: 85,
+                    cumulative_lost: 1,
+                    highest_sequence: 3,
+                    jitter,
+                    last_sender_report: 1 << 16,
+                    delay_since_last_sender_report: 2 << 16,
+                }],
+            })
+        );
+        let RtcpPacket::ReceiverReport(second) =
+            media.receiver_report(Duration::from_secs(13)).unwrap()
+        else {
+            panic!("expected receiver report");
+        };
+        assert_eq!(second.reports[0].fraction_lost, 0);
+        assert_eq!(second.reports[0].cumulative_lost, 1);
+        assert_eq!(second.reports[0].delay_since_last_sender_report, 3 << 16);
     }
 
     #[test]
