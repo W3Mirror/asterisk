@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: Proposed**  
-**Current checkpoint:** CP-009 — Expanded offline acceptance and per-slice test contract
-**Last checkpoint (UTC):** 2026-08-31T16:27:09Z
+**Current checkpoint:** CP-010 — PR and main-push test execution clarification
+**Last checkpoint (UTC):** 2026-08-31T17:02:34Z
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
 **Active milestone:** Milestone 1 — Scope Baseline  
 **Next resume action:** Confirm the production deployment and obtain sanitized inbound/outbound provider call-flow captures
@@ -1895,6 +1895,15 @@ visible in the CI result and must not be treated as evidence that the test
 layer passed. Focused tests remain part of the implementation acceptance
 criteria even when a stack layer cannot execute them yet.
 
+Operational interpretation: opening or updating a pull request runs the
+ordinary hosted workflow for the complete Rust workspace (when present). The
+implementation author must include focused tests for every affected
+crate/module in that PR; GitHub Actions does not infer or run an affected-module
+only subset today. Every push to `aistack/main` repeats the complete ordinary
+workspace and offline test suite for the integrated branch. Neither event means
+that scheduled, multi-hour, capacity, credentialed-provider, or live
+real-time-call checks have run; those remain explicit scheduled/manual gates.
+
 ---
 
 # 53. Engineering Rules
@@ -2315,6 +2324,26 @@ base_branch: aistack/main
 pr: none
 head_sha: 9339823d8c96fb5c5183100ed03eeb6c557f641c
 evidence: goal.md now covers control-plane correctness, lifecycle/event delivery, post-call metadata and diagnostics, failure/recovery, observability/security, deployment rollback, deterministic replay, property testing, offline integration, differential comparison, load, memory reclamation, and a change-surface test matrix. It records that every implementation PR must ship focused affected-module tests; pull_request events run the complete ordinary hosted workspace suite, and pushes to aistack/main repeat that same ordinary offline suite. The current workflow has no changed-module-only selector; scheduled/manual tiers remain for extended, long-running, environment-dependent, and credentialed live-provider checks.
+blockers: none
+next_action: Confirm the production deployment and obtain sanitized inbound/outbound provider call-flow captures
+rollback: not_applicable; this checkpoint changes documentation only
+```
+
+### CP-010 — PR and main-push test execution clarification
+
+```yaml
+checkpoint_id: CP-010
+recorded_at_utc: 2026-08-31T17:02:34Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 1 — Scope Baseline
+scope: Clarify that PRs ship focused affected-module tests while hosted CI runs the full ordinary workspace, and main pushes repeat that suite
+worktree: /home/ashutosh/PROJECTS/w3mirror/asterisk
+branch: aistack/main
+base_branch: aistack/main
+pr: none
+head_sha: 00915d04d5dd2e3fda54e16ec1a55ac9f9b3459f
+evidence: goal.md now states the exact event semantics: pull_request opened/reopened/synchronize events run the hosted ordinary workspace suite when a Rust workspace exists; focused affected-module tests are required PR content but are not selected automatically; pushes to aistack/main repeat the complete ordinary offline suite; extended, long-running, credentialed, and live-provider checks remain scheduled/manual gates.
 blockers: none
 next_action: Confirm the production deployment and obtain sanitized inbound/outbound provider call-flow captures
 rollback: not_applicable; this checkpoint changes documentation only
