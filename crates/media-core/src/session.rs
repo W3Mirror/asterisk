@@ -17,9 +17,10 @@ use rtp::{
 };
 use sip_security::SourceIpPolicy;
 
+use crate::jitter::AudioJitterBuffer;
 use crate::{
-    AudioBridge, AudioCodec, AudioFrame, MediaBridgeConfig, MediaBridgeStats, PushOutcome,
-    QueueError, decode, encode as encode_audio,
+    AudioBridge, AudioCodec, AudioFrame, JitterBufferConfig, JitterBufferStats, JitterPushOutcome,
+    MediaBridgeConfig, MediaBridgeStats, PushOutcome, QueueError, decode, encode as encode_audio,
 };
 
 /// Bounds and negotiated payload settings for a [`MediaSession`].
@@ -37,6 +38,12 @@ pub struct MediaSessionConfig {
     pub max_audio_samples: usize,
     /// Maximum DTMF notifications retained for the application.
     pub max_pending_dtmf: usize,
+    /// Optional bounded, fixed-delay audio playout ordering.
+    ///
+    /// When configured, accepted audio packets are retained until
+    /// [`MediaSession::playout_audio`] is polled at their monotonic deadline.
+    /// Telephone events remain immediate.
+    pub jitter_buffer: Option<JitterBufferConfig>,
 }
 
 impl Default for MediaSessionConfig {
@@ -48,6 +55,7 @@ impl Default for MediaSessionConfig {
             bridge: MediaBridgeConfig::default(),
             max_audio_samples: 1_600,
             max_pending_dtmf: 64,
+            jitter_buffer: None,
         }
     }
 }
@@ -63,6 +71,9 @@ impl MediaSessionConfig {
                 .is_some_and(|payload_type| payload_type == self.rtp.payload_type)
             || self.max_audio_samples == 0
             || self.max_pending_dtmf == 0
+            || self
+                .jitter_buffer
+                .is_some_and(|jitter_buffer| !jitter_buffer.is_valid())
         {
             return Err(MediaSessionError::InvalidConfig);
         }
@@ -198,6 +209,13 @@ pub enum ReceivedMedia {
         /// Number of decoded PCM samples.
         samples: usize,
     },
+    /// A validated audio packet was retained for time-based playout.
+    AudioBuffered {
+        /// Jitter-buffer retention or drop result.
+        outcome: JitterPushOutcome,
+        /// RTP timestamp carried by the packet.
+        timestamp: u32,
+    },
     /// A telephone-event payload was deduplicated and optionally queued.
     Dtmf {
         /// Exact validated telephone event carried by this RTP packet.
@@ -232,6 +250,8 @@ pub struct MediaSessionStats {
     pub audio_frames_sent: u64,
     /// Number of DTMF state-change notifications generated.
     pub dtmf_notifications: u64,
+    /// Audio jitter-buffer state when fixed-delay playout is configured.
+    pub jitter_buffer: Option<JitterBufferStats>,
 }
 
 /// A bounded bridge between RTP packets, AI audio frames, and DTMF events.
@@ -241,6 +261,7 @@ pub struct MediaSession {
     rtp: RtpSession,
     rtcp: RtcpSession,
     bridge: AudioBridge,
+    jitter_buffer: Option<AudioJitterBuffer>,
     dtmf: Deduplicator,
     pending_dtmf: VecDeque<Notification>,
     dropped_dtmf: u64,
@@ -306,6 +327,7 @@ impl MediaSession {
             rtp,
             rtcp,
             bridge: AudioBridge::new(config.bridge)?,
+            jitter_buffer: config.jitter_buffer.map(AudioJitterBuffer::new),
             pending_dtmf: VecDeque::with_capacity(config.max_pending_dtmf),
             config,
             dtmf: Deduplicator::default(),
@@ -495,7 +517,7 @@ impl MediaSession {
             },
         ) else {
             return match self.rtp.receive(input, arrival) {
-                Ok(packet) => self.receive_audio(&packet),
+                Ok(packet) => self.receive_audio(packet, arrival),
                 Err(error) => Err(error.into()),
             };
         };
@@ -504,7 +526,7 @@ impl MediaSession {
             let packet = self
                 .rtp
                 .receive_packet(packet, arrival, self.config.rtp.payload_type)?;
-            return self.receive_audio(&packet);
+            return self.receive_audio(packet, arrival);
         }
         if self.config.dtmf_payload_type == Some(payload_type) {
             let packet = self.rtp.receive_packet(packet, arrival, payload_type)?;
@@ -514,18 +536,31 @@ impl MediaSession {
             .rtp
             .receive_packet(packet, arrival, self.config.rtp.payload_type)
         {
-            Ok(packet) => self.receive_audio(&packet),
+            Ok(packet) => self.receive_audio(packet, arrival),
             Err(error) => Err(error.into()),
         }
     }
 
-    fn receive_audio(&mut self, packet: &RtpPacket) -> Result<ReceivedMedia, MediaSessionError> {
+    fn receive_audio(
+        &mut self,
+        packet: RtpPacket,
+        arrival: Duration,
+    ) -> Result<ReceivedMedia, MediaSessionError> {
         if packet.payload.len() > self.config.max_audio_samples {
             return Err(MediaSessionError::AudioFrameTooLarge {
                 actual: packet.payload.len(),
                 maximum: self.config.max_audio_samples,
             });
         }
+        if let Some(jitter_buffer) = &mut self.jitter_buffer {
+            let timestamp = packet.timestamp;
+            let outcome = jitter_buffer.push(packet, arrival);
+            return Ok(ReceivedMedia::AudioBuffered { outcome, timestamp });
+        }
+        Ok(self.decode_and_queue_audio(&packet))
+    }
+
+    fn decode_and_queue_audio(&mut self, packet: &RtpPacket) -> ReceivedMedia {
         let samples = decode(self.config.audio_codec, &packet.payload);
         let sample_count = samples.len();
         self.audio_frames_received = self.audio_frames_received.saturating_add(1);
@@ -535,11 +570,11 @@ impl MediaSession {
             sample_rate: self.config.rtp.clock_rate,
             samples,
         });
-        Ok(ReceivedMedia::Audio {
+        ReceivedMedia::Audio {
             queued,
             timestamp: packet.timestamp,
             samples: sample_count,
-        })
+        }
     }
 
     fn receive_dtmf(&mut self, packet: &RtpPacket) -> Result<ReceivedMedia, MediaSessionError> {
@@ -580,6 +615,27 @@ impl MediaSession {
     /// Removes the oldest decoded frame waiting for the AI application.
     pub fn pop_for_ai(&mut self) -> Option<AudioFrame> {
         self.bridge.pop_for_ai()
+    }
+
+    /// Releases the next fixed-delay audio packet whose monotonic deadline is due.
+    ///
+    /// Returns `None` when jitter buffering is disabled, the buffer is empty,
+    /// or the earliest packet is not due. Callers own the monotonic clock and
+    /// should poll again at [`Self::next_playout_deadline`].
+    pub fn playout_audio(&mut self, now: Duration) -> Option<ReceivedMedia> {
+        let packet = self
+            .jitter_buffer
+            .as_mut()?
+            .pop_due(now, self.config.rtp.clock_rate)?;
+        Some(self.decode_and_queue_audio(&packet))
+    }
+
+    /// Returns the monotonic deadline of the earliest buffered audio packet.
+    #[must_use]
+    pub fn next_playout_deadline(&self) -> Option<Duration> {
+        self.jitter_buffer
+            .as_ref()?
+            .next_deadline(self.config.rtp.clock_rate)
     }
 
     /// Borrows the oldest decoded frame waiting for the AI application
@@ -713,6 +769,7 @@ impl MediaSession {
             audio_frames_received: self.audio_frames_received,
             audio_frames_sent: self.audio_frames_sent,
             dtmf_notifications: self.dtmf_notifications,
+            jitter_buffer: self.jitter_buffer.as_ref().map(AudioJitterBuffer::stats),
         }
     }
 
@@ -797,6 +854,125 @@ mod tests {
         assert_eq!(packet.payload_type, 0);
         assert_eq!(packet.timestamp, 2_000);
         assert_eq!(media.stats().audio_frames_sent, 1);
+    }
+
+    #[test]
+    fn buffers_reordered_audio_until_caller_driven_playout() {
+        let mut sender = rtp_sender();
+        let first = sender.send(&[0xff; 160], 160, false).unwrap();
+        let second = sender.send(&[0x7f; 160], 160, false).unwrap();
+        let mut media = MediaSession::new(
+            MediaSessionConfig {
+                rtp: RtpSessionConfig {
+                    payload_type: 0,
+                    remote_ssrc: Some(77),
+                    ..RtpSessionConfig::default()
+                },
+                jitter_buffer: Some(JitterBufferConfig {
+                    max_packets: 2,
+                    playout_delay: Duration::from_millis(60),
+                }),
+                ..MediaSessionConfig::default()
+            },
+            20,
+            2_000,
+        )
+        .unwrap();
+
+        assert_eq!(
+            media
+                .receive_rtp(&second, Duration::from_millis(20))
+                .unwrap(),
+            ReceivedMedia::AudioBuffered {
+                outcome: JitterPushOutcome::Accepted,
+                timestamp: 1_160,
+            }
+        );
+        assert_eq!(
+            media
+                .receive_rtp(&first, Duration::from_millis(30))
+                .unwrap(),
+            ReceivedMedia::AudioBuffered {
+                outcome: JitterPushOutcome::Accepted,
+                timestamp: 1_000,
+            }
+        );
+        assert_eq!(media.stats().bridge.to_ai.depth, 0);
+        assert_eq!(
+            media.next_playout_deadline(),
+            Some(Duration::from_millis(60))
+        );
+        assert_eq!(media.playout_audio(Duration::from_millis(59)), None);
+        assert!(matches!(
+            media.playout_audio(Duration::from_millis(60)),
+            Some(ReceivedMedia::Audio {
+                timestamp: 1_000,
+                samples: 160,
+                ..
+            })
+        ));
+        assert_eq!(
+            media.pop_for_ai().unwrap().samples,
+            decode(AudioCodec::Pcmu, &[0xff; 160])
+        );
+        assert_eq!(
+            media.next_playout_deadline(),
+            Some(Duration::from_millis(80))
+        );
+        assert!(matches!(
+            media.playout_audio(Duration::from_millis(80)),
+            Some(ReceivedMedia::Audio {
+                timestamp: 1_160,
+                samples: 160,
+                ..
+            })
+        ));
+        let stats = media.stats();
+        assert_eq!(stats.audio_frames_received, 2);
+        assert_eq!(
+            stats.jitter_buffer,
+            Some(JitterBufferStats {
+                depth: 0,
+                capacity: 2,
+                accepted: 2,
+                played: 2,
+                ..JitterBufferStats::default()
+            })
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_jitter_buffer_bounds() {
+        for jitter_buffer in [
+            JitterBufferConfig {
+                max_packets: 0,
+                playout_delay: Duration::from_millis(20),
+            },
+            JitterBufferConfig {
+                max_packets: 1,
+                playout_delay: Duration::ZERO,
+            },
+            JitterBufferConfig {
+                max_packets: 4_097,
+                playout_delay: Duration::from_millis(20),
+            },
+            JitterBufferConfig {
+                max_packets: 1,
+                playout_delay: Duration::from_secs(11),
+            },
+        ] {
+            assert!(matches!(
+                MediaSession::new(
+                    MediaSessionConfig {
+                        jitter_buffer: Some(jitter_buffer),
+                        ..MediaSessionConfig::default()
+                    },
+                    1,
+                    1,
+                ),
+                Err(MediaSessionError::InvalidConfig)
+            ));
+        }
     }
 
     #[test]

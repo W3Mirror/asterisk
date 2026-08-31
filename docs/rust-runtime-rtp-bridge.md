@@ -29,6 +29,14 @@ Accepted audio takes the bounded media path in both directions:
 Both inbound and outbound `PushOutcome` values are returned so drop-oldest or
 drop-newest backpressure is observable.
 
+When a source leg enables fixed-delay jitter buffering, socket ingress returns
+`AudioBuffered` without forwarding audio. The event loop separately calls
+`playout_caller_once` or `playout_human_once` at the session's next deadline.
+Those operations revalidate the exact active bridge endpoints, perform no
+socket read on the source leg, and forward at most one due frame using the
+destination leg's own RTP identity. See
+[`rust-jitter-playout.md`](rust-jitter-playout.md).
+
 Validated RFC 4733 telephone-event packets also relay in both directions while
 the exact bridge endpoints remain active. Every accepted packet, including end
 retransmissions, is re-encoded with the destination leg's payload type, SSRC,
@@ -64,8 +72,9 @@ cargo test -p call-runtime --locked
 cargo clippy -p call-runtime --all-targets --no-deps --locked -- -D warnings
 ```
 
-This localhost composition is not jitter playout, transcoding
-beyond the existing negotiated G.711 session behavior, provider authentication,
+This localhost composition now supports optional fixed-delay jitter playout,
+but not adaptive delay or packet-loss concealment. It is not transcoding beyond
+the existing negotiated G.711 session behavior, provider authentication,
 Asterisk/carrier interoperability, or load/soak evidence. Production traffic
 remains on Asterisk until the later compatibility, reliability, and rollback
 gates pass.

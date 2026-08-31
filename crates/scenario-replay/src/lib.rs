@@ -186,6 +186,11 @@ pub enum ScenarioStep {
         /// Serialized RTP packet fixture.
         wire: Vec<u8>,
     },
+    /// Release one fixed-delay audio packet when its playout deadline is due.
+    PlayoutAudio {
+        /// Explicit monotonic playout-poll time.
+        at: Duration,
+    },
     /// Deliver one serialized RTCP datagram to the configured media session.
     ReceiveRtcp {
         /// Explicit datagram-arrival time.
@@ -215,6 +220,7 @@ impl ScenarioStep {
             | Self::RespondToInvite { at, .. }
             | Self::Poll { at }
             | Self::ReceiveRtp { at, .. }
+            | Self::PlayoutAudio { at }
             | Self::ReceiveRtcp { at, .. } => Some(*at),
             Self::ApplyCallCommand { .. }
             | Self::NegotiateAudio { .. }
@@ -263,6 +269,7 @@ impl ScenarioStep {
             | Self::EndBridge { .. }
             | Self::ReclaimTerminalBridge { .. }
             | Self::Poll { .. }
+            | Self::PlayoutAudio { .. }
             | Self::EmitAudioRtp { .. } => None,
         }
     }
@@ -320,6 +327,8 @@ pub enum StepOutcome {
     BridgeReclaimed(BridgeSnapshot),
     /// Decoded media outcome from one RTP packet.
     MediaReceived(ReceivedMedia),
+    /// Decoded audio released by one playout poll, if a packet was due.
+    MediaPlayout(Option<ReceivedMedia>),
     /// Parsed packets from one RTCP compound datagram.
     RtcpReceived(Vec<RtcpPacket>),
     /// Backpressure result from queueing one AI frame.
@@ -367,6 +376,7 @@ impl ReplayReport {
                 | StepOutcome::BridgeTransition(_)
                 | StepOutcome::BridgeReclaimed(_)
                 | StepOutcome::MediaReceived(_)
+                | StepOutcome::MediaPlayout(_)
                 | StepOutcome::RtcpReceived(_)
                 | StepOutcome::AiAudioQueued(_)
                 | StepOutcome::AudioRtpEmitted(_) => None,
@@ -387,6 +397,7 @@ impl ReplayReport {
                 | StepOutcome::MediaNegotiated(_)
                 | StepOutcome::BridgeReclaimed(_)
                 | StepOutcome::MediaReceived(_)
+                | StepOutcome::MediaPlayout(_)
                 | StepOutcome::RtcpReceived(_)
                 | StepOutcome::AiAudioQueued(_)
                 | StepOutcome::AudioRtpEmitted(_) => None,
@@ -406,6 +417,7 @@ impl ReplayReport {
                 | StepOutcome::BridgeTransition(_)
                 | StepOutcome::BridgeReclaimed(_)
                 | StepOutcome::MediaReceived(_)
+                | StepOutcome::MediaPlayout(_)
                 | StepOutcome::RtcpReceived(_)
                 | StepOutcome::AiAudioQueued(_)
                 | StepOutcome::AudioRtpEmitted(_) => None,
@@ -592,6 +604,10 @@ impl ReplayRunner {
                 Ok(StepOutcome::MediaReceived(
                     media.receive_rtp_from(wire, *source, *at)?,
                 ))
+            }
+            ScenarioStep::PlayoutAudio { at } => {
+                let media = self.media.as_mut().ok_or(StepError::MediaNotConfigured)?;
+                Ok(StepOutcome::MediaPlayout(media.playout_audio(*at)))
             }
             ScenarioStep::ReceiveRtcp { at, source, wire } => {
                 let media = self.media.as_mut().ok_or(StepError::MediaNotConfigured)?;

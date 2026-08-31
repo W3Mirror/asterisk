@@ -9,7 +9,7 @@ use std::{
 use call_bridge::{BridgeError, BridgeRegistry, BridgeSnapshot, BridgeState, HumanLeg};
 use call_core::{BridgeId, CallId, LegId};
 use dtmf::{DtmfEvent, Notification};
-use media_core::{PushOutcome, ReceivedMedia};
+use media_core::{JitterPushOutcome, PushOutcome, ReceivedMedia};
 use media_runtime::{MediaChannel, MediaRuntimeError, MediaUdpRuntime, ReceivedRtcp};
 use rtcp::NtpTimestamp;
 
@@ -38,6 +38,15 @@ pub enum HumanMediaForward {
         /// Backpressure result from the outbound leg's RTP queue.
         outbound_queue: PushOutcome,
     },
+    /// One validated audio packet was retained by the source leg's jitter buffer.
+    AudioBuffered {
+        /// Direction in which the packet arrived.
+        direction: HumanMediaDirection,
+        /// Size of the accepted inbound RTP datagram.
+        received_bytes: usize,
+        /// Jitter-buffer retention or drop result.
+        outcome: JitterPushOutcome,
+    },
     /// One validated telephone-event packet was retained and re-encoded for the opposite leg.
     Dtmf {
         /// Direction in which the packet arrived.
@@ -51,6 +60,19 @@ pub enum HumanMediaForward {
         /// Deduplicated application notification, when this packet changed event state.
         notification: Option<Notification>,
     },
+}
+
+/// Result of releasing and forwarding one due jitter-buffered audio frame.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HumanAudioPlayout {
+    /// Direction in which the frame moved.
+    pub direction: HumanMediaDirection,
+    /// Size of the re-encoded outbound RTP datagram.
+    pub sent_bytes: usize,
+    /// Backpressure result from the source leg's decoded-audio queue.
+    pub inbound_queue: PushOutcome,
+    /// Backpressure result from the destination leg's RTP queue.
+    pub outbound_queue: PushOutcome,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -331,6 +353,58 @@ impl HumanMediaBridgeRuntime {
         )
     }
 
+    /// Releases and forwards one due caller-side jitter-buffered audio packet.
+    ///
+    /// This validates the exact active bridge endpoints but does not read a
+    /// socket. `None` means no caller audio is due at `now`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a bridge-state, destination, queue, media, or socket error.
+    pub fn playout_caller_once(
+        &mut self,
+        bridges: &BridgeRegistry,
+        now: Duration,
+        marker: bool,
+    ) -> Result<Option<HumanAudioPlayout>, HumanMediaBridgeError> {
+        self.validate(bridges)?;
+        ensure_destination(&self.human)?;
+        playout_one(
+            &mut self.caller,
+            &mut self.human,
+            &mut self.caller_to_human_dtmf,
+            HumanMediaDirection::CallerToHuman,
+            now,
+            marker,
+        )
+    }
+
+    /// Releases and forwards one due human-side jitter-buffered audio packet.
+    ///
+    /// This validates the exact active bridge endpoints but does not read a
+    /// socket. `None` means no human audio is due at `now`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a bridge-state, destination, queue, media, or socket error.
+    pub fn playout_human_once(
+        &mut self,
+        bridges: &BridgeRegistry,
+        now: Duration,
+        marker: bool,
+    ) -> Result<Option<HumanAudioPlayout>, HumanMediaBridgeError> {
+        self.validate(bridges)?;
+        ensure_destination(&self.caller)?;
+        playout_one(
+            &mut self.human,
+            &mut self.caller,
+            &mut self.human_to_caller_dtmf,
+            HumanMediaDirection::HumanToCaller,
+            now,
+            marker,
+        )
+    }
+
     /// Receives and accounts for one caller-side RTCP compound datagram.
     ///
     /// RTCP is terminated on this leg rather than copied to the human leg,
@@ -469,14 +543,7 @@ fn forward_one(
             queued, timestamp, ..
         } => {
             dtmf_clock.synchronize_before_audio(timestamp, destination);
-            let frame = source
-                .media_mut()
-                .pop_for_ai()
-                .ok_or(HumanMediaBridgeError::MissingDecodedAudio)?;
-            let outbound_queue = destination.media_mut().push_from_ai(frame);
-            let sent_bytes = destination
-                .send_audio(marker)?
-                .ok_or(HumanMediaBridgeError::MissingOutboundAudio)?;
+            let (outbound_queue, sent_bytes) = send_decoded_audio(source, destination, marker)?;
             Ok(HumanMediaForward::Audio {
                 direction,
                 received_bytes: received.bytes,
@@ -485,6 +552,11 @@ fn forward_one(
                 outbound_queue,
             })
         }
+        ReceivedMedia::AudioBuffered { outcome, .. } => Ok(HumanMediaForward::AudioBuffered {
+            direction,
+            received_bytes: received.bytes,
+            outcome,
+        }),
         ReceivedMedia::Dtmf {
             event,
             marker,
@@ -510,6 +582,46 @@ fn forward_one(
     }
 }
 
+fn playout_one(
+    source: &mut MediaUdpRuntime,
+    destination: &mut MediaUdpRuntime,
+    dtmf_clock: &mut DtmfRelayClock,
+    direction: HumanMediaDirection,
+    now: Duration,
+    marker: bool,
+) -> Result<Option<HumanAudioPlayout>, HumanMediaBridgeError> {
+    let Some(ReceivedMedia::Audio {
+        queued, timestamp, ..
+    }) = source.playout_audio(now)
+    else {
+        return Ok(None);
+    };
+    dtmf_clock.synchronize_before_audio(timestamp, destination);
+    let (outbound_queue, sent_bytes) = send_decoded_audio(source, destination, marker)?;
+    Ok(Some(HumanAudioPlayout {
+        direction,
+        sent_bytes,
+        inbound_queue: queued,
+        outbound_queue,
+    }))
+}
+
+fn send_decoded_audio(
+    source: &mut MediaUdpRuntime,
+    destination: &mut MediaUdpRuntime,
+    marker: bool,
+) -> Result<(PushOutcome, usize), HumanMediaBridgeError> {
+    let frame = source
+        .media_mut()
+        .pop_for_ai()
+        .ok_or(HumanMediaBridgeError::MissingDecodedAudio)?;
+    let outbound_queue = destination.media_mut().push_from_ai(frame);
+    let sent_bytes = destination
+        .send_audio(marker)?
+        .ok_or(HumanMediaBridgeError::MissingOutboundAudio)?;
+    Ok((outbound_queue, sent_bytes))
+}
+
 #[cfg(test)]
 mod tests {
     use std::net::UdpSocket;
@@ -518,8 +630,8 @@ mod tests {
     use call_core::StreamId;
     use dtmf::{DtmfDigit, parse as parse_dtmf};
     use media_core::{
-        AudioCodec, AudioFrame, DropPolicy, MediaBridgeConfig, MediaSession, MediaSessionConfig,
-        decode,
+        AudioCodec, AudioFrame, DropPolicy, JitterBufferConfig, MediaBridgeConfig, MediaSession,
+        MediaSessionConfig, decode,
     };
     use media_runtime::MediaUdpRuntimeConfig;
     use rtcp::{ReceiverReport, RtcpPacket};
@@ -537,7 +649,12 @@ mod tests {
         human_rtcp_peer: UdpSocket,
     }
 
-    fn media_session(remote_ssrc: u32, local_ssrc: u32, drop_newest: bool) -> MediaSession {
+    fn media_session_with_jitter(
+        remote_ssrc: u32,
+        local_ssrc: u32,
+        drop_newest: bool,
+        jitter_buffer: Option<JitterBufferConfig>,
+    ) -> MediaSession {
         MediaSession::new(
             MediaSessionConfig {
                 rtp: RtpSessionConfig {
@@ -558,6 +675,7 @@ mod tests {
                     },
                     ..MediaBridgeConfig::default()
                 },
+                jitter_buffer,
                 ..MediaSessionConfig::default()
             },
             10,
@@ -570,6 +688,15 @@ mod tests {
         remote_ssrc: u32,
         local_ssrc: u32,
         drop_newest: bool,
+    ) -> (MediaUdpRuntime, UdpSocket, UdpSocket) {
+        udp_runtime_with_jitter(remote_ssrc, local_ssrc, drop_newest, None)
+    }
+
+    fn udp_runtime_with_jitter(
+        remote_ssrc: u32,
+        local_ssrc: u32,
+        drop_newest: bool,
+        jitter_buffer: Option<JitterBufferConfig>,
     ) -> (MediaUdpRuntime, UdpSocket, UdpSocket) {
         let audio_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
         let control_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
@@ -584,7 +711,7 @@ mod tests {
         let mut runtime = MediaUdpRuntime::from_sockets(
             audio_socket,
             control_socket,
-            media_session(remote_ssrc, local_ssrc, drop_newest),
+            media_session_with_jitter(remote_ssrc, local_ssrc, drop_newest, jitter_buffer),
             MediaUdpRuntimeConfig {
                 max_datagram_bytes: 1_024,
                 learn_remote_endpoints: false,
@@ -754,6 +881,92 @@ mod tests {
         assert_eq!(to_caller.ssrc, 101);
         assert_eq!(
             decode(AudioCodec::Pcmu, &to_caller.payload),
+            decode(AudioCodec::Pcmu, &[0x7f; 160])
+        );
+    }
+
+    #[test]
+    fn forwards_caller_audio_in_jitter_playout_order() {
+        let mut fixture = fixture(false);
+        let jitter_buffer = JitterBufferConfig {
+            max_packets: 2,
+            playout_delay: Duration::from_millis(60),
+        };
+        let (caller, caller_peer, caller_rtcp_peer) =
+            udp_runtime_with_jitter(11, 101, false, Some(jitter_buffer));
+        let (human, human_peer, human_rtcp_peer) = udp_runtime(22, 202, false);
+        fixture.media = HumanMediaBridgeRuntime::new(
+            &fixture.bridges.snapshot(&fixture.bridge_id).unwrap(),
+            caller,
+            human,
+        )
+        .unwrap();
+        fixture.caller_peer = caller_peer;
+        fixture.caller_rtcp_peer = caller_rtcp_peer;
+        fixture.human_peer = human_peer;
+        fixture.human_rtcp_peer = human_rtcp_peer;
+
+        for (sequence, timestamp, sample, arrival) in [
+            (2, 260, 0x7f, Duration::from_millis(20)),
+            (1, 100, 0xff, Duration::from_millis(30)),
+        ] {
+            fixture
+                .caller_peer
+                .send_to(
+                    &audio_packet(11, sequence, timestamp, sample),
+                    fixture.media.caller().local_rtp_addr().unwrap(),
+                )
+                .unwrap();
+            assert!(matches!(
+                fixture
+                    .media
+                    .forward_caller_once(&fixture.bridges, arrival, false)
+                    .unwrap(),
+                HumanMediaForward::AudioBuffered {
+                    direction: HumanMediaDirection::CallerToHuman,
+                    outcome: JitterPushOutcome::Accepted,
+                    ..
+                }
+            ));
+        }
+
+        assert_eq!(
+            fixture
+                .media
+                .playout_caller_once(&fixture.bridges, Duration::from_millis(59), false)
+                .unwrap(),
+            None
+        );
+        assert!(matches!(
+            fixture
+                .media
+                .playout_caller_once(&fixture.bridges, Duration::from_millis(60), false)
+                .unwrap(),
+            Some(HumanAudioPlayout {
+                direction: HumanMediaDirection::CallerToHuman,
+                sent_bytes: 172,
+                inbound_queue: PushOutcome::Accepted,
+                outbound_queue: PushOutcome::Accepted,
+            })
+        ));
+        let first = receive_packet(&fixture.human_peer);
+        assert_eq!(
+            decode(AudioCodec::Pcmu, &first.payload),
+            decode(AudioCodec::Pcmu, &[0xff; 160])
+        );
+        assert!(matches!(
+            fixture
+                .media
+                .playout_caller_once(&fixture.bridges, Duration::from_millis(80), false)
+                .unwrap(),
+            Some(HumanAudioPlayout {
+                sent_bytes: 172,
+                ..
+            })
+        ));
+        let second = receive_packet(&fixture.human_peer);
+        assert_eq!(
+            decode(AudioCodec::Pcmu, &second.payload),
             decode(AudioCodec::Pcmu, &[0x7f; 160])
         );
     }

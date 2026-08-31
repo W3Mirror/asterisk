@@ -9,7 +9,8 @@
 mod media_bridge;
 
 pub use media_bridge::{
-    HumanMediaBridgeError, HumanMediaBridgeRuntime, HumanMediaDirection, HumanMediaForward,
+    HumanAudioPlayout, HumanMediaBridgeError, HumanMediaBridgeRuntime, HumanMediaDirection,
+    HumanMediaForward,
 };
 
 use std::{

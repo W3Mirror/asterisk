@@ -1,8 +1,10 @@
 //! Bounded media queues and G.711 conversion primitives.
 
+mod jitter;
 mod recording;
 mod session;
 
+pub use jitter::{JitterBufferConfig, JitterBufferStats, JitterPushOutcome};
 pub use recording::{AudioRecorder, RecorderConfig, RecordingError, RecordingMetadata};
 pub use session::{
     MediaSession, MediaSessionConfig, MediaSessionError, MediaSessionStats, ReceivedMedia,

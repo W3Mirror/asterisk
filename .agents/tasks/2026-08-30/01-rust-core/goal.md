@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-109 — PR #39 hosted Sender Report validation green
-**Last checkpoint (UTC):** 2026-08-31T01:10:46Z
+**Current checkpoint:** CP-110 — bounded fixed-delay jitter playout locally green
+**Last checkpoint (UTC):** 2026-08-31T01:28:51Z
 **Active phase:** Phase 1 — Rust media engine
-**Active milestone:** Per-leg RTCP Sender Report scheduling<br>
-**Next resume action:** Push the PR #39 green-check reconciliation and verify all three hosted jobs on its documentation-only final head; then begin bounded jitter playout work
-**Active PR:** [#39](https://github.com/W3Mirror/asterisk/pull/39) — `runtime-rtcp-sender-reports` targets `runtime-rtcp-leg-reports`
+**Active milestone:** Bounded fixed-delay RTP jitter playout<br>
+**Next resume action:** Commit and publish stacked PR #40 against `runtime-rtcp-sender-reports`, then verify the complete hosted suite on its final head
+**Active PR:** pending #40 — `runtime-jitter-playout` targets `runtime-rtcp-sender-reports`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-39`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-40`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -2665,6 +2665,7 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 21 | [#21](https://github.com/W3Mirror/asterisk/pull/21) | `protocol-fuzz` | `media-udp-runtime` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-21-protocol-fuzz` | Milestone 3/4 safety acceptance: isolated `cargo-fuzz` targets for the safe SIP, SDP, RTP, RTCP, DTMF, and WebSocket parsers | in_progress | `b67c7cd7b` | PR21 is OPEN/non-draft/CLEAN against `media-udp-runtime` at `4e6d7dde`; local HEAD equals `origin/protocol-fuzz` at `b67c7cd7`; `gh pr checks 21` reports no configured checks; sanitizer-backed six-target fuzz checks and smoke passes, workspace tests, formatting, clippy, and diff checks pass; no provider/runtime or live-call evidence | Obtain provider/runtime access and sanitized media fixtures before enabling any Rust route |
 | 22 | [#22](https://github.com/W3Mirror/asterisk/pull/22) | `rust-quality-ci` | `protocol-fuzz` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-22-rust-quality-ci` | Documentation-only reconciliation of the hosted Rust CI rollout and explicit offline verification/CI tiers | in_progress | `1f22d5b39` before CP-060 ledger commit | PR22 is OPEN/non-draft/CLEAN at `1f22d5b39`; inherited hosted Workspace checks, Protocol fuzz checks, and Dependency audit all passed in run `33334469075`; repository-native workflow commit `534de1996` remains on `aistack/main` | Publish CP-060, then implement the deterministic synthetic SIP fixture/replay foundation in the next stacked PR |
 | 25 | [#25](https://github.com/W3Mirror/asterisk/pull/25) | `sip-scenario-replay` | `rust-quality-ci` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-25` | Offline deterministic replay foundation: bounded atomic scenario execution across raw SIP parsing, transactions, dialogs, calls, lifecycle events, RTP, and AI-media queues | in_progress | `c98312e75` before CP-063 green-check reconciliation | Five focused replay tests and all 134 workspace tests pass; formatting, strict package Clippy, workspace Clippy, lockfile, and diff checks pass; PR #25 is OPEN/non-draft/CLEAN; run `33335704000` passed Workspace checks, Protocol fuzz checks, and Dependency audit | Publish CP-063, then create the next stacked corpus-expansion PR |
+| 40 | pending #40 | `runtime-jitter-playout` | `runtime-rtcp-sender-reports` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-40` | Bounded caller-driven fixed-delay RTP audio jitter buffering and bridge/scenario playout integration | pre-publication | `b3577fa52` before implementation/checkpoint commit | CP-110; focused media/runtime/bridge/replay tests, all 207 workspace tests, three local SIPp scenarios, 512-call reclamation smoke, workspace and strict changed-crate Clippy, formatting, workflow parsing, six-target sanitizer fuzz check, and diff checks pass locally; PR #39 final head is hosted green | Commit, push, open stacked PR #40, and verify every hosted job on its final head |
 
 ### CP-026 — PR10 published and stacked remote parity verified
 
@@ -4428,6 +4429,27 @@ blockers: Jitter playout, media/WebSocket load, long-duration soak/memory, sanit
 next_action: Push this reconciliation checkpoint, verify all three hosted jobs on that documentation-only final head, then implement the next bounded jitter-buffer/playout slice without enabling Rust traffic
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #39 if the Sender Report scheduling contract is superseded
 notes: Relevant tests shipped with the implementation. Hosted PR CI and pushes to `aistack/main` continue to run the complete repository suite rather than affected-module selection. Scheduled-only extended property and reclamation steps were correctly skipped for the pull-request event. The only hosted annotation is the known non-blocking Node.js 20 runtime deprecation notice for `actions/checkout@v4`. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-110 — bounded fixed-delay jitter playout locally green
+
+~~~yaml
+checkpoint_id: CP-110
+recorded_at_utc: 2026-08-31T01:28:51Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Bounded fixed-delay RTP jitter playout
+scope: Add optional bounded caller-driven audio jitter buffering, explicit playout polling, bridge forwarding, replay coverage, and operator documentation without enabling Rust traffic
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-40
+branch: runtime-jitter-playout
+base_branch: runtime-rtcp-sender-reports
+pr: pending #40 publication
+head_sha: b3577fa521405a8c0eda882aab21c4b3a69ea364 before implementation/checkpoint commit
+evidence: PR #39 is OPEN/non-draft/CLEAN at final head b3577fa52 and hosted run 33346827900 passed Workspace checks in 53 seconds, Protocol fuzz checks in 1 minute 5 seconds, and Dependency audit in 3 minutes 5 seconds. The new optional fixed-delay jitter stage has caller-owned monotonic time, 1–4,096 packet and ten-second bounds, wrapping RTP timestamp/sequence ordering, duplicate/late/overflow/SSRC-reset counters, imminent-packet protection, and empty-buffer G.711 marker re-anchoring. DTMF remains immediate; media-runtime playout performs no source socket read; bridge playout revalidates exact active endpoints; deterministic replay separates arrival from playout. Focused suites pass with 18 media-core, 11 media-runtime, 27 call-runtime, and 16 scenario-replay tests; all 207 locked workspace tests, all three local SIPp scenarios, the deterministic 512-call reclamation smoke, workspace Clippy/all targets, strict media-runtime/call-runtime/scenario-replay Clippy with no dependencies and denied warnings, formatting, workflow YAML parsing, all six address-sanitizer fuzz-target checks, and git diff checks pass
+blockers: Adaptive delay and packet-loss concealment remain unimplemented if required by measured provider behavior; media/WebSocket load, broader RTP/media load, long-duration soak/memory, sanitized captures, provider/Asterisk interoperability, rollback proof, and production evidence remain active goal work; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Commit and publish stacked PR #40 against runtime-rtcp-sender-reports, then verify Workspace checks, Protocol fuzz checks, and Dependency audit on its final head
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the jitter-playout PR or leave jitter_buffer disabled if its fixed-delay contract is superseded
+notes: Relevant focused tests and documentation ship with the implementation. Every PR and push to aistack/main runs the complete hosted Rust suite rather than affected-module-only selection; scheduled CI additionally runs the 16,384-call reclamation load and 4,096 property cases. The stricter media-core denied-warnings probe remains blocked by pre-existing crate-wide documentation/pedantic warnings and is not treated as a regression. This slice makes no adaptive jitter, packet-loss concealment, real-provider interoperability, or production-readiness claim. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
