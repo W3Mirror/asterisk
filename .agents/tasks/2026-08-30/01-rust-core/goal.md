@@ -1,12 +1,12 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-127 — repeated mixed-lifecycle soak locally green
-**Last checkpoint (UTC):** 2026-08-31T03:17:57Z
+**Current checkpoint:** CP-128 — PR #45 published with hosted validation running
+**Last checkpoint (UTC):** 2026-08-31T03:19:24Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Repeated mixed call-lifecycle soak and stable post-cycle resource bounds<br>
-**Next resume action:** Commit and push the locally green soak slice, open stacked PR #45, verify its complete hosted ordinary suite, then explicitly dispatch and verify the two-hour hosted soak on the final head without enabling Rust traffic
-**Active PR:** pending #45 — `lifecycle-soak` targets `combined-load-smoke`
+**Next resume action:** Push the publication checkpoint, verify the complete ordinary hosted suite on PR #45's final head, then explicitly dispatch and verify the two-hour hosted soak on that exact head without enabling Rust traffic
+**Active PR:** [#45](https://github.com/W3Mirror/asterisk/pull/45) — `lifecycle-soak` targets `combined-load-smoke`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-45`
 **Primary language:** Rust  
@@ -2674,7 +2674,7 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 42 | [#42](https://github.com/W3Mirror/asterisk/pull/42) | `websocket-load-smoke` | `media-load-smoke` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-42` | Bounded in-memory WebSocket/media transport parsing, partial-write backpressure, reclamation, and capacity-reuse smoke for ordinary and scheduled CI | hosted green | `782cacd39` | CP-116–CP-118; three focused WebSocket-load tests and all 213 workspace tests plus the complete local verification matrix pass; PR #42 is OPEN/non-draft/CLEAN with local/origin/GitHub parity and final-head run `33350160471` passing Workspace checks including the ordinary WebSocket smoke, Protocol fuzz checks, and Dependency audit | Publish the exact signaling capacity matrix from base `websocket-load-smoke` |
 | 43 | [#43](https://github.com/W3Mirror/asterisk/pull/43) | `signaling-capacity-matrix` | `websocket-load-smoke` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-43` | Exact scheduled 1,000/5,000/10,000 in-memory signaling concurrency matrix with bounded logical reclamation and best-effort process observations | hosted green | `7a6938e98` | CP-119–CP-122; two directly relevant regressions, all 12 load-smoke tests, all 215 workspace tests, the complete local verification matrix, ordinary/manual hosted runs, and final-head run `33351327106` pass; PR #43 is OPEN/non-draft/CLEAN against the exact base with local/origin/GitHub parity | Review and merge in stack order; retain Asterisk fallback and all traffic-enablement gates |
 | 44 | [#44](https://github.com/W3Mirror/asterisk/pull/44) | `combined-load-smoke` | `signaling-capacity-matrix` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-44` | Bounded in-memory combined SIP call plus RTP/jitter/AI-media lifecycle, reclamation, and capacity-reuse smoke for ordinary and scheduled CI | hosted green | `2e72b96ce` | CP-122–CP-126; three directly relevant regressions, all 15 load-smoke tests, all 218 workspace tests, the complete local verification matrix, and final-head run `33352395438` pass; PR #44 is OPEN/non-draft/CLEAN against the exact base with local/origin/GitHub parity | Review and merge in stack order; retain Asterisk fallback and all traffic-enablement gates |
-| 45 | pending | `lifecycle-soak` | `combined-load-smoke` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-45` | Repeated mixed answered, rejected, and cancelled call lifecycles with media work, exact logical reclamation, stable descriptor/thread bounds, and post-warmup resident-memory observations | local green | `2e72b96ce` exact base before implementation | CP-126–CP-127; four directly relevant soak regressions, all 19 load-smoke tests, all 222 workspace tests, local SIPp, sanitizer fuzz checks, ordinary/extended load tiers, and short standalone strict-resource probes pass | Commit/push normally, open stacked PR #45, verify the ordinary hosted suite, then explicitly dispatch the two-hour hosted soak on the final head |
+| 45 | [#45](https://github.com/W3Mirror/asterisk/pull/45) | `lifecycle-soak` | `combined-load-smoke` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-45` | Repeated mixed answered, rejected, and cancelled call lifecycles with media work, exact logical reclamation, stable descriptor/thread bounds, and post-warmup resident-memory observations | hosted validation running | `cf02a27ec` before CP-128 publication checkpoint | CP-126–CP-128; four directly relevant soak regressions, all 19 load-smoke tests, all 222 workspace tests, local SIPp, sanitizer fuzz checks, ordinary/extended load tiers, and short standalone strict-resource probes pass; PR is OPEN/non-draft against exact base and run 33353468724 started | Push CP-128, verify the ordinary hosted suite on the final head, then explicitly dispatch the two-hour hosted soak on that exact head |
 
 ### CP-026 — PR10 published and stacked remote parity verified
 
@@ -4816,6 +4816,27 @@ blockers: The required two-hour hosted soak has not run yet, so no multi-hour st
 next_action: Commit and push this locally green implementation normally, open stacked PR #45 against combined-load-smoke, verify the complete ordinary hosted suite on its exact head, then manually dispatch the two-hour lifecycle-soak input on the final PR head and wait for evidence
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #45 or remove the lifecycle-soak job if the deterministic soak contract is superseded
 notes: Unit tests disable only process-global file-descriptor/thread equality because Rust's parallel test runner can change those counts; the strict helper is directly tested and both standalone CI paths enforce it. Every pull request and push to aistack/main runs the full ordinary hosted suite including the short soak. The multi-hour job is hosted ubuntu-latest, weekly scheduled, and opt-in on manual dispatch. Workflow concurrency separates event types so a push cannot cancel a scheduled soak. Docker remains limited to pinned SIPp inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-128 — PR #45 published with hosted validation running
+
+~~~yaml
+checkpoint_id: CP-128
+recorded_at_utc: 2026-08-31T03:19:24Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Repeated mixed call-lifecycle soak and stable post-cycle resource bounds
+scope: Publish the locally green lifecycle-soak implementation as stacked PR #45 and reconcile its worktree, branch, base, implementation head, and initial hosted-check state
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-45
+branch: lifecycle-soak
+base_branch: combined-load-smoke
+pr: https://github.com/W3Mirror/asterisk/pull/45
+head_sha: cf02a27ec5f2852a4c075dc57830159935384713 before this publication checkpoint commit
+evidence: Implementation/checkpoint commit cf02a27ec was committed without bypassing hooks and pushed normally with local and origin/lifecycle-soak parity. PR #45 is OPEN/non-draft against exact base combined-load-smoke with matching implementation head. Hosted run 33353468724 started Workspace checks, Protocol fuzz checks, and Dependency audit; the PR-only Two-hour lifecycle soak and Signaling capacity matrix jobs correctly report skipped
+blockers: Hosted ordinary validation is pending on the publication checkpoint's final head, and the required two-hour hosted soak has not run. The harness remains deterministic same-process in-memory evidence, not provider-driven call/media interoperability, kernel-socket or external-task reclamation, end-to-end audio quality, production load shape, allocator attribution, rollback execution, or safe traffic enablement. Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Push this CP-128 publication checkpoint, verify the complete ordinary hosted suite including the short lifecycle soak on the final PR head, then explicitly dispatch Rust quality with lifecycle_soak selected on that exact branch and wait for the dedicated two-hour job
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #45 or remove the lifecycle-soak job if the deterministic soak contract is superseded
+notes: PR #45 contains the harness, four directly relevant tests, CLI, short ordinary CI run, dedicated hosted two-hour executable, documentation, and checkpoints. Every pull request and push to aistack/main runs the full ordinary hosted suite. The two-hour job uses hosted ubuntu-latest and runs weekly or by opt-in manual dispatch. Docker remains limited to pinned SIPp inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
