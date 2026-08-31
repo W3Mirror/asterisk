@@ -463,6 +463,26 @@ impl MediaUdpRuntime {
         self.send_datagram(MediaChannel::Rtp, &wire, destination)
     }
 
+    /// Serializes and sends one RFC 4733 packet at an explicit RTP timestamp.
+    ///
+    /// # Errors
+    ///
+    /// Returns a missing destination, media serialization, or socket error.
+    pub fn send_dtmf_at_timestamp(
+        &mut self,
+        event: DtmfEvent,
+        timestamp: u32,
+        marker: bool,
+    ) -> Result<usize, MediaRuntimeError> {
+        let destination = self.remote_rtp.ok_or(MediaRuntimeError::NoRemoteEndpoint {
+            channel: MediaChannel::Rtp,
+        })?;
+        let wire = self
+            .media
+            .send_dtmf_at_timestamp(event, timestamp, marker)?;
+        self.send_datagram(MediaChannel::Rtp, &wire, destination)
+    }
+
     /// Serializes and sends one RTCP report compound packet.
     ///
     /// # Errors

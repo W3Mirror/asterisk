@@ -566,6 +566,43 @@ impl MediaSession {
             .send_with_payload_type(payload_type, &payload, timestamp_increment, marker)?)
     }
 
+    /// Serializes one RFC 4733 packet at an explicit RTP timestamp without
+    /// changing the timestamp reserved for the next regular audio packet.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when telephone-event was not negotiated or the event
+    /// cannot be encoded as RFC 4733 payload bytes.
+    pub fn send_dtmf_at_timestamp(
+        &mut self,
+        event: DtmfEvent,
+        timestamp: u32,
+        marker: bool,
+    ) -> Result<Vec<u8>, MediaSessionError> {
+        let payload_type = self
+            .config
+            .dtmf_payload_type
+            .ok_or(MediaSessionError::DtmfNotNegotiated)?;
+        let payload = encode(event)?;
+        Ok(self.rtp.send_with_payload_type_at_timestamp(
+            payload_type,
+            &payload,
+            timestamp,
+            marker,
+        )?)
+    }
+
+    /// Returns the timestamp reserved for the next regular RTP packet.
+    #[must_use]
+    pub fn next_rtp_timestamp(&self) -> u32 {
+        self.rtp.next_timestamp()
+    }
+
+    /// Synchronizes the next regular RTP packet to an explicitly mapped clock.
+    pub fn synchronize_next_rtp_timestamp(&mut self, timestamp: u32) {
+        self.rtp.synchronize_next_timestamp(timestamp);
+    }
+
     /// Returns current RTP, RTCP, queue, audio, and DTMF counters.
     #[must_use]
     pub fn stats(&self) -> MediaSessionStats {
