@@ -40,8 +40,17 @@ event without changing call state or adding a duplicate pending event. Reusing
 an active key for another call or command returns `IdempotencyConflict` and
 leaves the engine unchanged. The registry bounds retained keys with
 `CallRegistryConfig::max_command_keys`; once a key is evicted, it may be reused
-as a new operation. Authentication and authorization remain an outer
-control-plane responsibility and are not implied by this in-memory boundary.
+as a new operation.
+
+Application-facing wrappers accept an `AuthenticatedPrincipal` created by an
+outer authentication adapter with `from_verified_claims`. That handoff stores
+only a bounded, non-secret principal ID and permission bits; bearer tokens,
+passwords, signatures, and verification keys stay in the adapter. Authorized
+snapshot/list/replay, originate, response, negotiation, command, idempotent
+retry, and terminal-reclamation calls check permissions before call lookup or
+idempotency-key lookup, so denied requests cannot probe state or replay events.
+The existing unqualified methods remain trusted internal APIs for SIP-driven
+engine work.
 
 ## Safety boundary
 

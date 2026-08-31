@@ -13,6 +13,120 @@ use sip_dialog::DialogId;
 const DEFAULT_MAX_CALLS: usize = 4_096;
 const DEFAULT_MAX_PENDING_EVENTS: usize = 16_384;
 const DEFAULT_MAX_COMMAND_KEYS: usize = 4_096;
+const MAX_PRINCIPAL_ID_BYTES: usize = 128;
+
+/// Permission granted to an authenticated control-plane principal.
+///
+/// The SIP transport and its internally generated lifecycle commands remain a
+/// trusted engine boundary. These permissions govern application-originated
+/// calls into the control API.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ControlPermission {
+    /// Read call snapshots and retained lifecycle events.
+    ReadCalls,
+    /// Start a new outbound call or mark a call as invited.
+    OriginateCalls,
+    /// Advance a call through ringing, answer, early media, or active media.
+    ManageCalls,
+    /// Begin or complete a transfer.
+    TransferCalls,
+    /// Hang up, fail, end, or reclaim a call.
+    HangupCalls,
+    /// Bypass command-specific permissions for an explicitly trusted operator.
+    Admin,
+}
+
+impl ControlPermission {
+    /// Returns the stable machine-readable permission name.
+    #[must_use]
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::ReadCalls => "calls:read",
+            Self::OriginateCalls => "calls:originate",
+            Self::ManageCalls => "calls:manage",
+            Self::TransferCalls => "calls:transfer",
+            Self::HangupCalls => "calls:hangup",
+            Self::Admin => "calls:admin",
+        }
+    }
+
+    const fn bit(self) -> u16 {
+        1 << (self as u16)
+    }
+}
+
+/// Identity and verified permissions handed off by an outer authentication
+/// adapter.
+///
+/// This type intentionally stores only a bounded, non-secret principal ID and
+/// permission bits. Bearer tokens, passwords, signatures, and verification
+/// keys must remain in the adapter that authenticates the request. Construct
+/// one only after that adapter has verified its credentials and claims.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuthenticatedPrincipal {
+    id: String,
+    permissions: u16,
+}
+
+impl AuthenticatedPrincipal {
+    /// Creates a principal from claims already verified by an outer adapter.
+    ///
+    /// The ID is bounded and restricted to printable ASCII so it can safely be
+    /// used in audit fields. Permission values are represented as a fixed bit
+    /// set, so duplicate claims never increase memory usage.
+    pub fn from_verified_claims(
+        id: impl Into<String>,
+        permissions: impl IntoIterator<Item = ControlPermission>,
+    ) -> Result<Self, ApiError> {
+        let id = id.into();
+        if id.is_empty()
+            || id.len() > MAX_PRINCIPAL_ID_BYTES
+            || !id.bytes().all(|byte| byte.is_ascii_graphic())
+        {
+            return Err(ApiError::InvalidPrincipal);
+        }
+        let permissions = permissions
+            .into_iter()
+            .fold(0_u16, |bits, permission| bits | permission.bit());
+        Ok(Self { id, permissions })
+    }
+
+    /// Returns the stable non-secret principal ID.
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// Returns whether this principal has one permission.
+    #[must_use]
+    pub fn has_permission(&self, permission: ControlPermission) -> bool {
+        self.permissions & permission.bit() != 0
+    }
+
+    /// Authorizes one application-originated lifecycle command.
+    pub fn authorize(&self, command: CallCommand) -> Result<(), ApiError> {
+        let permission = required_permission(command);
+        if self.has_permission(permission) || self.has_permission(ControlPermission::Admin) {
+            Ok(())
+        } else {
+            Err(ApiError::PermissionDenied {
+                command,
+                permission,
+            })
+        }
+    }
+
+    /// Authorizes a read of call state or retained lifecycle events.
+    pub fn authorize_read(&self) -> Result<(), ApiError> {
+        if self.has_permission(ControlPermission::ReadCalls)
+            || self.has_permission(ControlPermission::Admin)
+        {
+            Ok(())
+        } else {
+            Err(ApiError::ReadPermissionDenied)
+        }
+    }
+}
 
 /// Limits for the in-memory call-control registry.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -69,6 +183,22 @@ pub enum CallCommand {
     Fail,
 }
 
+fn required_permission(command: CallCommand) -> ControlPermission {
+    match command {
+        CallCommand::InviteReceived => ControlPermission::OriginateCalls,
+        CallCommand::EarlyMedia
+        | CallCommand::Ringing
+        | CallCommand::Answer
+        | CallCommand::MediaStarted => ControlPermission::ManageCalls,
+        CallCommand::BeginTransfer | CallCommand::CompleteTransfer => {
+            ControlPermission::TransferCalls
+        }
+        CallCommand::Hangup | CallCommand::End | CallCommand::Fail => {
+            ControlPermission::HangupCalls
+        }
+    }
+}
+
 /// A stable, read-only view of a registered call.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CallSnapshot {
@@ -111,6 +241,17 @@ pub struct NegotiatedAudio {
 pub enum ApiError {
     /// A registry bound was zero.
     InvalidConfig,
+    /// A verified principal ID was empty, too large, or not printable ASCII.
+    InvalidPrincipal,
+    /// The principal lacks the permission required by a command.
+    PermissionDenied {
+        /// Rejected lifecycle command.
+        command: CallCommand,
+        /// Permission required to apply the command.
+        permission: ControlPermission,
+    },
+    /// The principal lacks permission to read call state or events.
+    ReadPermissionDenied,
     /// The active-call bound was reached.
     CallLimitReached,
     /// A supplied call identifier is already registered.
@@ -150,6 +291,9 @@ impl ApiError {
     pub fn code(self) -> &'static str {
         match self {
             Self::InvalidConfig => "invalid_config",
+            Self::InvalidPrincipal => "invalid_principal",
+            Self::PermissionDenied { .. } => "permission_denied",
+            Self::ReadPermissionDenied => "read_permission_denied",
             Self::CallLimitReached => "call_limit_reached",
             Self::DuplicateCall => "duplicate_call",
             Self::UnknownCall => "unknown_call",
@@ -171,6 +315,21 @@ impl Display for ApiError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::InvalidConfig => formatter.write_str("call registry bounds must be non-zero"),
+            Self::InvalidPrincipal => formatter
+                .write_str("principal ID must be non-empty printable ASCII within 128 bytes"),
+            Self::PermissionDenied {
+                command,
+                permission,
+            } => {
+                write!(
+                    formatter,
+                    "principal lacks {} for command {command:?}",
+                    permission.code()
+                )
+            }
+            Self::ReadPermissionDenied => {
+                formatter.write_str("principal lacks calls:read permission")
+            }
             Self::CallLimitReached => formatter.write_str("call registry reached its call limit"),
             Self::DuplicateCall => formatter.write_str("call identifier is already registered"),
             Self::UnknownCall => formatter.write_str("call identifier is not registered"),
@@ -320,6 +479,20 @@ impl CallRegistry {
         })
     }
 
+    /// Applies one lifecycle command after verifying the caller's permission.
+    ///
+    /// Authorization is checked before call lookup so a caller without the
+    /// required permission cannot use this method to probe call existence.
+    pub fn apply_authorized(
+        &mut self,
+        principal: &AuthenticatedPrincipal,
+        id: &CallId,
+        command: CallCommand,
+    ) -> Result<Option<LifecycleEvent>, ApiError> {
+        principal.authorize(command)?;
+        self.apply(id, command)
+    }
+
     /// Applies a command exactly once for a bounded idempotency key.
     ///
     /// A retry with the same key and identical call/command returns the
@@ -360,6 +533,21 @@ impl CallRegistry {
             event,
             replayed: false,
         })
+    }
+
+    /// Applies an idempotent lifecycle command after verifying permission.
+    ///
+    /// Authorization precedes idempotency lookup, so an unauthorized retry
+    /// cannot replay a retained event or probe its key's history.
+    pub fn apply_idempotent_authorized(
+        &mut self,
+        principal: &AuthenticatedPrincipal,
+        id: &CallId,
+        command: CallCommand,
+        command_id: CommandId,
+    ) -> Result<CommandResult, ApiError> {
+        principal.authorize(command)?;
+        self.apply_idempotent(id, command, command_id)
     }
 
     /// Associates a tag-qualified SIP dialog with a call exactly once.
@@ -463,6 +651,16 @@ impl CallRegistry {
         })
     }
 
+    /// Returns a call snapshot after verifying read permission.
+    pub fn snapshot_authorized(
+        &self,
+        principal: &AuthenticatedPrincipal,
+        id: &CallId,
+    ) -> Result<CallSnapshot, ApiError> {
+        principal.authorize_read()?;
+        self.snapshot(id)
+    }
+
     /// Returns up to `limit` snapshots in deterministic identifier order.
     pub fn list(&self, limit: usize) -> Result<Vec<CallSnapshot>, ApiError> {
         if limit == 0 {
@@ -481,6 +679,16 @@ impl CallRegistry {
         snapshots.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
         snapshots.truncate(limit);
         Ok(snapshots)
+    }
+
+    /// Lists call snapshots after verifying read permission.
+    pub fn list_authorized(
+        &self,
+        principal: &AuthenticatedPrincipal,
+        limit: usize,
+    ) -> Result<Vec<CallSnapshot>, ApiError> {
+        principal.authorize_read()?;
+        self.list(limit)
     }
 
     /// Returns the number of events waiting to be delivered.
@@ -533,6 +741,17 @@ impl CallRegistry {
             .collect())
     }
 
+    /// Replays retained lifecycle events after verifying read permission.
+    pub fn replay_events_after_authorized(
+        &self,
+        principal: &AuthenticatedPrincipal,
+        after: Option<&EventId>,
+        limit: usize,
+    ) -> Result<Vec<LifecycleEvent>, ApiError> {
+        principal.authorize_read()?;
+        self.replay_events_after(after, limit)
+    }
+
     /// Returns the newest retained lifecycle event identifier, if any.
     #[must_use]
     pub fn latest_event_id(&self) -> Option<&EventId> {
@@ -556,6 +775,23 @@ impl CallRegistry {
         }
         self.calls.remove(id);
         Ok(snapshot)
+    }
+
+    /// Reclaims one terminal call after verifying hangup permission.
+    pub fn remove_terminal_authorized(
+        &mut self,
+        principal: &AuthenticatedPrincipal,
+        id: &CallId,
+    ) -> Result<CallSnapshot, ApiError> {
+        if !principal.has_permission(ControlPermission::HangupCalls)
+            && !principal.has_permission(ControlPermission::Admin)
+        {
+            return Err(ApiError::PermissionDenied {
+                command: CallCommand::End,
+                permission: ControlPermission::HangupCalls,
+            });
+        }
+        self.remove_terminal(id)
     }
 
     fn allocate_call_id(&mut self) -> Result<CallId, ApiError> {
@@ -640,6 +876,156 @@ mod tests {
             headers,
             body: Vec::new(),
         }
+    }
+
+    fn principal(permissions: &[ControlPermission]) -> AuthenticatedPrincipal {
+        AuthenticatedPrincipal::from_verified_claims("voice-app", permissions.iter().copied())
+            .unwrap()
+    }
+
+    #[test]
+    fn verified_principal_is_bounded_and_does_not_retain_credentials() {
+        let principal = AuthenticatedPrincipal::from_verified_claims(
+            "voice-app",
+            [ControlPermission::ReadCalls, ControlPermission::ReadCalls],
+        )
+        .unwrap();
+        assert_eq!(principal.id(), "voice-app");
+        assert!(principal.has_permission(ControlPermission::ReadCalls));
+        assert!(!principal.has_permission(ControlPermission::Admin));
+        assert!(!format!("{principal:?}").contains("password"));
+
+        assert_eq!(
+            AuthenticatedPrincipal::from_verified_claims("", []),
+            Err(ApiError::InvalidPrincipal)
+        );
+        assert_eq!(
+            AuthenticatedPrincipal::from_verified_claims("has whitespace", []),
+            Err(ApiError::InvalidPrincipal)
+        );
+        assert_eq!(
+            AuthenticatedPrincipal::from_verified_claims("x".repeat(129), []),
+            Err(ApiError::InvalidPrincipal)
+        );
+        assert_eq!(ControlPermission::HangupCalls.code(), "calls:hangup");
+        assert_eq!(ControlPermission::Admin.code(), "calls:admin");
+    }
+
+    #[test]
+    fn authorization_precedes_call_lookup_and_state_mutation() {
+        let mut registry = CallRegistry::new(CallRegistryConfig::default()).unwrap();
+        let id = registry.create().unwrap();
+        registry.drain_events(8).unwrap();
+        let read_only = principal(&[ControlPermission::ReadCalls]);
+        let no_access = principal(&[]);
+
+        assert_eq!(
+            registry.apply_authorized(&read_only, &id, CallCommand::Hangup),
+            Err(ApiError::PermissionDenied {
+                command: CallCommand::Hangup,
+                permission: ControlPermission::HangupCalls,
+            })
+        );
+        assert_eq!(
+            registry.apply_authorized(&read_only, &CallId::from_sequence(99), CallCommand::Hangup),
+            Err(ApiError::PermissionDenied {
+                command: CallCommand::Hangup,
+                permission: ControlPermission::HangupCalls,
+            })
+        );
+        assert_eq!(registry.snapshot(&id).unwrap().state, CallState::Created);
+        assert_eq!(registry.pending_events(), 0);
+        assert_eq!(
+            registry.snapshot_authorized(&no_access, &id),
+            Err(ApiError::ReadPermissionDenied)
+        );
+        assert_eq!(
+            registry.snapshot_authorized(&no_access, &CallId::from_sequence(99)),
+            Err(ApiError::ReadPermissionDenied)
+        );
+        assert_eq!(
+            registry.list_authorized(&no_access, 1),
+            Err(ApiError::ReadPermissionDenied)
+        );
+        assert_eq!(
+            registry.replay_events_after_authorized(&no_access, None, 8),
+            Err(ApiError::ReadPermissionDenied)
+        );
+        assert_eq!(
+            registry.snapshot_authorized(&read_only, &id).unwrap(),
+            registry.snapshot(&id).unwrap()
+        );
+        assert_eq!(registry.list_authorized(&read_only, 1).unwrap().len(), 1);
+        assert_eq!(
+            registry
+                .replay_events_after_authorized(&read_only, None, 8)
+                .unwrap(),
+            registry.replay_events_after(None, 8).unwrap()
+        );
+    }
+
+    #[test]
+    fn authorized_idempotent_retries_are_replayable_but_unauthorized_retries_are_not() {
+        let mut registry = CallRegistry::new(CallRegistryConfig::default()).unwrap();
+        let id = registry.create().unwrap();
+        registry.drain_events(8).unwrap();
+        let originate = principal(&[ControlPermission::OriginateCalls]);
+        let read_only = principal(&[ControlPermission::ReadCalls]);
+        let command_id = CommandId::from_sequence(7);
+
+        let first = registry
+            .apply_idempotent_authorized(
+                &originate,
+                &id,
+                CallCommand::InviteReceived,
+                command_id.clone(),
+            )
+            .unwrap();
+        assert!(!first.replayed);
+        assert_eq!(registry.pending_events(), 1);
+        assert_eq!(
+            registry.apply_idempotent_authorized(
+                &read_only,
+                &id,
+                CallCommand::InviteReceived,
+                command_id.clone(),
+            ),
+            Err(ApiError::PermissionDenied {
+                command: CallCommand::InviteReceived,
+                permission: ControlPermission::OriginateCalls,
+            })
+        );
+        let retry = registry
+            .apply_idempotent_authorized(&originate, &id, CallCommand::InviteReceived, command_id)
+            .unwrap();
+        assert!(retry.replayed);
+        assert_eq!(retry.event, first.event);
+        assert_eq!(registry.pending_events(), 1);
+        assert_eq!(registry.snapshot(&id).unwrap().state, CallState::Inviting);
+    }
+
+    #[test]
+    fn admin_permission_covers_commands_and_terminal_reclamation() {
+        let mut registry = CallRegistry::new(CallRegistryConfig::default()).unwrap();
+        let id = registry.create().unwrap();
+        registry.drain_events(8).unwrap();
+        let admin = principal(&[ControlPermission::Admin]);
+        registry
+            .apply_authorized(&admin, &id, CallCommand::InviteReceived)
+            .unwrap();
+        registry
+            .apply_authorized(&admin, &id, CallCommand::Hangup)
+            .unwrap();
+        registry
+            .apply_authorized(&admin, &id, CallCommand::End)
+            .unwrap();
+        assert_eq!(
+            registry
+                .remove_terminal_authorized(&admin, &id)
+                .unwrap()
+                .state,
+            CallState::Ended
+        );
     }
 
     #[test]

@@ -5,7 +5,9 @@ use std::{
     time::Duration,
 };
 
-use call_api::{CallCommand, CallRegistry, CallRegistryConfig};
+use call_api::{
+    AuthenticatedPrincipal, CallCommand, CallRegistry, CallRegistryConfig, ControlPermission,
+};
 use call_bridge::{
     BridgeError, BridgeOperation, BridgeRegistry, BridgeRegistryConfig, BridgeState,
 };
@@ -79,6 +81,21 @@ fn direction_strategy() -> impl Strategy<Value = Direction> {
         Direction::SendOnly,
         Direction::RecvOnly,
         Direction::Inactive,
+    ])
+}
+
+fn lifecycle_command_strategy() -> impl Strategy<Value = CallCommand> {
+    prop::sample::select(vec![
+        CallCommand::InviteReceived,
+        CallCommand::EarlyMedia,
+        CallCommand::Ringing,
+        CallCommand::Answer,
+        CallCommand::MediaStarted,
+        CallCommand::BeginTransfer,
+        CallCommand::CompleteTransfer,
+        CallCommand::Hangup,
+        CallCommand::End,
+        CallCommand::Fail,
     ])
 }
 
@@ -419,6 +436,27 @@ proptest! {
         }
         prop_assert_eq!(engine.list(2).unwrap().len(), 1);
         prop_assert_eq!(engine.transaction_count(), 1);
+    }
+
+    #[test]
+    fn unauthorized_commands_never_mutate_call_state_or_events(command in lifecycle_command_strategy()) {
+        let mut registry = CallRegistry::new(CallRegistryConfig {
+            max_calls: 1,
+            max_pending_events: 16,
+            max_command_keys: 16,
+        }).unwrap();
+        let call_id = registry.create().unwrap();
+        registry.drain_events(16).unwrap();
+        let read_only = AuthenticatedPrincipal::from_verified_claims(
+            "property-reader",
+            [ControlPermission::ReadCalls],
+        ).unwrap();
+        let before = registry.snapshot(&call_id).unwrap();
+        let result = registry.apply_authorized(&read_only, &call_id, command);
+        let denied = matches!(result, Err(call_api::ApiError::PermissionDenied { .. }));
+        prop_assert!(denied);
+        prop_assert_eq!(registry.snapshot(&call_id).unwrap(), before);
+        prop_assert_eq!(registry.pending_events(), 0);
     }
 
     #[test]

@@ -29,6 +29,15 @@ reapplying the transition; a conflicting reuse is rejected atomically by the
 engine. The bounded key store is configured through the engine's
 `CallRegistryConfig`.
 
+Control-plane callers can use the `*_authorized` runtime wrappers with an
+`AuthenticatedPrincipal` produced by an outer authentication adapter. The
+runtime retains no bearer token, password, signature, or verification key—only
+the bounded non-secret principal ID and permission bits are handed to the
+engine. Authorization runs before call lookup and idempotency-key lookup, and
+denials preserve clone/commit atomicity so they cannot mutate state, queues, or
+transport output. The unqualified methods remain available for trusted
+internal/SIP dispatch.
+
 The adapter has no async-runtime or provider-specific dependency. An
 application can call it from its own event loop, wrap it in an async worker, or
 keep Asterisk as the configured route while interoperability evidence is

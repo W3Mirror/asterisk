@@ -16,7 +16,8 @@ use std::{
 };
 
 use call_api::{
-    ApiError, CallCommand, CallRegistry, CallRegistryConfig, CallSnapshot, NegotiatedAudio,
+    ApiError, AuthenticatedPrincipal, CallCommand, CallRegistry, CallRegistryConfig, CallSnapshot,
+    NegotiatedAudio,
 };
 use call_core::{CallId, CallState, CommandId, LifecycleEvent};
 use sip_auth::{DigestAuthorization, DigestChallenge, DigestCredentials, DigestError};
@@ -352,9 +353,27 @@ impl CallEngine {
         Ok(self.registry.snapshot(id)?)
     }
 
+    /// Returns a call snapshot after verifying control-plane read permission.
+    pub fn snapshot_authorized(
+        &self,
+        principal: &AuthenticatedPrincipal,
+        id: &CallId,
+    ) -> Result<CallSnapshot, EngineError> {
+        Ok(self.registry.snapshot_authorized(principal, id)?)
+    }
+
     /// Returns deterministic call snapshots ordered by application ID.
     pub fn list(&self, limit: usize) -> Result<Vec<CallSnapshot>, EngineError> {
         Ok(self.registry.list(limit)?)
+    }
+
+    /// Lists calls after verifying control-plane read permission.
+    pub fn list_authorized(
+        &self,
+        principal: &AuthenticatedPrincipal,
+        limit: usize,
+    ) -> Result<Vec<CallSnapshot>, EngineError> {
+        Ok(self.registry.list_authorized(principal, limit)?)
     }
 
     /// Applies an application call-control command and returns its events.
@@ -364,6 +383,18 @@ impl CallEngine {
         command: CallCommand,
     ) -> Result<EngineOutput, EngineError> {
         self.registry.apply(id, command)?;
+        self.cleanup_terminal_call_resources(id)?;
+        self.finish(Vec::new())
+    }
+
+    /// Applies one call command after verifying the principal's permission.
+    pub fn apply_authorized_call_command(
+        &mut self,
+        principal: &AuthenticatedPrincipal,
+        id: &CallId,
+        command: CallCommand,
+    ) -> Result<EngineOutput, EngineError> {
+        self.registry.apply_authorized(principal, id, command)?;
         self.cleanup_terminal_call_resources(id)?;
         self.finish(Vec::new())
     }
@@ -380,6 +411,28 @@ impl CallEngine {
         command_id: CommandId,
     ) -> Result<EngineOutput, EngineError> {
         let result = self.registry.apply_idempotent(id, command, command_id)?;
+        if result.replayed {
+            return Ok(EngineOutput {
+                actions: Vec::new(),
+                events: result.event.into_iter().collect(),
+            });
+        }
+        self.cleanup_terminal_call_resources(id)?;
+        self.finish(Vec::new())
+    }
+
+    /// Applies an idempotent call command after verifying the principal's
+    /// permission. Authorization precedes the retry-key lookup.
+    pub fn apply_authorized_idempotent_call_command(
+        &mut self,
+        principal: &AuthenticatedPrincipal,
+        id: &CallId,
+        command: CallCommand,
+        command_id: CommandId,
+    ) -> Result<EngineOutput, EngineError> {
+        let result = self
+            .registry
+            .apply_idempotent_authorized(principal, id, command, command_id)?;
         if result.replayed {
             return Ok(EngineOutput {
                 actions: Vec::new(),
@@ -439,6 +492,16 @@ impl CallEngine {
         Ok(snapshot)
     }
 
+    /// Reclaims a terminal call after verifying hangup permission.
+    pub fn reclaim_terminal_call_authorized(
+        &mut self,
+        principal: &AuthenticatedPrincipal,
+        id: &CallId,
+    ) -> Result<CallSnapshot, EngineError> {
+        principal.authorize(CallCommand::End)?;
+        self.reclaim_terminal_call(id)
+    }
+
     /// Negotiates and retains audio for a registered call.
     pub fn negotiate_audio(
         &mut self,
@@ -447,6 +510,18 @@ impl CallEngine {
         remote: &sdp::SessionDescription,
     ) -> Result<NegotiatedAudio, EngineError> {
         Ok(self.registry.negotiate_audio(id, local, remote)?)
+    }
+
+    /// Negotiates audio after verifying control-plane media permission.
+    pub fn negotiate_audio_authorized(
+        &mut self,
+        principal: &AuthenticatedPrincipal,
+        id: &CallId,
+        local: &sdp::SessionDescription,
+        remote: &sdp::SessionDescription,
+    ) -> Result<NegotiatedAudio, EngineError> {
+        principal.authorize(CallCommand::MediaStarted)?;
+        self.negotiate_audio(id, local, remote)
     }
 
     /// Starts an outbound INVITE transaction and creates its UAC dialog.
@@ -486,6 +561,19 @@ impl CallEngine {
             message: SipMessage::Request(request),
         }])?;
         Ok((id, output))
+    }
+
+    /// Starts an outbound INVITE after verifying originate permission.
+    pub fn originate_authorized(
+        &mut self,
+        principal: &AuthenticatedPrincipal,
+        request: SipRequest,
+        destination: SocketAddr,
+        now: Duration,
+        reliability: TransportReliability,
+    ) -> Result<(CallId, EngineOutput), EngineError> {
+        principal.authorize(CallCommand::InviteReceived)?;
+        self.originate(request, destination, now, reliability)
     }
 
     /// Receives an inbound SIP request from a parsed UDP/TCP transport.
@@ -1116,6 +1204,26 @@ impl CallEngine {
             destination,
             message: SipMessage::Response(response),
         }])
+    }
+
+    /// Sends an inbound INVITE response after verifying the required command
+    /// permission. Rejections require hangup permission; provisional and
+    /// successful responses require call-management permission.
+    pub fn respond_to_invite_authorized(
+        &mut self,
+        principal: &AuthenticatedPrincipal,
+        id: &CallId,
+        status_code: u16,
+        reason: impl Into<String>,
+        body: Vec<u8>,
+        now: Duration,
+    ) -> Result<EngineOutput, EngineError> {
+        if (300..=699).contains(&status_code) {
+            principal.authorize(CallCommand::Fail)?;
+        } else {
+            principal.authorize(CallCommand::Answer)?;
+        }
+        self.respond_to_invite(id, status_code, reason, body, now)
     }
 
     /// Polls all transaction timers at a deterministic monotonic time.
@@ -2092,11 +2200,17 @@ fn header_has_token(headers: &Headers, name: &str, expected: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use call_api::ControlPermission;
     use call_core::{CallEventKind, CommandId};
     use std::net::{IpAddr, Ipv4Addr};
 
     fn address(port: u16) -> SocketAddr {
         SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)
+    }
+
+    fn principal(permissions: &[ControlPermission]) -> AuthenticatedPrincipal {
+        AuthenticatedPrincipal::from_verified_claims("voice-app", permissions.iter().copied())
+            .unwrap()
     }
 
     fn invite(branch: &str, call_id: &str, to: &str, cseq: &str) -> SipRequest {
@@ -2330,6 +2444,154 @@ mod tests {
             Err(EngineError::CallApi(ApiError::IdempotencyConflict))
         );
         assert_eq!(engine.snapshot(&call_id).unwrap().state, CallState::Ending);
+    }
+
+    #[test]
+    fn authorized_engine_commands_gate_before_lookup_and_retry_replay() {
+        let mut engine = CallEngine::new(EngineConfig::default()).unwrap();
+        let read_only = principal(&[ControlPermission::ReadCalls]);
+        let hangup = principal(&[ControlPermission::HangupCalls]);
+        let command_id = CommandId::from_sequence(9);
+        let unknown = CallId::from_sequence(99);
+
+        assert_eq!(
+            engine.apply_authorized_call_command(&read_only, &unknown, CallCommand::Hangup),
+            Err(EngineError::CallApi(ApiError::PermissionDenied {
+                command: CallCommand::Hangup,
+                permission: ControlPermission::HangupCalls,
+            }))
+        );
+
+        let (call_id, _) = engine
+            .originate_authorized(
+                &principal(&[ControlPermission::OriginateCalls]),
+                invite(
+                    "authorized",
+                    "authorized-call",
+                    "Bob <sip:bob@example.com>",
+                    "1 INVITE",
+                ),
+                address(5060),
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        assert_eq!(
+            engine
+                .snapshot_authorized(&read_only, &call_id)
+                .unwrap()
+                .state,
+            CallState::Inviting
+        );
+
+        let first = engine
+            .apply_authorized_idempotent_call_command(
+                &hangup,
+                &call_id,
+                CallCommand::Hangup,
+                command_id.clone(),
+            )
+            .unwrap();
+        let unauthorized_retry = engine.apply_authorized_idempotent_call_command(
+            &read_only,
+            &call_id,
+            CallCommand::Hangup,
+            command_id.clone(),
+        );
+        assert_eq!(
+            unauthorized_retry,
+            Err(EngineError::CallApi(ApiError::PermissionDenied {
+                command: CallCommand::Hangup,
+                permission: ControlPermission::HangupCalls,
+            }))
+        );
+        let retry = engine
+            .apply_authorized_idempotent_call_command(
+                &hangup,
+                &call_id,
+                CallCommand::Hangup,
+                command_id,
+            )
+            .unwrap();
+        assert_eq!(retry.events(), first.events());
+        assert_eq!(engine.snapshot(&call_id).unwrap().state, CallState::Ending);
+    }
+
+    #[test]
+    fn authorized_invite_response_and_terminal_reclamation_require_permissions() {
+        let mut engine = CallEngine::new(EngineConfig::default()).unwrap();
+        let request = invite(
+            "authorized-inbound",
+            "authorized-inbound-call",
+            "Bob <sip:bob@example.com>",
+            "1 INVITE",
+        );
+        let call_id = engine
+            .receive_request(
+                address(5060),
+                request,
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+            )
+            .unwrap()
+            .events()[0]
+            .call_id
+            .clone();
+        let read_only = principal(&[ControlPermission::ReadCalls]);
+        assert_eq!(
+            engine.respond_to_invite_authorized(
+                &read_only,
+                &call_id,
+                180,
+                "Ringing",
+                Vec::new(),
+                Duration::ZERO,
+            ),
+            Err(EngineError::CallApi(ApiError::PermissionDenied {
+                command: CallCommand::Answer,
+                permission: ControlPermission::ManageCalls,
+            }))
+        );
+        let manage = principal(&[ControlPermission::ManageCalls]);
+        engine
+            .respond_to_invite_authorized(
+                &manage,
+                &call_id,
+                180,
+                "Ringing",
+                Vec::new(),
+                Duration::ZERO,
+            )
+            .unwrap();
+        assert_eq!(engine.snapshot(&call_id).unwrap().state, CallState::Ringing);
+
+        let hangup = principal(&[ControlPermission::HangupCalls]);
+        engine
+            .apply_authorized_call_command(&hangup, &call_id, CallCommand::Hangup)
+            .unwrap();
+        engine
+            .apply_authorized_call_command(&hangup, &call_id, CallCommand::End)
+            .unwrap();
+        assert!(engine.transaction_count() > 0);
+        assert!(engine.dialog_count() > 0);
+        assert_eq!(
+            engine
+                .reclaim_terminal_call_authorized(&read_only, &call_id)
+                .unwrap_err(),
+            EngineError::CallApi(ApiError::PermissionDenied {
+                command: CallCommand::End,
+                permission: ControlPermission::HangupCalls,
+            })
+        );
+        assert_eq!(
+            engine
+                .reclaim_terminal_call_authorized(&hangup, &call_id)
+                .unwrap()
+                .state,
+            CallState::Ended
+        );
+        assert_eq!(engine.transaction_count(), 0);
+        assert_eq!(engine.dialog_count(), 0);
     }
 
     #[test]
