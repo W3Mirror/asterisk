@@ -33,8 +33,18 @@ fn run_signaling(
         total_calls,
         concurrent_calls,
     })?;
+    let call_rate = if report.elapsed.is_zero() {
+        0
+    } else {
+        (report.completed_calls as u128).saturating_mul(1_000_000_000) / report.elapsed.as_nanos()
+    };
+    let resident_growth_per_peak_call = per_unit_growth(
+        report.process_before.resident_bytes,
+        report.process_peak.resident_bytes,
+        report.peak_active_calls,
+    );
     println!(
-        "attempted_calls={} completed_calls={} failed_calls={} batches={} peak_active_calls={} peak_transactions={} final_active_calls={} final_transactions={}",
+        "attempted_calls={} completed_calls={} failed_calls={} batches={} peak_active_calls={} peak_transactions={} final_active_calls={} final_transactions={} elapsed_ms={} calls_per_second={call_rate} resident_before_bytes={} resident_peak_bytes={} resident_after_bytes={} resident_growth_per_peak_call_bytes={} fds_before={} fds_peak={} fds_after={}",
         report.attempted_calls,
         report.completed_calls,
         report.failed_calls,
@@ -43,6 +53,14 @@ fn run_signaling(
         report.peak_transactions,
         report.final_active_calls,
         report.final_transactions,
+        report.elapsed.as_millis(),
+        display_optional(report.process_before.resident_bytes),
+        display_optional(report.process_peak.resident_bytes),
+        display_optional(report.process_after.resident_bytes),
+        display_optional(resident_growth_per_peak_call),
+        display_optional(report.process_before.open_file_descriptors),
+        display_optional(report.process_peak.open_file_descriptors),
+        display_optional(report.process_after.open_file_descriptors),
     );
     Ok(())
 }
@@ -186,6 +204,24 @@ fn display_optional<T: std::fmt::Display>(value: Option<T>) -> String {
     value.map_or_else(|| "unavailable".to_owned(), |value| value.to_string())
 }
 
+fn per_unit_growth(before: Option<u64>, peak: Option<u64>, units: usize) -> Option<u64> {
+    let units = u64::try_from(units).ok().filter(|units| *units != 0)?;
+    Some(peak?.saturating_sub(before?) / units)
+}
+
 fn usage() -> &'static str {
     "usage: load-smoke [total_calls] [concurrent_calls] | load-smoke media [total_streams] [concurrent_streams] [packets_per_stream] [queue_capacity] | load-smoke websocket [total_streams] [concurrent_streams] [frames_per_stream] [queue_capacity]"
+}
+
+#[cfg(test)]
+mod tests {
+    use super::per_unit_growth;
+
+    #[test]
+    fn derives_saturating_best_effort_per_unit_growth() {
+        assert_eq!(per_unit_growth(Some(1_000), Some(1_500), 10), Some(50));
+        assert_eq!(per_unit_growth(Some(1_500), Some(1_000), 10), Some(0));
+        assert_eq!(per_unit_growth(Some(1_000), Some(1_500), 0), None);
+        assert_eq!(per_unit_growth(None, Some(1_500), 10), None);
+    }
 }
