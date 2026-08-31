@@ -6,8 +6,13 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+rustls = "0.23.31"
 sip-parser = { path = "../sip-parser" }
 sip-types = { path = "../sip-types" }
+webpki-roots = "0.26.11"
+
+[dev-dependencies]
+rcgen = "0.13.2"
 
 [lints]
 workspace = true

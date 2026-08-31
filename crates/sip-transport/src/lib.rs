@@ -6,23 +6,54 @@ use std::{
     io::{self, Read, Write},
     net::{SocketAddr, TcpStream, UdpSocket},
     str,
+    sync::Arc,
 };
 
+use rustls::{
+    ClientConfig, ClientConnection, RootCertStore, ServerConfig, ServerConnection, StreamOwned,
+    pki_types::ServerName,
+};
 use sip_parser::{ParseError, parse, serialize};
 use sip_types::SipMessage;
 
 const DEFAULT_MAX_MESSAGE_BYTES: usize = 65_535;
 const TCP_READ_BYTES: usize = 8_192;
 
+/// Builds a client configuration backed by the Mozilla WebPKI root set.
+///
+/// Applications that use a private carrier CA should build an equivalent
+/// [`ClientConfig`] with their own [`RootCertStore`] and pass it to
+/// [`TlsTransport::connect`] or [`TlsTransport::from_client_stream`].
+#[must_use]
+pub fn default_tls_client_config() -> Arc<ClientConfig> {
+    let mut roots = RootCertStore::empty();
+    roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    Arc::new(
+        ClientConfig::builder()
+            .with_root_certificates(roots)
+            .with_no_client_auth(),
+    )
+}
+
 /// Transport errors, including malformed SIP and bounded-frame failures.
 #[derive(Debug)]
 pub enum TransportError {
+    /// The configured SIP frame limit is zero.
     InvalidMessageLimit,
+    /// A serialized or received SIP frame exceeds the configured limit.
     MessageTooLarge { actual: usize, maximum: usize },
+    /// A SIP transport header is not valid UTF-8.
     InvalidUtf8,
+    /// A SIP `Content-Length` header is malformed or contradictory.
     InvalidContentLength,
+    /// A TLS server name cannot be represented as a rustls server name.
+    InvalidServerName,
+    /// The underlying socket failed.
     Io(io::Error),
+    /// SIP parsing failed after framing.
     Parse(ParseError),
+    /// The TLS state machine rejected the connection.
+    Tls(rustls::Error),
 }
 
 impl Display for TransportError {
@@ -41,8 +72,10 @@ impl Display for TransportError {
             Self::InvalidContentLength => {
                 formatter.write_str("SIP transport Content-Length is invalid")
             }
+            Self::InvalidServerName => formatter.write_str("SIP TLS server name is invalid"),
             Self::Io(error) => Display::fmt(error, formatter),
             Self::Parse(error) => Display::fmt(error, formatter),
+            Self::Tls(error) => Display::fmt(error, formatter),
         }
     }
 }
@@ -52,6 +85,7 @@ impl Error for TransportError {
         match self {
             Self::Io(error) => Some(error),
             Self::Parse(error) => Some(error),
+            Self::Tls(error) => Some(error),
             _ => None,
         }
     }
@@ -66,6 +100,12 @@ impl From<io::Error> for TransportError {
 impl From<ParseError> for TransportError {
     fn from(error: ParseError) -> Self {
         Self::Parse(error)
+    }
+}
+
+impl From<rustls::Error> for TransportError {
+    fn from(error: rustls::Error) -> Self {
+        Self::Tls(error)
     }
 }
 
@@ -275,9 +315,222 @@ impl TcpTransport {
     }
 }
 
+/// The role-specific rustls stream held by [`TlsTransport`].
+#[derive(Debug)]
+enum TlsStream {
+    Client(StreamOwned<ClientConnection, TcpStream>),
+    Server(StreamOwned<ServerConnection, TcpStream>),
+}
+
+impl Read for TlsStream {
+    fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+        match self {
+            Self::Client(stream) => stream.read(bytes),
+            Self::Server(stream) => stream.read(bytes),
+        }
+    }
+}
+
+impl Write for TlsStream {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        match self {
+            Self::Client(stream) => stream.write(bytes),
+            Self::Server(stream) => stream.write(bytes),
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        match self {
+            Self::Client(stream) => stream.flush(),
+            Self::Server(stream) => stream.flush(),
+        }
+    }
+}
+
+/// A blocking SIP-over-TLS endpoint with the same bounded framing as TCP.
+///
+/// The TLS handshake is completed by the constructor. Client certificate
+/// validation is controlled entirely by the supplied [`ClientConfig`]; the
+/// server accepts no client certificate unless the supplied [`ServerConfig`]
+/// explicitly requests one. After the handshake, SIP messages use the same
+/// incremental `Content-Length` framing and per-frame limit as
+/// [`TcpTransport`].
+#[derive(Debug)]
+pub struct TlsTransport {
+    stream: Box<TlsStream>,
+    framer: TcpFramer,
+}
+
+impl TlsTransport {
+    /// Connects to a TLS peer and completes a client handshake.
+    ///
+    /// `server_name` is used for both SNI and certificate-name validation.
+    /// The caller supplies the trust policy through `config`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the message limit, server name, TCP connection,
+    /// or TLS handshake is invalid.
+    pub fn connect(
+        address: SocketAddr,
+        server_name: &str,
+        config: Arc<ClientConfig>,
+        maximum: usize,
+    ) -> Result<Self, TransportError> {
+        let maximum = validate_limit(maximum)?;
+        let stream = TcpStream::connect(address)?;
+        Self::from_client_stream_with_limit(stream, server_name, config, maximum)
+    }
+
+    /// Wraps an already-connected stream as a TLS client and completes its
+    /// handshake.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the server name or TLS handshake is invalid.
+    pub fn from_client_stream(
+        stream: TcpStream,
+        server_name: &str,
+        config: Arc<ClientConfig>,
+        maximum: usize,
+    ) -> Result<Self, TransportError> {
+        let maximum = validate_limit(maximum)?;
+        Self::from_client_stream_with_limit(stream, server_name, config, maximum)
+    }
+
+    fn from_client_stream_with_limit(
+        mut stream: TcpStream,
+        server_name: &str,
+        config: Arc<ClientConfig>,
+        maximum: usize,
+    ) -> Result<Self, TransportError> {
+        let server_name = ServerName::try_from(server_name.to_owned())
+            .map_err(|_| TransportError::InvalidServerName)?;
+        let mut connection = ClientConnection::new(config, server_name)?;
+        complete_client_handshake(&mut connection, &mut stream)?;
+        Ok(Self {
+            stream: Box::new(TlsStream::Client(StreamOwned::new(connection, stream))),
+            framer: TcpFramer::new(maximum)?,
+        })
+    }
+
+    /// Accepts an already-connected stream as a TLS server and completes its
+    /// handshake.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the TLS configuration or handshake is invalid.
+    pub fn accept(
+        stream: TcpStream,
+        config: Arc<ServerConfig>,
+        maximum: usize,
+    ) -> Result<Self, TransportError> {
+        let maximum = validate_limit(maximum)?;
+        let mut stream = stream;
+        let mut connection = ServerConnection::new(config)?;
+        complete_server_handshake(&mut connection, &mut stream)?;
+        Ok(Self {
+            stream: Box::new(TlsStream::Server(StreamOwned::new(connection, stream))),
+            framer: TcpFramer::new(maximum)?,
+        })
+    }
+
+    /// Receives all complete SIP messages available in one TLS read.
+    ///
+    /// An empty vector indicates a clean TLS/TCP EOF. Partial frames remain
+    /// buffered for the next call, just as with [`TcpTransport::recv`].
+    pub fn recv(&mut self) -> Result<Vec<SipMessage>, TransportError> {
+        let mut bytes = [0; TCP_READ_BYTES];
+        let length = self.stream.read(&mut bytes)?;
+        if length == 0 {
+            return Ok(Vec::new());
+        }
+        self.framer.push(&bytes[..length])
+    }
+
+    /// Sends one bounded SIP message over the established TLS stream.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when serialization exceeds the configured frame
+    /// limit or the TLS/TCP write fails.
+    pub fn send(&mut self, message: &SipMessage) -> Result<(), TransportError> {
+        let wire = serialize(message);
+        if wire.len() > self.framer.maximum {
+            return Err(TransportError::MessageTooLarge {
+                actual: wire.len(),
+                maximum: self.framer.maximum,
+            });
+        }
+        self.stream.write_all(&wire)?;
+        self.stream.flush()?;
+        Ok(())
+    }
+
+    /// Sends a TLS `close_notify` alert and flushes it to the peer.
+    ///
+    /// The underlying TCP stream remains owned by this transport and is
+    /// closed when the transport is dropped. A peer that calls [`Self::recv`]
+    /// after this alert observes a clean EOF.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the close notification cannot be flushed to the
+    /// underlying TCP stream.
+    pub fn shutdown(&mut self) -> Result<(), TransportError> {
+        match self.stream.as_mut() {
+            TlsStream::Client(stream) => stream.conn.send_close_notify(),
+            TlsStream::Server(stream) => stream.conn.send_close_notify(),
+        }
+        self.stream.flush()?;
+        Ok(())
+    }
+
+    /// Returns the connected TLS peer address.
+    ///
+    /// # Errors
+    ///
+    /// Returns the underlying socket-address error.
+    pub fn peer_addr(&self) -> Result<SocketAddr, TransportError> {
+        let stream = match self.stream.as_ref() {
+            TlsStream::Client(stream) => stream.get_ref(),
+            TlsStream::Server(stream) => stream.get_ref(),
+        };
+        Ok(stream.peer_addr()?)
+    }
+
+    /// Returns the number of bytes currently held by the SIP framer.
+    #[must_use]
+    pub fn buffered_len(&self) -> usize {
+        self.framer.buffered_len()
+    }
+}
+
+fn complete_client_handshake(
+    connection: &mut ClientConnection,
+    stream: &mut TcpStream,
+) -> Result<(), TransportError> {
+    while connection.is_handshaking() {
+        connection.complete_io(stream)?;
+    }
+    Ok(())
+}
+
+fn complete_server_handshake(
+    connection: &mut ServerConnection,
+    stream: &mut TcpStream,
+) -> Result<(), TransportError> {
+    while connection.is_handshaking() {
+        connection.complete_io(stream)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rcgen::generate_simple_self_signed;
+    use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
     use sip_types::{Headers, SipMethod, SipRequest};
     use std::{net::TcpListener, thread};
 
@@ -291,6 +544,29 @@ mod tests {
             headers,
             body: Vec::new(),
         })
+    }
+
+    fn tls_configs() -> (Arc<ClientConfig>, Arc<ServerConfig>) {
+        let certificate = generate_simple_self_signed(vec!["localhost".to_owned()]).unwrap();
+        let certificate_der = CertificateDer::from(certificate.cert.der().to_vec());
+        let private_key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(
+            certificate.key_pair.serialize_der(),
+        ));
+
+        let mut roots = RootCertStore::empty();
+        roots.add(certificate_der.clone()).unwrap();
+        let client = Arc::new(
+            ClientConfig::builder()
+                .with_root_certificates(roots)
+                .with_no_client_auth(),
+        );
+        let server = Arc::new(
+            ServerConfig::builder()
+                .with_no_client_auth()
+                .with_single_cert(vec![certificate_der], private_key)
+                .unwrap(),
+        );
+        (client, server)
     }
 
     #[test]
@@ -359,5 +635,135 @@ mod tests {
         let mut client = TcpTransport::connect(address, 1_024).unwrap();
         client.send(&options()).unwrap();
         assert_eq!(server.join().unwrap(), vec![options()]);
+    }
+
+    #[test]
+    fn tls_transport_completes_validated_handshake_and_round_trips_framed_sip() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let (client_config, server_config) = tls_configs();
+        let server = thread::spawn(move || {
+            let (stream, peer) = listener.accept().unwrap();
+            let mut transport = TlsTransport::accept(stream, server_config, 1_024).unwrap();
+            assert_eq!(transport.peer_addr().unwrap(), peer);
+            let messages = loop {
+                let messages = transport.recv().unwrap();
+                if !messages.is_empty() {
+                    break messages;
+                }
+            };
+            transport.send(&options()).unwrap();
+            messages
+        });
+
+        let mut client = TlsTransport::connect(address, "localhost", client_config, 1_024).unwrap();
+        assert_eq!(client.peer_addr().unwrap(), address);
+        client.send(&options()).unwrap();
+        let response = loop {
+            let messages = client.recv().unwrap();
+            if !messages.is_empty() {
+                break messages;
+            }
+        };
+        assert_eq!(response, vec![options()]);
+        assert_eq!(server.join().unwrap(), vec![options()]);
+    }
+
+    #[test]
+    fn tls_transport_rejects_certificate_name_mismatch() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let (client_config, server_config) = tls_configs();
+        let server = thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+                .unwrap();
+            stream
+                .set_write_timeout(Some(std::time::Duration::from_secs(2)))
+                .unwrap();
+            TlsTransport::accept(stream, server_config, 1_024).is_err()
+        });
+
+        let error = TlsTransport::connect(address, "not-localhost", client_config, 1_024)
+            .expect_err("certificate name mismatch must fail the client handshake");
+        assert!(matches!(
+            error,
+            TransportError::Tls(_) | TransportError::Io(_)
+        ));
+        assert!(server.join().unwrap());
+    }
+
+    #[test]
+    fn tls_transport_rejects_untrusted_certificate() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let (_, server_config) = tls_configs();
+        let client_config = Arc::new(
+            ClientConfig::builder()
+                .with_root_certificates(RootCertStore::empty())
+                .with_no_client_auth(),
+        );
+        let server = thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+                .unwrap();
+            stream
+                .set_write_timeout(Some(std::time::Duration::from_secs(2)))
+                .unwrap();
+            TlsTransport::accept(stream, server_config, 1_024).is_err()
+        });
+
+        let error = TlsTransport::connect(address, "localhost", client_config, 1_024)
+            .expect_err("an unknown CA must fail the client handshake");
+        assert!(matches!(
+            error,
+            TransportError::Tls(_) | TransportError::Io(_)
+        ));
+        assert!(server.join().unwrap());
+    }
+
+    #[test]
+    fn tls_transport_preserves_frame_limit_and_reports_eof() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let (client_config, server_config) = tls_configs();
+        let wire_len = serialize(&options()).len();
+        let server = thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut transport = TlsTransport::accept(stream, server_config, wire_len).unwrap();
+            let messages = loop {
+                let messages = transport.recv().unwrap();
+                if !messages.is_empty() {
+                    break messages;
+                }
+            };
+            assert_eq!(messages, vec![options()]);
+            transport
+        });
+
+        let mut client =
+            TlsTransport::connect(address, "localhost", client_config, wire_len).unwrap();
+        client.send(&options()).unwrap();
+        let oversized = SipMessage::Request(SipRequest {
+            method: SipMethod::Options,
+            request_uri: "sip:peer@example.com".to_owned(),
+            version: "SIP/2.0".to_owned(),
+            headers: {
+                let mut headers = Headers::new();
+                headers.push("Content-Length", wire_len.to_string());
+                headers
+            },
+            body: vec![b'x'; wire_len],
+        });
+        assert!(matches!(
+            client.send(&oversized),
+            Err(TransportError::MessageTooLarge { .. })
+        ));
+        client.shutdown().unwrap();
+        drop(client);
+        let mut server = server.join().unwrap();
+        assert!(server.recv().unwrap().is_empty());
     }
 }

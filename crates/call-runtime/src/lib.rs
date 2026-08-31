@@ -1,4 +1,4 @@
-//! Blocking UDP/TCP adapters that drive the provider-neutral call engine.
+//! Blocking UDP/TCP/TLS adapters that drive the provider-neutral call engine.
 //!
 //! The runtime owns transport I/O and delegates all protocol state to
 //! [`call_engine::CallEngine`]. It intentionally does not introduce an async
@@ -31,7 +31,7 @@ use provider_routing::{
 use sip_auth::DigestCredentials;
 use sip_security::SourceIpPolicy;
 use sip_transaction::TransportReliability;
-use sip_transport::{TcpTransport, TransportError, UdpTransport};
+use sip_transport::{TcpTransport, TlsTransport, TransportError, UdpTransport};
 use sip_types::{SipMessage, SipRequest, SipResponse};
 
 /// A blocking transport endpoint connected to one [`CallEngine`].
@@ -46,13 +46,20 @@ pub enum RuntimeTransport {
         /// Peer address used to validate engine action destinations.
         peer: SocketAddr,
     },
+    /// TLS-encrypted SIP stream connected to one peer.
+    Tls {
+        /// Connected TLS endpoint.
+        transport: TlsTransport,
+        /// Peer address used to validate engine action destinations.
+        peer: SocketAddr,
+    },
 }
 
 impl RuntimeTransport {
     fn reliability(&self) -> TransportReliability {
         match self {
             Self::Udp(_) => TransportReliability::Unreliable,
-            Self::Tcp { .. } => TransportReliability::Reliable,
+            Self::Tcp { .. } | Self::Tls { .. } => TransportReliability::Reliable,
         }
     }
 
@@ -63,6 +70,16 @@ impl RuntimeTransport {
                 Ok(vec![(message, source)])
             }
             Self::Tcp { transport, peer } => {
+                let messages = transport.recv()?;
+                if messages.is_empty() && transport.buffered_len() == 0 {
+                    return Err(RuntimeError::ConnectionClosed { peer: *peer });
+                }
+                Ok(messages
+                    .into_iter()
+                    .map(|message| (message, *peer))
+                    .collect())
+            }
+            Self::Tls { transport, peer } => {
                 let messages = transport.recv()?;
                 if messages.is_empty() && transport.buffered_len() == 0 {
                     return Err(RuntimeError::ConnectionClosed { peer: *peer });
@@ -91,6 +108,16 @@ impl RuntimeTransport {
                 transport.send(&action.message)?;
                 Ok(())
             }
+            Self::Tls { transport, peer } => {
+                if action.destination != *peer {
+                    return Err(RuntimeError::DestinationMismatch {
+                        expected: *peer,
+                        actual: action.destination,
+                    });
+                }
+                transport.send(&action.message)?;
+                Ok(())
+            }
         }
     }
 
@@ -103,7 +130,7 @@ impl RuntimeTransport {
     pub fn local_addr(&self) -> Result<SocketAddr, RuntimeError> {
         match self {
             Self::Udp(transport) => Ok(transport.local_addr()?),
-            Self::Tcp { .. } => Err(RuntimeError::NotDatagram),
+            Self::Tcp { .. } | Self::Tls { .. } => Err(RuntimeError::NotDatagram),
         }
     }
 
@@ -112,7 +139,7 @@ impl RuntimeTransport {
     pub fn peer_addr(&self) -> Option<SocketAddr> {
         match self {
             Self::Udp(_) => None,
-            Self::Tcp { peer, .. } => Some(*peer),
+            Self::Tcp { peer, .. } | Self::Tls { peer, .. } => Some(*peer),
         }
     }
 }
@@ -298,7 +325,7 @@ impl RuntimeOutput {
     }
 }
 
-/// A blocking message loop around [`CallEngine`] and UDP/TCP SIP transport.
+/// A blocking message loop around [`CallEngine`] and UDP/TCP/TLS SIP transport.
 #[derive(Debug)]
 pub struct CallRuntime {
     engine: CallEngine,
@@ -348,6 +375,29 @@ impl CallRuntime {
         Self {
             engine,
             transport: RuntimeTransport::Tcp { transport, peer },
+            source_policy,
+            bridges: None,
+            provider_authentication: HashMap::new(),
+        }
+    }
+
+    /// Creates a TLS runtime for an already-connected and handshaken stream.
+    #[must_use]
+    pub fn tls(engine: CallEngine, transport: TlsTransport, peer: SocketAddr) -> Self {
+        Self::tls_with_source_policy(engine, transport, peer, SourceIpPolicy::default())
+    }
+
+    /// Creates a TLS runtime with an explicit observed peer-address policy.
+    #[must_use]
+    pub fn tls_with_source_policy(
+        engine: CallEngine,
+        transport: TlsTransport,
+        peer: SocketAddr,
+        source_policy: SourceIpPolicy,
+    ) -> Self {
+        Self {
+            engine,
+            transport: RuntimeTransport::Tls { transport, peer },
             source_policy,
             bridges: None,
             provider_authentication: HashMap::new(),
@@ -842,6 +892,7 @@ fn provider_transport_matches(
         (transport, signaling_transport),
         (RuntimeTransport::Udp(_), SignalingTransport::Udp)
             | (RuntimeTransport::Tcp { .. }, SignalingTransport::Tcp)
+            | (RuntimeTransport::Tls { .. }, SignalingTransport::Tls)
     )
 }
 
@@ -852,12 +903,17 @@ mod tests {
     use call_core::{CallState, StreamId};
     use call_engine::EngineConfig;
     use provider_routing::{ProviderProfile, RoutingConfig};
+    use rcgen::generate_simple_self_signed;
+    use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
     use sip_auth::{DigestAlgorithm, DigestAuthorization, DigestChallenge};
-    use sip_transport::{TcpTransport, UdpTransport};
+    use sip_transport::{TcpTransport, TlsTransport, UdpTransport};
     use sip_types::{Headers, SipMethod, SipRequest, SipResponse};
-    use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};
     use std::thread;
+    use std::{
+        io::{Read, Write},
+        sync::Arc,
+    };
 
     fn options() -> SipMessage {
         let mut headers = Headers::new();
@@ -929,6 +985,28 @@ mod tests {
             headers,
             body: Vec::new(),
         })
+    }
+
+    fn tls_configs() -> (Arc<rustls::ClientConfig>, Arc<rustls::ServerConfig>) {
+        let certificate = generate_simple_self_signed(vec!["localhost".to_owned()]).unwrap();
+        let certificate_der = CertificateDer::from(certificate.cert.der().to_vec());
+        let private_key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(
+            certificate.key_pair.serialize_der(),
+        ));
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add(certificate_der.clone()).unwrap();
+        let client = Arc::new(
+            rustls::ClientConfig::builder()
+                .with_root_certificates(roots)
+                .with_no_client_auth(),
+        );
+        let server = Arc::new(
+            rustls::ServerConfig::builder()
+                .with_no_client_auth()
+                .with_single_cert(vec![certificate_der], private_key)
+                .unwrap(),
+        );
+        (client, server)
     }
 
     fn digest_challenge_for_invite_with(request: &SipRequest, challenge_value: &str) -> SipMessage {
@@ -1651,6 +1729,107 @@ mod tests {
                 status_code: 200,
                 ..
             })
+        ));
+    }
+
+    #[test]
+    fn tls_runtime_dispatches_options_and_writes_framed_response() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let (client_config, server_config) = tls_configs();
+        let client_thread = thread::spawn(move || {
+            let mut transport =
+                TlsTransport::connect(address, "localhost", client_config, 2_048).unwrap();
+            transport.send(&options()).unwrap();
+            loop {
+                let messages = transport.recv().unwrap();
+                if !messages.is_empty() {
+                    return messages;
+                }
+            }
+        });
+        let (stream, peer) = listener.accept().unwrap();
+        let transport = TlsTransport::accept(stream, server_config, 2_048).unwrap();
+        let mut runtime = CallRuntime::tls(
+            CallEngine::new(EngineConfig::default()).unwrap(),
+            transport,
+            peer,
+        );
+        let output = runtime.receive_once(Duration::ZERO).unwrap();
+        assert_eq!(output.actions().len(), 1);
+        let response = client_thread.join().unwrap();
+        assert!(matches!(
+            response.as_slice(),
+            [SipMessage::Response(SipResponse {
+                status_code: 200,
+                ..
+            })]
+        ));
+    }
+
+    #[test]
+    fn tls_provider_route_matches_connected_tls_runtime() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let (client_config, server_config) = tls_configs();
+        let provider_thread = thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut transport = TlsTransport::accept(stream, server_config, 2_048).unwrap();
+            loop {
+                let messages = transport.recv().unwrap();
+                if !messages.is_empty() {
+                    return messages;
+                }
+            }
+        });
+        let transport = TlsTransport::connect(address, "localhost", client_config, 2_048).unwrap();
+        let mut runtime = CallRuntime::tls(
+            CallEngine::new(EngineConfig::default()).unwrap(),
+            transport,
+            address,
+        );
+        let mut routes = ProviderRouteTable::new(RoutingConfig::default()).unwrap();
+        routes
+            .insert(
+                ProviderProfile::new(
+                    "tls-provider",
+                    "tls.provider.invalid",
+                    address.port(),
+                    SignalingTransport::Tls,
+                )
+                .unwrap()
+                .with_targets(EngineTarget::Rust, EngineTarget::Asterisk),
+            )
+            .unwrap();
+        let resolver_calls = std::cell::Cell::new(0);
+        let mut resolver = |host: &str, port: u16| {
+            resolver_calls.set(resolver_calls.get() + 1);
+            assert_eq!(host, "tls.provider.invalid");
+            assert_eq!(port, address.port());
+            Some(address)
+        };
+        let (call_id, output) = runtime
+            .originate_with_provider_route(
+                &routes,
+                "tls-provider",
+                invite(),
+                &mut resolver,
+                Duration::ZERO,
+            )
+            .unwrap();
+        assert_eq!(resolver_calls.get(), 1);
+        assert_eq!(output.actions().len(), 1);
+        assert_eq!(
+            runtime.engine().snapshot(&call_id).unwrap().state,
+            CallState::Inviting
+        );
+        let request = provider_thread.join().unwrap();
+        assert!(matches!(
+            request.as_slice(),
+            [SipMessage::Request(SipRequest {
+                method: SipMethod::Invite,
+                ..
+            })]
         ));
     }
 
