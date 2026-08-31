@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-177 — PR #59 hosted validation green
-**Last checkpoint (UTC):** 2026-08-31T12:56:31Z
+**Current checkpoint:** CP-181 — CI test-scope contract clarified
+**Last checkpoint (UTC):** 2026-08-31T13:30:33Z
 **Active phase:** Phase 1 — Rust media engine
-**Active milestone:** Audit signals and Asterisk fallback<br>
-**Next resume action:** Continue the next bounded control-plane, interoperability, or transport slice from the green `audit-signals` head while retaining the provider, rollback, and Asterisk-fallback gates
-**Active PR:** #59 — `audit-signals` targets `health-readiness` (hosted green)
+**Active milestone:** Graceful drain/restart and Asterisk fallback<br>
+**Next resume action:** Start the next bounded offline acceptance slice from the green `graceful-drain` head while retaining the provider/Asterisk evidence gate
+**Active PR:** #60 — `graceful-drain` targets `audit-signals` (hosted green)
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-59-audit-signals`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-60-graceful-drain`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -1779,6 +1779,14 @@ Before production:
 
 # 52. CI Requirements
 
+The repository implementation of this contract is
+`.github/workflows/rust-quality.yml`. Its `pull_request:` trigger uses
+GitHub's default activity types (opened, reopened, and synchronized), and its
+`push` trigger is limited to `aistack/main`. Both execute the ordinary jobs on
+hosted `ubuntu-latest` runners. There is currently no path filter or
+affected-module-only selector: focused tests for a changed module run because
+the workspace job executes the complete locked workspace suite.
+
 Every pull request should run:
 
 ```text
@@ -2079,12 +2087,13 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 | Workstream | Status | Evidence / checkpoint | PR | Next action |
 | --- | --- | --- | --- | --- |
 | Phase 0 — current Asterisk surface | in_progress | CP-004/CP-010/CP-045/CP-051; `docs/current-asterisk-surface.md` (commit `edba8386c` plus 2026-08-30 rechecks); no Asterisk runtime, target SIP/RTP/8088 listeners, `.env.aistack`, or sanitized capture corpus; DNS/config/host address drift remains | #1 | Obtain provider/runtime access and sanitized successful/failed fixtures |
-| Phase 1 — Rust media engine | in_progress | CP-005/CP-008/CP-019/CP-042/CP-047–CP-067, CP-138, CP-142–CP-177; PR #2 safe protocol/media foundation, PR #8 bounded RTP↔AI media session/DTMF/PCM recorder, PR #18 WebSocket adapter, PR #19 stream driver, PR #20 UDP RTP/RTCP runtime, PR #21 parser fuzz harnesses, PR #25 deterministic replay foundation, PR #26 signaling/media fault corpus, PR #47 lazy provider Digest resolution, PR #48 provider-route gating, PR #50 routed provider-auth context, PR #51 PRACK/100rel support, PR #52 reliable provisional retransmission, PR #53 SIP-over-TLS transport, PR #54 bounded lifecycle-event replay, PR #55 bounded command idempotency, PR #56 authenticated control-plane access, PR #57 cardinality-safe aggregate metrics, PR #58 capacity-aware health/readiness, and PR #59 bounded audit signals; repository-native hosted Rust CI runs the complete ordinary suite on every PR and push to `aistack/main` | [#59](https://github.com/W3Mirror/asterisk/pull/59) OPEN/CLEAN/MERGEABLE at `02b1080ae`; #58 OPEN/CLEAN/MERGEABLE at `889c250f4`; #57 OPEN/CLEAN/MERGEABLE at `afa5de0fc`; #56 OPEN/CLEAN/MERGEABLE at `bec6974b3`; #55 OPEN/CLEAN/MERGEABLE at `55b32fc9`; #54 OPEN/CLEAN/MERGEABLE at `a6b04012b`; #53 OPEN/CLEAN/MERGEABLE at `a496e114a`; #52 OPEN/CLEAN/MERGEABLE; #51 OPEN/CLEAN/MERGEABLE | Continue the next bounded control-plane, interoperability, or transport gap while retaining the provider, rollback, and Asterisk-fallback gates |
-| Offline deterministic verification | in_progress | CP-060–CP-067 plus CP-143–CP-177 cover bounded replay, signaling/media faults, provider routing, lazy Digest resolution, duplicate-challenge replay, PRACK/100rel sequencing and RAck validation, atomic error paths, secret redaction, terminal context reclamation, TLS handshake/certificate validation, bounded SIP-over-TLS framing, explicit terminal `Ended` events, bounded lifecycle-event replay with evicted-cursor errors, bounded command idempotency with cross-crate property coverage, authenticated control-plane authorization, label-free aggregate metrics with identifier-redaction assertions, capacity-aware health/readiness with terminal retention metrics, and credential-free bounded audit outcomes for authorized operations; 275 locked workspace tests, format, workspace Clippy, three SIPp scenarios, signaling/media/WebSocket/combined/short-soak reclamation smokes, and all six nightly address-sanitizer fuzz-target checks pass locally; hosted PR #59 run `33394056379` passed Workspace, Protocol fuzz, and Dependency audit jobs | [#59](https://github.com/W3Mirror/asterisk/pull/59) OPEN/CLEAN/MERGEABLE at `02b1080ae`; #58 OPEN/CLEAN/MERGEABLE at `889c250f4`; #57 OPEN/CLEAN/MERGEABLE | Continue the next bounded implementation slice from the green `audit-signals` head |
+| Phase 1 — Rust media engine | in_progress | CP-005/CP-008/CP-019/CP-042/CP-047–CP-067, CP-138, CP-142–CP-180; PR #2 safe protocol/media foundation, PR #8 bounded RTP↔AI media session/DTMF/PCM recorder, PR #18 WebSocket adapter, PR #19 stream driver, PR #20 UDP RTP/RTCP runtime, PR #21 parser fuzz harnesses, PR #25 deterministic replay foundation, PR #26 signaling/media fault corpus, PR #47 lazy provider Digest resolution, PR #48 provider-route gating, PR #50 routed provider-auth context, PR #51 PRACK/100rel support, PR #52 reliable provisional retransmission, PR #53 SIP-over-TLS transport, PR #54 bounded lifecycle-event replay, PR #55 bounded command idempotency, PR #56 authenticated control-plane access, PR #57 cardinality-safe aggregate metrics, PR #58 capacity-aware health/readiness, PR #59 bounded audit signals, and PR #60 graceful drain; repository-native hosted Rust CI runs the complete ordinary suite on every PR and push to `aistack/main` | [#60](https://github.com/W3Mirror/asterisk/pull/60) OPEN/CLEAN/MERGEABLE at `c15d53330`; #59 OPEN/CLEAN/MERGEABLE at `02b1080ae`; #58 OPEN/CLEAN/MERGEABLE at `889c250f4`; #57 OPEN/CLEAN/MERGEABLE at `afa5de0fc`; #56 OPEN/CLEAN/MERGEABLE at `bec6974b3`; #55 OPEN/CLEAN/MERGEABLE at `55b32fc9`; #54 OPEN/CLEAN/MERGEABLE at `a6b04012b`; #53 OPEN/CLEAN/MERGEABLE at `a496e114a`; #52 OPEN/CLEAN/MERGEABLE; #51 OPEN/CLEAN/MERGEABLE | Start the next bounded offline acceptance slice without enabling Rust traffic |
+| Offline deterministic verification | in_progress | CP-060–CP-067 plus CP-143–CP-180 cover bounded replay, signaling/media faults, provider routing, lazy Digest resolution, duplicate-challenge replay, PRACK/100rel sequencing and RAck validation, atomic error paths, secret redaction, terminal context reclamation, TLS handshake/certificate validation, bounded SIP-over-TLS framing, explicit terminal `Ended` events, bounded lifecycle-event replay with evicted-cursor errors, bounded command idempotency with cross-crate property coverage, authenticated control-plane authorization, label-free aggregate metrics with identifier-redaction assertions, capacity-aware health/readiness with terminal retention metrics, credential-free bounded audit outcomes for authorized operations, and graceful drain/restart admission with stateless rejection and existing-dialog continuation; 279 locked workspace tests, format, workspace Clippy, three SIPp scenarios, signaling/media/WebSocket/combined/short-soak reclamation smokes, and all six nightly address-sanitizer fuzz-target checks plus 100-run smokes pass locally; hosted PR #60 run `33396032733` passed Workspace, Protocol fuzz, and Dependency audit jobs | [#60](https://github.com/W3Mirror/asterisk/pull/60) OPEN/CLEAN/MERGEABLE at `c15d53330`; #59 OPEN/CLEAN/MERGEABLE at `02b1080ae`; #58 OPEN/CLEAN/MERGEABLE at `889c250f4`; #57 OPEN/CLEAN/MERGEABLE | Start the next bounded implementation slice from the green `graceful-drain` head |
 | Authenticated control-plane access | hosted_green | CP-169–CP-171; permission-gated API/engine/runtime wrappers, bounded non-secret principals, authorization-before-lookup, idempotent retry protection, terminal-resource cleanup, focused and property tests; hosted PR #56 validation green | [#56](https://github.com/W3Mirror/asterisk/pull/56) | Continue with observability and other bounded non-real-time acceptance slices |
 | Cardinality-safe observability | hosted_green | CP-172–CP-173; bounded call lifecycle counters, active-resource/queue gauges, signaling retransmission gauges, label-free Prometheus exposition, runtime delegation, identifier-redaction tests, 268 locked workspace tests, local SIPp/load/soak/fuzz checks, and hosted PR #57 validation green | [#57](https://github.com/W3Mirror/asterisk/pull/57) | Continue the next bounded control-plane, interoperability, or transport gap |
 | Health/readiness | hosted_green | CP-174–CP-175; capacity-aware `live`/`ready` state, retained-call metrics, label-free health exposition, runtime delegation, and focused terminal-reclamation/readiness tests; local 270-test workspace, format, Clippy, SIPp, load/smoke, soak, and six-target fuzz checks pass; hosted run `33389642572` passed workspace, fuzz, and dependency-audit jobs while scheduled capacity/soak jobs skipped as intended | [#58](https://github.com/W3Mirror/asterisk/pull/58) OPEN/CLEAN/MERGEABLE at `889c250f4` | Start the next bounded control-plane, interoperability, or transport slice from `health-readiness` |
 | Audit signals | hosted_green | CP-176–CP-177; bounded credential-free audit records for authorized commands, origination, INVITE responses, media negotiation, terminal reclamation, replay/rejection outcomes, authorized draining, queue-depth metrics, and runtime clone/commit denial preservation; focused call-api/call-engine/call-runtime regression tests, 275 locked workspace tests, local SIPp/load/soak/fuzz checks, and hosted run `33394056379` all green | [#59](https://github.com/W3Mirror/asterisk/pull/59) OPEN/CLEAN/MERGEABLE at `02b1080ae` | Continue the next bounded control-plane, interoperability, or transport gap from `audit-signals` |
+| Graceful drain/restart | hosted_green | CP-178–CP-180; `graceful-drain` adds admission stop/resume, new-call rejection, existing-call continuation, drain-aware health/readiness and aggregate metrics, stateless inbound 503 handling, focused engine/runtime tests, and hosted validation | [#60](https://github.com/W3Mirror/asterisk/pull/60) OPEN/CLEAN/MERGEABLE at `c15d53330` | Start the next bounded offline acceptance slice from `graceful-drain` |
 | Phase 2 — SIP edge shadow mode | not_started | — | — | Extend offline differential tooling with sanitized Asterisk/provider captures when available |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
 | Phase 4 — expanded provider coverage | not_started | — | — | Add one provider compatibility suite per rollout target |
@@ -5956,6 +5965,90 @@ blockers: This remains provider-neutral offline audit evidence. It does not prov
 next_action: Continue the next bounded control-plane, interoperability, or transport slice from the green `audit-signals` head while preserving the non-real-time acceptance targets, provider evidence gate, and verified Asterisk rollback.
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #59 or revert `02b1080ae` if the audit-signals contract is superseded.
 notes: Focused call-api, call-engine, and call-runtime tests ship with the audit behavior. Every pull request event (opened, reopened, or synchronized) runs the complete ordinary hosted suite, not affected-module-only selection; a push to `aistack/main` runs the same complete ordinary suite. Scheduled/manual jobs add larger capacity, property, and soak tiers. All workflow runners remain hosted `ubuntu-latest`, and Docker remains limited to pinned SIPp inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-178 — Graceful drain locally green
+
+~~~yaml
+checkpoint_id: CP-178
+recorded_at_utc: 2026-08-31T13:15:05Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Graceful drain/restart and Asterisk fallback
+scope: Add bounded engine/runtime admission drain and resume controls, drain-aware health/readiness and aggregate metrics, stateless inbound 503 rejection, and continuation of existing dialogs
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-60-graceful-drain
+branch: graceful-drain
+base_branch: audit-signals
+pr: pending #60 publication
+head_sha: 723af3937 plus uncommitted graceful-drain implementation, focused tests, documentation, and CP-178
+evidence: `CallEngine` defaults to accepting calls, exposes idempotent `begin_drain`, `resume`, and `is_draining` controls, reports `draining` in `EngineHealth`/`EngineMetrics`, renders the label-free `engine_draining` gauge, rejects outbound origination with stable `EngineError::Draining` before resource mutation, and returns a stateless `503 Service Unavailable` for new inbound initial INVITEs without creating calls, dialogs, transactions, or lifecycle events. Existing inbound dialogs continue to receive responses during drain, and runtime delegation preserves the same contract. Focused engine/runtime tests pass (31 and 44 tests); `cargo fmt --all -- --check`, `git diff --check`, `cargo test --workspace --locked` (279 tests), workspace Clippy, all three pinned Docker-backed SIPp scenarios, deterministic signaling/media/WebSocket/combined/short-soak reclamation smokes, nightly address-sanitizer fuzz-target check, and six 100-run nightly address-sanitizer fuzz smokes all pass locally.
+blockers: Commit/push, PR #60 publication, hosted Workspace/fuzz/dependency-audit validation, and final ledger reconciliation remain pending. This is provider-neutral deployment-safety evidence; it does not prove real Asterisk/provider interoperability, provider credentials, live traffic, route failover, production rollout/rollback execution, or safe Rust traffic enablement. Rust traffic stays disabled and Asterisk remains the fallback.
+next_action: Commit the graceful-drain implementation/tests/docs/ledger normally, push `graceful-drain`, open PR #60 against `audit-signals`, then verify exact local/origin/GitHub parity and the complete ordinary hosted suite.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #60 or revert the graceful-drain implementation if its contract is superseded.
+notes: Every `pull_request` event (opened, reopened, or synchronized) runs the complete ordinary hosted suite, not an affected-module-only subset; a push to `aistack/main` runs that same complete hosted suite. Focused tests ship with this change and are included in the full workspace run. Larger capacity, extended property, multi-hour soak, and credentialed provider/live-call evidence remain scheduled/manual or approval-gated. All workflow runners remain hosted `ubuntu-latest`; Docker remains limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-179 — PR #60 hosted validation green
+
+~~~yaml
+checkpoint_id: CP-179
+recorded_at_utc: 2026-08-31T13:21:00Z
+status: hosted_green
+phase: Phase 1 — Rust media engine
+milestone: Graceful drain/restart and Asterisk fallback
+scope: Verify the complete ordinary hosted Rust quality suite on PR #60's exact graceful-drain publication head
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-60-graceful-drain
+branch: graceful-drain
+base_branch: audit-signals
+pr: https://github.com/W3Mirror/asterisk/pull/60
+head_sha: c15d53330903b155074eb772a1048b995bdd7cd4
+evidence: PR #60 is OPEN, non-draft, CLEAN, and MERGEABLE against exact base `audit-signals` at `723af3937f58aaa79c0be9cf7c601b4037a04f7c`, with local, origin, and GitHub head parity at `c15d53330903b155074eb772a1048b995bdd7cd4`. Hosted Rust quality run `33396032733` passed Workspace checks `99500647075` (formatting, 279 locked workspace tests, three pinned Docker-backed SIPp scenarios, deterministic signaling/RTP-media/WebSocket-media/combined/short-soak reclamation smokes, and workspace Clippy), Protocol fuzz checks `99500647376` (all six address-sanitizer targets), and Dependency audit `99500647312`. The schedule/manual-only Signaling capacity matrix `99500648793` and Two-hour lifecycle soak `99500648573` correctly skipped for the pull-request event.
+blockers: This remains provider-neutral deployment-safety evidence. It does not prove real Asterisk/provider interoperability, provider credentials, live traffic, route failover, production rollout/rollback execution, or safe Rust traffic enablement. Rust traffic stays disabled and Asterisk remains the fallback. The next lifecycle/post-call, failure/recovery, deployment, and real-provider evidence slices remain future gates.
+next_action: Reconcile the latest stack state and start the next bounded offline acceptance slice from `graceful-drain` while preserving the provider evidence gate and verified Asterisk rollback.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #60 or revert `c15d53330` if the graceful-drain contract is superseded.
+notes: Focused engine/runtime drain tests ship with the behavior. Every pull request event (opened, reopened, or synchronized) runs the complete ordinary hosted suite, not affected-module-only selection; a push to `aistack/main` runs the same complete ordinary suite. Scheduled/manual jobs add larger capacity, property, and soak tiers. All workflow runners remain hosted `ubuntu-latest`, and Docker remains limited to pinned SIPp inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-180 — Graceful drain stack reconciled
+
+~~~yaml
+checkpoint_id: CP-180
+recorded_at_utc: 2026-08-31T13:21:00Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Graceful drain/restart and Asterisk fallback
+scope: Reconcile the completed graceful-drain implementation, hosted PR, worktree, and expanded goal/test contract for resumable execution
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-60-graceful-drain
+branch: graceful-drain
+base_branch: audit-signals
+pr: https://github.com/W3Mirror/asterisk/pull/60
+head_sha: c15d53330903b155074eb772a1048b995bdd7cd4
+evidence: The active worktree is clean and tracks `origin/graceful-drain` exactly at `c15d53330903b155074eb772a1048b995bdd7cd4`; PR #60 is OPEN/CLEAN/MERGEABLE with all ordinary hosted checks green. The ledger now explicitly treats lifecycle/post-call workflows, failure/recovery, observability/security, deployment/rollback, bounded capacity/reclamation, replay/differential fixtures, and Asterisk fallback as first-class goal targets alongside (and before) real-time provider calls. Focused tests remain mandatory in every implementation slice; PR and `aistack/main` push events run the full ordinary hosted suite, while larger capacity/property/soak and credentialed provider/live-call evidence remain scheduled/manual or approval-gated.
+blockers: Provider credentials/runtime access, sanitized real captures, production rollout/rollback execution, and live provider interoperability remain unavailable and block only the later evidence gate; Rust traffic remains disabled and Asterisk remains the fallback.
+next_action: Create the next dedicated stacked worktree from `origin/graceful-drain` only after selecting the next bounded offline acceptance gap; do not enable Rust traffic until the provider/Asterisk evidence gate is satisfied.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close downstream work or revert `c15d53330903b155074eb772a1048b995bdd7cd4` if the drain contract is superseded.
+notes: All workflow runners remain hosted `ubuntu-latest`; Docker is used only by the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-181 — CI test-scope contract clarified
+
+~~~yaml
+checkpoint_id: CP-181
+recorded_at_utc: 2026-08-31T13:29:24Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Graceful drain/restart and Asterisk fallback
+scope: Clarify the required test coverage and reconcile it with the repository workflow triggers
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-60-graceful-drain
+branch: graceful-drain
+base_branch: audit-signals
+pr: https://github.com/W3Mirror/asterisk/pull/60
+head_sha: 2585449e561653c28a09e563056e35658435211f
+evidence: `.github/workflows/rust-quality.yml` declares `pull_request:` and `push` to `aistack/main`. The PR trigger therefore runs on opened, reopened, and synchronized updates. Its ordinary hosted jobs run the complete locked workspace tests, focused tests included, plus SIPp, reclamation smokes, fuzz-target checks, dependency audit, formatting, and Clippy. The push to `aistack/main` repeats that same ordinary suite. No affected-module-only selector is currently implemented; larger capacity/property/soak jobs remain schedule/manual-only.
+blockers: This clarification does not change provider-neutral implementation status. Provider credentials/runtime access, sanitized real captures, production rollout/rollback execution, and live provider interoperability remain later evidence gates; Rust traffic remains disabled and Asterisk remains the fallback.
+next_action: Continue the next bounded offline acceptance slice from `graceful-drain` while preserving the provider/Asterisk evidence gate.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; revert this documentation-only checkpoint if the CI contract changes.
+notes: Every implementation slice must add or update its relevant tests in the same change. “Affected-module test” means the focused tests owned by that module are required and included in the full PR workspace run; it does not mean CI currently skips unrelated packages.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints

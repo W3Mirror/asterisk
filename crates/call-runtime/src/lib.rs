@@ -436,6 +436,23 @@ impl CallRuntime {
         self.engine.health()
     }
 
+    /// Stops admitting new calls while allowing existing dialogs and
+    /// transactions to continue draining to completion.
+    pub fn begin_drain(&mut self) {
+        self.engine.begin_drain();
+    }
+
+    /// Resumes admitting new calls after a drain or restart handoff.
+    pub fn resume(&mut self) {
+        self.engine.resume();
+    }
+
+    /// Returns whether the runtime is currently draining new call admission.
+    #[must_use]
+    pub fn is_draining(&self) -> bool {
+        self.engine.is_draining()
+    }
+
     /// Drains bounded control-plane audit records after verifying read access.
     ///
     /// # Errors
@@ -558,6 +575,9 @@ impl CallRuntime {
     where
         R: ProviderAddressResolver + ?Sized,
     {
+        if self.engine.is_draining() {
+            return Err(RuntimeError::Engine(EngineError::Draining));
+        }
         let decision = routes.route_outbound(provider_id);
         if decision.target() != EngineTarget::Rust {
             return Err(RuntimeError::ProviderRouteFallback {
@@ -1099,11 +1119,15 @@ mod tests {
     }
 
     fn inbound_invite() -> SipRequest {
+        inbound_invite_with("runtime-inbound", "runtime-inbound@example.com")
+    }
+
+    fn inbound_invite_with(branch: &str, call_id: &str) -> SipRequest {
         let mut headers = Headers::new();
-        headers.push("Via", "SIP/2.0/UDP client.invalid;branch=runtime-inbound");
+        headers.push("Via", format!("SIP/2.0/UDP client.invalid;branch={branch}"));
         headers.push("From", "Alice <sip:alice@example.com>;tag=client-2");
         headers.push("To", "Bob <sip:bob@example.com>");
-        headers.push("Call-ID", "runtime-inbound@example.com");
+        headers.push("Call-ID", call_id);
         headers.push("CSeq", "1 INVITE");
         headers.push("Contact", "<sip:alice@127.0.0.1:5062>");
         SipRequest {
@@ -1500,6 +1524,97 @@ mod tests {
             .reclaim_terminal_call(&call_id)
             .unwrap();
         assert!(runtime.health().ready);
+    }
+
+    #[test]
+    fn runtime_drain_rejects_new_calls_and_preserves_existing_dialogs() {
+        let runtime_transport = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 2_048).unwrap();
+        let runtime_address = runtime_transport.local_addr().unwrap();
+        let peer = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 2_048).unwrap();
+        let mut runtime = CallRuntime::udp(
+            CallEngine::new(EngineConfig::default()).unwrap(),
+            runtime_transport,
+        );
+
+        peer.send_to(&SipMessage::Request(inbound_invite()), runtime_address)
+            .unwrap();
+        let accepted = runtime.receive_once(Duration::ZERO).unwrap();
+        let existing_call = accepted.events()[0].call_id.clone();
+        assert!(matches!(
+            peer.recv().unwrap().0,
+            SipMessage::Response(SipResponse {
+                status_code: 100,
+                ..
+            })
+        ));
+
+        runtime.begin_drain();
+        assert!(runtime.is_draining());
+        assert!(runtime.health().draining);
+        assert!(!runtime.health().ready);
+        assert!(
+            runtime
+                .health()
+                .prometheus()
+                .contains("engine_draining 1\n")
+        );
+
+        let outbound_error = runtime
+            .originate(invite(), peer.local_addr().unwrap(), Duration::ZERO)
+            .unwrap_err();
+        assert!(matches!(
+            outbound_error,
+            RuntimeError::Engine(EngineError::Draining)
+        ));
+        assert_eq!(runtime.metrics().calls.calls_retained, 1);
+
+        let new_invite = inbound_invite_with("runtime-drain-new", "runtime-drain-new@example.com");
+        peer.send_to(&SipMessage::Request(new_invite), runtime_address)
+            .unwrap();
+        let rejected = runtime.receive_once(Duration::ZERO).unwrap();
+        assert!(rejected.events().is_empty());
+        assert!(matches!(
+            &peer.recv().unwrap().0,
+            SipMessage::Response(SipResponse {
+                status_code: 503,
+                reason,
+                ..
+            }) if reason == "Service Unavailable"
+        ));
+        assert_eq!(runtime.metrics().calls.calls_retained, 1);
+
+        let continued = runtime
+            .respond_to_invite(&existing_call, 200, "OK", Vec::new(), Duration::ZERO)
+            .unwrap();
+        assert!(matches!(
+            continued.actions()[0].message,
+            SipMessage::Response(SipResponse {
+                status_code: 200,
+                ..
+            })
+        ));
+        assert!(matches!(
+            peer.recv().unwrap().0,
+            SipMessage::Response(SipResponse {
+                status_code: 200,
+                ..
+            })
+        ));
+
+        runtime.resume();
+        assert!(!runtime.is_draining());
+        assert!(runtime.health().ready);
+        let (resumed_call, _) = runtime
+            .originate(invite(), peer.local_addr().unwrap(), Duration::ZERO)
+            .unwrap();
+        assert_eq!(resumed_call.as_str(), "call_2");
+        assert!(matches!(
+            peer.recv().unwrap().0,
+            SipMessage::Request(SipRequest {
+                method: SipMethod::Invite,
+                ..
+            })
+        ));
     }
 
     #[test]
