@@ -24,7 +24,9 @@ use std::{
 use call_api::{AuditRecord, AuthenticatedPrincipal, CallCommand};
 use call_bridge::{BridgeError, BridgeEvent, BridgeRegistry, BridgeState};
 use call_core::{BridgeId, CallEventKind, CallId, CommandId, LegId, LifecycleEvent};
-use call_engine::{CallEngine, EngineError, EngineHealth, EngineMetrics, EngineOutput, SendAction};
+use call_engine::{
+    CallDiagnostics, CallEngine, EngineError, EngineHealth, EngineMetrics, EngineOutput, SendAction,
+};
 use provider_routing::{
     AuthenticationPolicy, EngineTarget, ProviderRouteTable, RouteMatch, SignalingTransport,
 };
@@ -422,6 +424,34 @@ impl CallRuntime {
     #[must_use]
     pub fn engine(&self) -> &CallEngine {
         &self.engine
+    }
+
+    /// Returns a redaction-safe diagnostic view for one retained call.
+    pub fn diagnostics(&self, call_id: &CallId) -> Result<CallDiagnostics, RuntimeError> {
+        Ok(self.engine.diagnostics(call_id)?)
+    }
+
+    /// Returns one diagnostic view after verifying control-plane read access.
+    pub fn diagnostics_authorized(
+        &self,
+        principal: &AuthenticatedPrincipal,
+        call_id: &CallId,
+    ) -> Result<CallDiagnostics, RuntimeError> {
+        Ok(self.engine.diagnostics_authorized(principal, call_id)?)
+    }
+
+    /// Returns deterministic redaction-safe diagnostics ordered by call ID.
+    pub fn list_diagnostics(&self, limit: usize) -> Result<Vec<CallDiagnostics>, RuntimeError> {
+        Ok(self.engine.list_diagnostics(limit)?)
+    }
+
+    /// Lists diagnostic views after verifying control-plane read access.
+    pub fn list_diagnostics_authorized(
+        &self,
+        principal: &AuthenticatedPrincipal,
+        limit: usize,
+    ) -> Result<Vec<CallDiagnostics>, RuntimeError> {
+        Ok(self.engine.list_diagnostics_authorized(principal, limit)?)
     }
 
     /// Returns aggregate runtime, call, and signaling metrics.
@@ -1431,6 +1461,38 @@ mod tests {
         assert_eq!(metrics.active_transactions, 1);
         assert_eq!(metrics.active_dialogs, 1);
         assert!(!metrics.prometheus().contains(call_id.as_str()));
+    }
+
+    #[test]
+    fn runtime_diagnostics_delegate_and_preserve_read_authorization() {
+        let runtime_transport = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 2_048).unwrap();
+        let peer = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 2_048).unwrap();
+        let mut runtime = CallRuntime::udp(
+            CallEngine::new(EngineConfig::default()).unwrap(),
+            runtime_transport,
+        );
+        let (call_id, _) = runtime
+            .originate(invite(), peer.local_addr().unwrap(), Duration::ZERO)
+            .unwrap();
+        let _ = peer.recv().unwrap();
+
+        let diagnostics = runtime.diagnostics(&call_id).unwrap();
+        assert_eq!(diagnostics.call_id, call_id);
+        assert_eq!(diagnostics.signaling.client_transactions, 1);
+        assert!(!format!("{diagnostics:?}").contains("runtime-invite@example.com"));
+
+        let reader = principal(&[ControlPermission::ReadCalls]);
+        assert_eq!(
+            runtime.diagnostics_authorized(&reader, &call_id).unwrap(),
+            diagnostics
+        );
+        assert!(matches!(
+            runtime.diagnostics_authorized(&principal(&[]), &CallId::from_sequence(99)),
+            Err(RuntimeError::Engine(EngineError::CallApi(
+                call_api::ApiError::ReadPermissionDenied
+            )))
+        ));
+        assert_eq!(runtime.list_diagnostics(8).unwrap(), vec![diagnostics]);
     }
 
     #[test]

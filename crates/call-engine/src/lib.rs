@@ -21,7 +21,7 @@ use call_api::{
 };
 use call_core::{CallId, CallState, CommandId, LifecycleEvent};
 use sip_auth::{DigestAuthorization, DigestChallenge, DigestCredentials, DigestError};
-use sip_dialog::{Dialog, DialogConfig, DialogError, DialogState};
+use sip_dialog::{Dialog, DialogConfig, DialogError, DialogRole, DialogState};
 use sip_transaction::{
     ClientAction, ClientState, ClientTransaction, ServerAction, ServerState, ServerTransaction,
     TimerConfig, TransactionError, TransportReliability,
@@ -255,6 +255,72 @@ pub struct EngineMetrics {
     pub pending_reliable_provisionals: usize,
     /// Whether new call admission is currently draining.
     pub draining: bool,
+}
+
+/// Redaction-safe diagnostics for one retained call.
+///
+/// This view intentionally contains the application call identifier and
+/// bounded protocol counters, but omits SIP Call-IDs, tags, request URIs,
+/// network addresses, credentials, and raw message bodies. It is suitable for
+/// post-call export and operational inspection without turning per-call
+/// identifiers into metric labels or log fields.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CallDiagnostics {
+    /// Stable application-owned call identifier.
+    pub call_id: CallId,
+    /// Current high-level lifecycle state.
+    pub state: CallState,
+    /// Dialog state and bounded sequence metadata, when a dialog exists.
+    pub dialog: Option<DialogDiagnostics>,
+    /// Negotiated audio details with address-bearing fields removed.
+    pub media: Option<MediaDiagnostics>,
+    /// Signaling resources retained for this call.
+    pub signaling: SignalingDiagnostics,
+}
+
+/// Redaction-safe dialog details retained for diagnostics.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DialogDiagnostics {
+    /// Whether the dialog is a UAC or UAS.
+    pub role: DialogRole,
+    /// Current SIP dialog state.
+    pub state: DialogState,
+    /// Most recently allocated local sequence number.
+    pub local_sequence: u32,
+    /// Most recently accepted remote sequence number, if any.
+    pub remote_sequence: Option<u32>,
+    /// Number of bounded Record-Route entries retained.
+    pub route_count: usize,
+    /// Whether the remote tag has been learned.
+    pub remote_tag_present: bool,
+}
+
+/// Address-free negotiated audio details retained for diagnostics.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MediaDiagnostics {
+    /// Payload type selected from the local offer.
+    pub local_payload_type: u8,
+    /// Payload type selected from the remote offer.
+    pub remote_payload_type: u8,
+    /// Resulting local media direction.
+    pub direction: sdp::Direction,
+    /// Remote RTP port advertised by the negotiated audio section.
+    pub remote_port: u16,
+}
+
+/// Bounded signaling-resource details retained for diagnostics.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct SignalingDiagnostics {
+    /// Number of active client transactions owned by this call.
+    pub client_transactions: usize,
+    /// Number of active server transactions owned by this call.
+    pub server_transactions: usize,
+    /// Number of final responses still retained for retransmission.
+    pub pending_final_responses: usize,
+    /// Whether a reliable provisional response is awaiting PRACK.
+    pub reliable_provisional_pending: bool,
+    /// Number of Digest retries recorded for this call.
+    pub digest_retries: usize,
 }
 
 /// Liveness and admission-readiness state for one call engine.
@@ -588,6 +654,90 @@ impl CallEngine {
         limit: usize,
     ) -> Result<Vec<CallSnapshot>, EngineError> {
         Ok(self.registry.list_authorized(principal, limit)?)
+    }
+
+    /// Returns a redaction-safe diagnostic view for one retained call.
+    ///
+    /// The view contains no SIP Call-ID, tags, request URI, network address,
+    /// credential, or raw-message fields. It remains available for terminal
+    /// calls until [`Self::reclaim_terminal_call`] releases their bounded
+    /// registry slot.
+    pub fn diagnostics(&self, id: &CallId) -> Result<CallDiagnostics, EngineError> {
+        let snapshot = self.registry.snapshot(id)?;
+        let dialog = self.dialogs.get(id).map(|dialog| DialogDiagnostics {
+            role: dialog.role(),
+            state: dialog.state(),
+            local_sequence: dialog.local_sequence(),
+            remote_sequence: dialog.remote_sequence(),
+            route_count: dialog.route_set().len(),
+            remote_tag_present: dialog.remote_tag().is_some(),
+        });
+        let media = snapshot.media.as_ref().map(|media| MediaDiagnostics {
+            local_payload_type: media.local_codec.payload_type,
+            remote_payload_type: media.remote_codec.payload_type,
+            direction: media.direction,
+            remote_port: media.remote_port,
+        });
+        let signaling = SignalingDiagnostics {
+            client_transactions: self
+                .client_calls
+                .values()
+                .filter(|call_id| *call_id == id)
+                .count(),
+            server_transactions: self
+                .server_calls
+                .values()
+                .filter(|call_id| *call_id == id)
+                .count(),
+            pending_final_responses: self
+                .final_invites
+                .values()
+                .filter(|invite| &invite.call_id == id)
+                .count()
+                + self
+                    .final_server_invites
+                    .values()
+                    .filter(|invite| &invite.call_id == id)
+                    .count(),
+            reliable_provisional_pending: self.reliable_provisionals.contains_key(id),
+            digest_retries: self.digest_retries.get(id).copied().unwrap_or_default(),
+        };
+        Ok(CallDiagnostics {
+            call_id: snapshot.id,
+            state: snapshot.state,
+            dialog,
+            media,
+            signaling,
+        })
+    }
+
+    /// Returns one diagnostic view after verifying control-plane read access.
+    pub fn diagnostics_authorized(
+        &self,
+        principal: &AuthenticatedPrincipal,
+        id: &CallId,
+    ) -> Result<CallDiagnostics, EngineError> {
+        principal.authorize_read()?;
+        self.diagnostics(id)
+    }
+
+    /// Returns deterministic redaction-safe diagnostics ordered by call ID.
+    pub fn list_diagnostics(&self, limit: usize) -> Result<Vec<CallDiagnostics>, EngineError> {
+        self.registry
+            .list(limit)?
+            .into_iter()
+            .map(|snapshot| self.diagnostics(&snapshot.id))
+            .collect()
+    }
+
+    /// Lists diagnostic views after verifying control-plane read access.
+    pub fn list_diagnostics_authorized(
+        &self,
+        principal: &AuthenticatedPrincipal,
+        limit: usize,
+    ) -> Result<Vec<CallDiagnostics>, EngineError> {
+        principal.authorize_read()?;
+        self.list_diagnostics(limit)
     }
 
     /// Applies an application call-control command and returns its events.
@@ -2619,6 +2769,114 @@ mod tests {
         assert_eq!(reclaimed.active_dialogs, 0);
         assert_eq!(reclaimed.calls.calls_active, 0);
         assert_eq!(reclaimed.calls.calls_retained, 0);
+    }
+
+    #[test]
+    fn call_diagnostics_export_bounded_redacted_state_until_reclamation() {
+        let mut engine = CallEngine::new(EngineConfig::default()).unwrap();
+        let request = invite(
+            "diagnostics-branch",
+            "diagnostics-sip-call@example.com",
+            "<sip:bob@example.com>",
+            "1 INVITE",
+        );
+        let (call_id, _) = engine
+            .originate(
+                request.clone(),
+                address(5060),
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+
+        let initial = engine.diagnostics(&call_id).unwrap();
+        assert_eq!(initial.call_id, call_id);
+        assert_eq!(initial.state, CallState::Inviting);
+        assert_eq!(
+            initial.dialog,
+            Some(DialogDiagnostics {
+                role: DialogRole::Uac,
+                state: DialogState::Early,
+                local_sequence: 1,
+                remote_sequence: None,
+                route_count: 0,
+                remote_tag_present: false,
+            })
+        );
+        assert_eq!(
+            initial.signaling,
+            SignalingDiagnostics {
+                client_transactions: 1,
+                server_transactions: 0,
+                pending_final_responses: 0,
+                reliable_provisional_pending: false,
+                digest_retries: 0,
+            }
+        );
+        assert!(initial.media.is_none());
+        let debug = format!("{initial:?}");
+        assert!(!debug.contains("diagnostics-sip-call@example.com"));
+        assert!(!debug.contains("bob@example.com"));
+        assert!(!debug.contains("diagnostics-branch"));
+
+        engine
+            .negotiate_audio(
+                &call_id,
+                &sdp::SessionDescription::new_audio("local", "198.51.100.1", 4000),
+                &sdp::SessionDescription::new_audio("remote", "203.0.113.5", 5000),
+            )
+            .unwrap();
+        let negotiated = engine.diagnostics(&call_id).unwrap();
+        assert_eq!(
+            negotiated.media,
+            Some(MediaDiagnostics {
+                local_payload_type: 0,
+                remote_payload_type: 0,
+                direction: sdp::Direction::SendRecv,
+                remote_port: 5000,
+            })
+        );
+        let negotiated_debug = format!("{negotiated:?}");
+        assert!(!negotiated_debug.contains("198.51.100.1"));
+        assert!(!negotiated_debug.contains("203.0.113.5"));
+
+        engine
+            .receive_response(successful_response(&request), Duration::from_millis(1))
+            .unwrap();
+        let confirmed = engine.diagnostics(&call_id).unwrap();
+        assert_eq!(confirmed.state, CallState::Answered);
+        assert_eq!(
+            confirmed.dialog.map(|dialog| dialog.state),
+            Some(DialogState::Confirmed)
+        );
+        assert_eq!(confirmed.signaling.client_transactions, 0);
+        assert_eq!(confirmed.signaling.pending_final_responses, 1);
+
+        let read_only = principal(&[ControlPermission::ReadCalls]);
+        assert_eq!(
+            engine.diagnostics_authorized(&read_only, &call_id),
+            Ok(confirmed.clone())
+        );
+        assert_eq!(
+            engine.diagnostics_authorized(&principal(&[]), &CallId::from_sequence(99)),
+            Err(EngineError::CallApi(ApiError::ReadPermissionDenied))
+        );
+        assert_eq!(engine.list_diagnostics(8).unwrap(), vec![confirmed]);
+
+        engine
+            .apply_call_command(&call_id, CallCommand::Hangup)
+            .unwrap();
+        engine
+            .apply_call_command(&call_id, CallCommand::End)
+            .unwrap();
+        let terminal = engine.diagnostics(&call_id).unwrap();
+        assert_eq!(terminal.state, CallState::Ended);
+        assert_eq!(terminal.signaling, SignalingDiagnostics::default());
+        engine.reclaim_terminal_call(&call_id).unwrap();
+        assert_eq!(
+            engine.diagnostics(&call_id),
+            Err(EngineError::CallApi(ApiError::UnknownCall))
+        );
     }
 
     #[test]
