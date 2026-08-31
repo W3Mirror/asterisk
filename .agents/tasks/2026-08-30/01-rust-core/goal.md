@@ -2313,7 +2313,7 @@ worktree: /home/ashutosh/PROJECTS/w3mirror/asterisk
 branch: aistack/main
 base_branch: aistack/main
 pr: none
-head_sha: pending
+head_sha: 9339823d8c96fb5c5183100ed03eeb6c557f641c
 evidence: goal.md now covers control-plane correctness, lifecycle/event delivery, post-call metadata and diagnostics, failure/recovery, observability/security, deployment rollback, deterministic replay, property testing, offline integration, differential comparison, load, memory reclamation, and a change-surface test matrix. It records that every implementation PR must ship focused affected-module tests; pull_request events run the complete ordinary hosted workspace suite, and pushes to aistack/main repeat that same ordinary offline suite. The current workflow has no changed-module-only selector; scheduled/manual tiers remain for extended, long-running, environment-dependent, and credentialed live-provider checks.
 blockers: none
 next_action: Confirm the production deployment and obtain sanitized inbound/outbound provider call-flow captures
