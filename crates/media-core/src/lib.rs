@@ -7,7 +7,8 @@ mod session;
 pub use jitter::{JitterBufferConfig, JitterBufferStats, JitterPushOutcome};
 pub use recording::{AudioRecorder, RecorderConfig, RecordingError, RecordingMetadata};
 pub use session::{
-    MediaSession, MediaSessionConfig, MediaSessionError, MediaSessionStats, ReceivedMedia,
+    MediaReclamation, MediaSession, MediaSessionConfig, MediaSessionError, MediaSessionStats,
+    ReceivedMedia,
 };
 
 use std::{
@@ -114,6 +115,17 @@ impl<T> BoundedMediaQueue<T> {
 
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
+    }
+
+    /// Removes all retained items and returns the number released.
+    ///
+    /// The queue remains usable with the same bounded capacity and counters;
+    /// this is intended for terminal media cleanup where historical push/drop
+    /// metrics must remain observable while queued payloads are reclaimed.
+    pub fn clear(&mut self) -> usize {
+        let released = self.items.len();
+        self.items.clear();
+        released
     }
 
     pub fn stats(&self) -> QueueStats {
@@ -230,6 +242,10 @@ impl AudioBridge {
             to_ai: self.to_ai.stats(),
             from_ai: self.from_ai.stats(),
         }
+    }
+
+    fn clear(&mut self) -> (usize, usize) {
+        (self.to_ai.clear(), self.from_ai.clear())
     }
 }
 

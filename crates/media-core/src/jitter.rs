@@ -216,6 +216,18 @@ impl AudioJitterBuffer {
         self.stats
     }
 
+    pub(crate) fn clear(&mut self) -> usize {
+        let released = self.packets.len();
+        self.packets.clear();
+        self.source_ssrc = None;
+        self.highest_timestamp = None;
+        self.highest_sequence = None;
+        self.last_played = None;
+        self.timeline = None;
+        self.refresh_depth();
+        released
+    }
+
     fn deadline(&self, timestamp: i64, clock_rate: u32) -> Option<Duration> {
         let timeline = self.timeline?;
         let signed_ticks = timestamp.saturating_sub(timeline.timestamp);

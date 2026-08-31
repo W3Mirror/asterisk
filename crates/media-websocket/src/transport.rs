@@ -8,11 +8,11 @@ use std::{
     io::{self, Read, Write},
 };
 
-use media_core::MediaSession;
+use media_core::{MediaReclamation, MediaSession};
 
 use crate::{
-    CloseFrame, MediaCommand, MediaWebSocketError, MediaWebSocketEvent, MediaWebSocketSession,
-    OpCode, WebSocketFrame, WebSocketRole,
+    CloseFrame, MediaCommand, MediaStart, MediaWebSocketError, MediaWebSocketEvent,
+    MediaWebSocketSession, OpCode, WebSocketFrame, WebSocketRole,
 };
 
 const MAX_FRAME_WIRE_OVERHEAD: usize = 14;
@@ -177,6 +177,21 @@ pub enum TransportError {
     MaskKey(MaskKeyError),
 }
 
+/// Bounded state released after an unrecoverable media WebSocket failure.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MediaWebSocketCleanup {
+    /// Negotiated stream metadata that was detached from the adapter.
+    pub stream: Option<MediaStart>,
+    /// Partial encoded bytes removed from the inbound read buffer.
+    pub buffered_read_bytes: usize,
+    /// Encoded frames discarded from the outbound write queue.
+    pub pending_write_frames: usize,
+    /// Encoded bytes discarded from the outbound write queue.
+    pub pending_write_bytes: usize,
+    /// Media queue, jitter, and DTMF items reclaimed from the session.
+    pub media: MediaReclamation,
+}
+
 impl Display for TransportError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         match self {
@@ -258,6 +273,7 @@ pub struct MediaWebSocketTransport<S, M = NoMaskKeySource> {
     close_received: bool,
     close_sent: bool,
     read_closed: bool,
+    failed: bool,
 }
 
 struct PendingWrite {
@@ -311,6 +327,7 @@ impl<S: Read + Write, M: MaskKeySource> MediaWebSocketTransport<S, M> {
             close_received: false,
             close_sent: false,
             read_closed: false,
+            failed: false,
         })
     }
 
@@ -381,6 +398,36 @@ impl<S: Read + Write, M: MaskKeySource> MediaWebSocketTransport<S, M> {
     #[must_use]
     pub const fn close_sent(&self) -> bool {
         self.close_sent
+    }
+
+    /// Returns whether terminal failure cleanup has been performed.
+    #[must_use]
+    pub const fn is_failed(&self) -> bool {
+        self.failed
+    }
+
+    /// Reclaims all bounded state after an unrecoverable read, write, or
+    /// downstream AI disconnect.
+    ///
+    /// Call this after handling [`TransportError::ConnectionClosed`],
+    /// [`TransportError::Io`], [`TransportError::WriteZero`], or another
+    /// terminal transport error. It is idempotent: subsequent calls release
+    /// no additional state. No close frame is attempted because the caller has
+    /// declared the underlying stream unusable.
+    pub fn cleanup_after_failure(&mut self) -> MediaWebSocketCleanup {
+        let cleanup = MediaWebSocketCleanup {
+            stream: self.adapter.reset(),
+            buffered_read_bytes: self.read_buffer.len(),
+            pending_write_frames: self.pending_writes.len(),
+            pending_write_bytes: self.pending_write_bytes,
+            media: self.media.reclaim_pending(),
+        };
+        self.read_buffer.clear();
+        self.pending_writes.clear();
+        self.pending_write_bytes = 0;
+        self.read_closed = true;
+        self.failed = true;
+        cleanup
     }
 
     /// Reads at most one bounded chunk and processes all complete frames now
@@ -629,7 +676,7 @@ mod tests {
         io::{Cursor, Read, Result as IoResult, Write},
     };
 
-    use media_core::{MediaBridgeConfig, MediaSessionConfig};
+    use media_core::{AudioFrame, MediaBridgeConfig, MediaReclamation, MediaSessionConfig};
     use rtp::{RtpSession, RtpSessionConfig};
 
     use super::*;
@@ -980,5 +1027,57 @@ mod tests {
             transport.read_once(),
             Err(TransportError::ConnectionClosed { buffered_bytes: 1 })
         ));
+    }
+
+    #[test]
+    fn failure_cleanup_reclaims_partial_io_pending_writes_and_media_once() {
+        let mut input = start_frame(WebSocketRole::Client);
+        input.push(0x82);
+        let stream = TestStream::new(input, 2_048, 2_048);
+        let mut transport = MediaWebSocketTransport::new(
+            stream,
+            adapter(WebSocketRole::Server),
+            media(),
+            transport_config(),
+        )
+        .unwrap();
+        receive_start(&mut transport);
+        transport.media_mut().push_from_ai(AudioFrame {
+            timestamp: 1,
+            codec: media_core::AudioCodec::Pcmu,
+            sample_rate: 8_000,
+            samples: vec![1, 2, 3, 4],
+        });
+        transport.queue_command(&MediaCommand::Answer).unwrap();
+        assert!(matches!(
+            transport.read_once(),
+            Err(TransportError::ConnectionClosed { buffered_bytes: 1 })
+        ));
+
+        let cleanup = transport.cleanup_after_failure();
+        assert_eq!(cleanup.stream.unwrap().connection_id, "INCOMING");
+        assert_eq!(cleanup.buffered_read_bytes, 1);
+        assert_eq!(cleanup.pending_write_frames, 1);
+        assert!(cleanup.pending_write_bytes > 0);
+        assert_eq!(cleanup.media.from_ai_frames, 1);
+        assert_eq!(cleanup.media.to_ai_frames, 0);
+        assert_eq!(cleanup.media.jitter_packets, 0);
+        assert_eq!(cleanup.media.dtmf_notifications, 0);
+        assert!(transport.is_failed());
+        assert_eq!(transport.pending_write_frames(), 0);
+        assert_eq!(transport.pending_write_bytes(), 0);
+        assert!(transport.adapter().stream().is_none());
+        assert_eq!(transport.media().stats().bridge.from_ai.depth, 0);
+        assert_eq!(
+            transport.cleanup_after_failure(),
+            MediaWebSocketCleanup {
+                stream: None,
+                buffered_read_bytes: 0,
+                pending_write_frames: 0,
+                pending_write_bytes: 0,
+                media: MediaReclamation::default(),
+            }
+        );
+        assert!(matches!(transport.read_once(), Err(TransportError::Closed)));
     }
 }

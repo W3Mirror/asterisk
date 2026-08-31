@@ -934,4 +934,46 @@ mod tests {
         assert_eq!(report.final_pending_write_frames, 0);
         assert_eq!(report.final_media_queue_depth, 0);
     }
+
+    #[test]
+    fn ai_disconnect_reclaims_websocket_buffers_and_media_queues() {
+        let mut stream = WebSocketStream::new(
+            WebSocketSmokeConfig {
+                total_streams: 1,
+                concurrent_streams: 1,
+                frames_per_stream: 1,
+                queue_capacity: 2,
+            },
+            1,
+        )
+        .unwrap();
+        stream
+            .transport
+            .media_mut()
+            .push_from_ai(media_core::AudioFrame {
+                timestamp: 1,
+                codec: media_core::AudioCodec::Pcmu,
+                sample_rate: 8_000,
+                samples: vec![0; AUDIO_SAMPLES],
+            });
+        stream
+            .transport
+            .queue_command(&MediaCommand::Answer)
+            .unwrap();
+        stream.transport.stream_mut().push_input(vec![0x82]);
+        assert!(stream.transport.read_once().unwrap().is_empty());
+        assert!(matches!(
+            stream.transport.read_once(),
+            Err(TransportError::ConnectionClosed { buffered_bytes: 1 })
+        ));
+
+        let cleanup = stream.transport.cleanup_after_failure();
+        assert_eq!(cleanup.buffered_read_bytes, 1);
+        assert_eq!(cleanup.pending_write_frames, 1);
+        assert_eq!(cleanup.media.from_ai_frames, 1);
+        assert!(stream.transport.is_failed());
+        assert_eq!(stream.transport.pending_write_frames(), 0);
+        assert_eq!(stream.transport.media().stats().bridge.from_ai.depth, 0);
+        assert!(stream.transport.adapter().stream().is_none());
+    }
 }

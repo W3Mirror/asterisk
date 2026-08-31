@@ -18,8 +18,8 @@ use media_core::{AudioCodec, AudioFrame, MediaSession, PushOutcome};
 mod transport;
 
 pub use transport::{
-    MaskKeyError, MaskKeySource, MediaWebSocketTransport, MediaWebSocketTransportConfig,
-    NoMaskKeySource, OsRandomMaskKeySource, TransportError,
+    MaskKeyError, MaskKeySource, MediaWebSocketCleanup, MediaWebSocketTransport,
+    MediaWebSocketTransportConfig, NoMaskKeySource, OsRandomMaskKeySource, TransportError,
 };
 
 const DEFAULT_MAX_FRAME_BYTES: usize = 64 * 1024;
@@ -499,6 +499,10 @@ impl WebSocketSession {
         self.config
     }
 
+    pub(crate) fn reset(&mut self) {
+        self.fragment = None;
+    }
+
     /// Accepts one decoded frame and emits zero or one complete event.
     pub fn receive_frame(
         &mut self,
@@ -870,6 +874,21 @@ impl MediaWebSocketSession {
     #[must_use]
     pub const fn config(&self) -> MediaWebSocketConfig {
         self.config
+    }
+
+    /// Resets negotiated and partially received media state after a terminal
+    /// WebSocket disconnect and returns the prior stream metadata.
+    ///
+    /// Historical framing and media counters remain owned by the associated
+    /// [`MediaSession`]. This method only releases the adapter's bounded
+    /// fragmented-message, partial-media, timestamp, and negotiated-stream
+    /// state so a replacement stream cannot inherit stale protocol data.
+    pub fn reset(&mut self) -> Option<MediaStart> {
+        let stream = self.stream.take();
+        self.websocket.reset();
+        self.next_timestamp = 0;
+        self.inbound_remainder.clear();
+        stream
     }
 
     /// Decodes one raw WebSocket frame, applies media messages to `media`, and
@@ -1450,6 +1469,60 @@ mod tests {
         ));
         assert_eq!(media.stats().bridge.from_ai.depth, 1);
         assert_eq!(media.stats().bridge.from_ai.pushed, 1);
+    }
+
+    #[test]
+    fn reset_releases_negotiated_and_partial_message_state() {
+        let config = MediaWebSocketConfig {
+            websocket: server_config(),
+            max_frame_samples: 4,
+            ..MediaWebSocketConfig::default()
+        };
+        let mut websocket = MediaWebSocketSession::new(config).unwrap();
+        let mut media = media_session();
+        websocket
+            .receive_frame(
+                WebSocketFrame::text(
+                    "MEDIA_START connection_id:x channel_id:y format:ulaw optimal_frame_size:4",
+                ),
+                &mut media,
+            )
+            .unwrap();
+        websocket
+            .receive_frame(
+                WebSocketFrame::new(false, OpCode::Binary, vec![0xff, 0xce]),
+                &mut media,
+            )
+            .unwrap();
+
+        let stream = websocket.reset();
+        assert_eq!(stream.unwrap().connection_id, "x");
+        assert!(websocket.stream().is_none());
+        assert_eq!(
+            websocket.receive_frame(
+                WebSocketFrame::new(true, OpCode::Continuation, vec![0x4e, 0x00]),
+                &mut media,
+            ),
+            Err(MediaWebSocketError::WebSocket(
+                WebSocketError::UnexpectedContinuation
+            ))
+        );
+
+        websocket
+            .receive_frame(
+                WebSocketFrame::text(
+                    "MEDIA_START connection_id:new channel_id:z format:ulaw optimal_frame_size:4",
+                ),
+                &mut media,
+            )
+            .unwrap();
+        let events = websocket
+            .receive_frame(WebSocketFrame::binary(vec![0xff; 4]), &mut media)
+            .unwrap();
+        assert!(matches!(
+            events.as_slice(),
+            [MediaWebSocketEvent::Audio { timestamp: 0, .. }]
+        ));
     }
 
     #[test]
