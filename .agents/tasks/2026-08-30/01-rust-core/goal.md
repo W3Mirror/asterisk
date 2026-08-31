@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: Proposed**  
-**Current checkpoint:** CP-007 — Meta endpoint live-readiness probe recorded
-**Last checkpoint (UTC):** 2026-08-31T12:30:46Z
+**Current checkpoint:** CP-008 — Test event execution matrix recorded
+**Last checkpoint (UTC):** 2026-08-31T14:14:59Z
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
 **Active milestone:** Milestone 1 — Scope Baseline  
 **Next resume action:** Confirm the production deployment and obtain sanitized inbound/outbound provider call-flow captures
@@ -2168,6 +2168,26 @@ evidence: `dig +noall +answer sip-trunk.w3.run @1.1.1.1` returned `65.1.135.111`
 blockers: the documented provider endpoint is not currently pointed at this host and no production credentials or packet captures are available in the checkout
 next_action: Obtain the effective production configuration and sanitized inbound/outbound provider call-flow captures from the operator/provider boundary
 rollback: Asterisk remains the active/fallback engine; no routing was changed
+```
+
+### CP-008 — Test event execution matrix recorded
+
+```yaml
+checkpoint_id: CP-008
+recorded_at_utc: 2026-08-31T14:14:59Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 1 — Scope Baseline
+scope: Clarify implementation test obligations and hosted CI behavior by repository event
+worktree: /home/ashutosh/PROJECTS/w3mirror/asterisk
+branch: aistack/main
+base_branch: aistack/main
+pr: none
+head_sha: 7dcd74873
+evidence: goal.md now includes an event-to-test matrix. Pull request opened, reopened, and synchronize events require focused tests for every affected crate/module and run the complete ordinary hosted workspace suite when a Rust workspace exists; pushes to aistack/main run that same integrated suite. Scheduled/manual runs remain the place for extended, long-running, environment-dependent, credentialed, and live-provider checks. The matrix records that the current workflow does not select only changed modules.
+blockers: none
+next_action: Confirm the production deployment and obtain sanitized inbound/outbound provider call-flow captures
+rollback: not_applicable; this checkpoint changes documentation only
 ```
 
 ### Checkpoint template
