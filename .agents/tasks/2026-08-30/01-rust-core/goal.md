@@ -5018,6 +5018,27 @@ rollback: Keep all signaling, media, and call routing on Asterisk; do not enable
 notes: Relevant tests ship with the behavior they cover. Every pull request and push to aistack/main runs the complete ordinary hosted suite rather than affected-module-only selection. All workflow runners remain hosted ubuntu-latest, and Docker remains limited to pinned SIPp inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
+### CP-137 — PR #47 published with hosted validation running
+
+~~~yaml
+checkpoint_id: CP-137
+recorded_at_utc: 2026-08-31T06:22:01Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Provider-policy outbound SIP Digest credential resolution and rotation
+scope: Publish the locally green provider-policy Digest credential resolver as stacked PR #47 and reconcile its worktree, branch, base, implementation head, and initial hosted-check state
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-47
+branch: provider-digest-runtime
+base_branch: outbound-digest-auth
+pr: https://github.com/W3Mirror/asterisk/pull/47
+head_sha: a11931e4f73a506734a6c011b97c9de8de0fa904 implementation and local-green checkpoint head before this publication checkpoint
+evidence: Implementation, three directly relevant regressions, dependency wiring, and CP-136 were committed normally as a11931e4f without bypassing hooks and pushed with exact local, origin/provider-digest-runtime, and GitHub PR-head parity. PR #47 is OPEN, non-draft, MERGEABLE, and targets exact base outbound-digest-auth. Hosted Rust quality run 33363877061 started Workspace checks, Protocol fuzz checks, and Dependency audit; the schedule/manual-only Two-hour lifecycle soak and Signaling capacity matrix correctly report skipped for the pull-request event
+blockers: The complete hosted ordinary suite is still running. This slice has no real secret-store integration, provider credentials, carrier stale-nonce exchange, or Asterisk/provider interoperability evidence and does not authorize Rust traffic. Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Push this CP-137 publication checkpoint, verify local, origin, and GitHub parity on its final head, and wait for Workspace checks, Protocol fuzz checks, and Dependency audit to reach a successful terminal state
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #47 or revert the provider-policy credential resolver integration if its contract is superseded
+notes: PR #47 contains the implementation, directly relevant tests, dependency wiring, and append-only goal checkpoints. Every pull request and push to aistack/main runs the complete ordinary hosted suite. All workflow runners remain hosted ubuntu-latest, and Docker remains limited to pinned SIPp inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
 ## 59.4 Stacked-PR Checkpoints
 
 Each PR should leave a green checkpoint before the next PR depends on it:
