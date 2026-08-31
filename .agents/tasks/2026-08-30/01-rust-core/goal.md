@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: Proposed**  
-**Current checkpoint:** CP-010 — PR and main-push test execution clarification
-**Last checkpoint (UTC):** 2026-08-31T17:02:34Z
+**Current checkpoint:** CP-011 — Hosted main-push validation of test execution contract
+**Last checkpoint (UTC):** 2026-08-31T17:03:49Z
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
 **Active milestone:** Milestone 1 — Scope Baseline  
 **Next resume action:** Confirm the production deployment and obtain sanitized inbound/outbound provider call-flow captures
@@ -2347,6 +2347,26 @@ evidence: goal.md now states the exact event semantics: pull_request opened/reop
 blockers: none
 next_action: Confirm the production deployment and obtain sanitized inbound/outbound provider call-flow captures
 rollback: not_applicable; this checkpoint changes documentation only
+```
+
+### CP-011 — Hosted main-push validation of test execution contract
+
+```yaml
+checkpoint_id: CP-011
+recorded_at_utc: 2026-08-31T17:03:49Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 1 — Scope Baseline
+scope: Validate the documented main-push test behavior on the hosted workflow
+worktree: /home/ashutosh/PROJECTS/w3mirror/asterisk
+branch: aistack/main
+base_branch: aistack/main
+pr: none
+head_sha: 293323d9c708cbe26d7339d7dfede836e073426b
+evidence: Hosted Rust quality run 33417495859 (https://github.com/W3Mirror/asterisk/actions/runs/33417495859) completed successfully for this exact aistack/main head on ubuntu-latest. The workflow triggered all three jobs; workspace format/tests/Clippy, protocol fuzz, and dependency audit steps were visibly skipped because this pre-Rust stack layer has no Cargo manifests. Once Rust manifests exist, the same push trigger will execute those ordinary checks.
+blockers: Rust test execution is not yet possible on aistack/main because the Rust workspace has not landed; this is a recorded stack-layer condition, not a workflow failure
+next_action: Confirm the production deployment and obtain sanitized inbound/outbound provider call-flow captures
+rollback: Asterisk remains the active/fallback engine; no routing was changed
 ```
 
 ### Checkpoint template
