@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**  
-**Current checkpoint:** CP-015 — PR #1 hosted validation and mergeability confirmed
-**Last checkpoint (UTC):** 2026-08-31T19:33:31Z
+**Current checkpoint:** CP-016 — Reconcile PR #2 with current PR #1 base
+**Last checkpoint (UTC):** 2026-08-31T19:36:40Z
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
 **Active milestone:** Milestone 1 — Scope Baseline  
-**Next resume action:** Update PR #2's base branch in stack order, run its focused and hosted checks, and record the resulting head and mergeability
-**Active PR:** [#1](https://github.com/W3Mirror/asterisk/pull/1); the first stacked PR targets `aistack/main`  
+**Next resume action:** Run the PR #2 Rust foundation test suite and hosted checks, then record its resulting head and mergeability
+**Active PR:** [#2](https://github.com/W3Mirror/asterisk/pull/2); foundation branch `rust-core-foundation` targets `sip-rtp-engine-rust`  
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/sip-rtp-engine-rust`  
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-2-rust-foundation`  
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -2117,8 +2117,8 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 
 | Workstream | Status | Evidence / checkpoint | PR | Next action |
 | --- | --- | --- | --- | --- |
-| Phase 0 — current Asterisk surface | in_progress | CP-015; PR #1 hosted run 33431176191 passed and GitHub reports CLEAN/MERGEABLE at `5458080094149d3d0034dfd8d23ca0db29144c3d` | #1 | Update PR #2's base branch in stack order and validate it |
-| Phase 1 — Rust media engine | not_started | — | — | Define media-core scope from the Phase 0 inventory |
+| Phase 0 — current Asterisk surface | in_progress | CP-015; PR #1 hosted run 33431290927 passed and GitHub reports CLEAN/MERGEABLE at `8dbd0082823b9444e72a6ceebee27328bd0f506d` | #1 | Keep the verified Asterisk inventory and production-evidence gate in force |
+| Phase 1 — Rust media engine | in_progress | CP-016; PR #2 bounded Rust SIP/SDP/RTP/RTCP/DTMF/media foundation is present and being revalidated on the current stack base | [#2](https://github.com/W3Mirror/asterisk/pull/2) | Run focused workspace tests and hosted checks before continuing the stack |
 | Phase 2 — SIP edge shadow mode | not_started | — | — | Build sanitized replay and comparison fixtures |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
 | Phase 4 — expanded provider coverage | not_started | — | — | Add one provider compatibility suite per rollout target |
@@ -2453,6 +2453,111 @@ rollback: Asterisk remains the active/fallback engine; no routing was changed
 notes: The first stack boundary is now current and mergeable; no production routing or provider traffic was attempted.
 ```
 
+### CP-005 — Provider-neutral Rust protocol/media foundation published (PR #2 branch history)
+
+```yaml
+checkpoint_id: CP-005
+recorded_at_utc: 2026-08-30T11:37:35Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 1 — Scope Baseline
+scope: Add bounded safe Rust SIP, SDP, RTP, RTCP, DTMF, media queue, G.711, and call lifecycle foundations without changing Asterisk routing
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-2-rust-foundation
+branch: rust-core-foundation
+base_branch: sip-rtp-engine-rust
+pr: "#2 https://github.com/W3Mirror/asterisk/pull/2"
+head_sha: 1677eee48bd43bc62c7edee5e200fd192df4a626
+evidence: cargo fmt --all -- --check; cargo test --workspace; cargo clippy --workspace --all-targets; git diff --cached --check; origin/rust-core-foundation equals local HEAD; PR #2 is OPEN and CLEAN with no production routing changes
+blockers: production provider/call-flow evidence and sanitized packet corpus remain unavailable from this host
+next_action: Collect redacted provider/runtime evidence and sanitized SIP/SDP/RTP fixtures on the actual Asterisk host
+rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain the existing fallback
+notes: Preserved from the PR #2 branch history while reconciling the shared goal ledger with the current main test contract.
+```
+
+### CP-006 — PR #2 remote publication reconciled (PR #2 branch history)
+
+```yaml
+checkpoint_id: CP-006
+recorded_at_utc: 2026-08-30T11:39:12Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 1 — Scope Baseline
+scope: Reconcile the stacked PR #2 remote head and goal ledger after publishing the implementation and checkpoint commits
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-2-rust-foundation
+branch: rust-core-foundation
+base_branch: sip-rtp-engine-rust
+pr: "#2 https://github.com/W3Mirror/asterisk/pull/2"
+head_sha: a811bb72c36d5dae2dc26c0b63382baf63ebf50d
+evidence: git status clean; local HEAD equals origin/rust-core-foundation and gh pr view #2 headRefOid; PR #2 is OPEN and CLEAN; PR #1 remains the Asterisk-surface stack base
+blockers: production provider/call-flow evidence and sanitized packet corpus remain unavailable from this host
+next_action: Collect redacted provider/runtime evidence and sanitized SIP/SDP/RTP fixtures on the actual Asterisk host
+rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain the existing fallback
+notes: Preserved from the PR #2 branch history while reconciling the shared goal ledger with the current main test contract.
+```
+
+### CP-007 — Protocol boundary tightening published (PR #2 branch history)
+
+```yaml
+checkpoint_id: CP-007
+recorded_at_utc: 2026-08-30T11:42:23Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 1 — Scope Baseline
+scope: Tighten SDP telephone-event generation and SIP start-line validation after protocol review
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-2-rust-foundation
+branch: rust-core-foundation
+base_branch: sip-rtp-engine-rust
+pr: "#2 https://github.com/W3Mirror/asterisk/pull/2"
+head_sha: 668ec7c36de96f72155ffaa0ca8eacbf1ec586fa
+evidence: targeted SIP/SDP tests plus cargo fmt, cargo test --workspace, and cargo clippy --workspace --all-targets green; PR #2 remote head verified OPEN and CLEAN
+blockers: production provider/call-flow evidence and sanitized packet corpus remain unavailable from this host
+next_action: Collect redacted provider/runtime evidence and sanitized SIP/SDP/RTP fixtures on the actual Asterisk host
+rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain the existing fallback
+notes: Preserved from the PR #2 branch history while reconciling the shared goal ledger with the current main test contract.
+```
+
+### CP-008 — RTP session and bounded audio bridge published (PR #2 branch history)
+
+```yaml
+checkpoint_id: CP-008
+recorded_at_utc: 2026-08-30T11:48:00Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 2 — Rust RTP Core
+scope: Add stateful bounded RTP send/receive sessions and a transport-agnostic bidirectional RTP-to-AI audio bridge
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-2-rust-foundation
+branch: rust-core-foundation
+base_branch: sip-rtp-engine-rust
+pr: "#2 https://github.com/W3Mirror/asterisk/pull/2"
+head_sha: 4fc9ec14b795742b5c89f45410f031b3acbd715c
+evidence: cargo fmt --all -- --check; cargo test --workspace; cargo clippy --workspace --all-targets; git diff --check origin/sip-rtp-engine-rust...HEAD; origin/rust-core-foundation equals local HEAD before this ledger commit; PR #2 is OPEN and CLEAN
+blockers: production provider/call-flow evidence and sanitized packet corpus remain unavailable from this host; concrete AI transport, recording, and live-call validation are still incomplete
+next_action: Collect redacted provider/runtime evidence and sanitized SIP/SDP/RTP fixtures on the actual Asterisk host
+rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain the existing fallback
+notes: Preserved from the PR #2 branch history while reconciling the shared goal ledger with the current main test contract. RtpSession validates payload/source, tracks sent/received metrics and inactivity; AudioBridge bounds both directions but does not claim WebSocket integration.
+```
+
+### CP-016 — Reconcile PR #2 with current PR #1 base
+
+```yaml
+checkpoint_id: CP-016
+recorded_at_utc: 2026-08-31T19:36:40Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Milestone 2 — Rust RTP Core
+scope: Merge the current PR #1 head into PR #2 and retain implementation checkpoint history
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-2-rust-foundation
+branch: rust-core-foundation
+base_branch: sip-rtp-engine-rust
+pr: "#2 https://github.com/W3Mirror/asterisk/pull/2"
+head_sha: 7544d7538
+evidence: Merged origin/sip-rtp-engine-rust into PR #2; resolved the goal-ledger conflict in favor of the current comprehensive acceptance/test contract, retained the detailed Phase 0 inventory, and preserved the PR #2 implementation checkpoint history. Cargo formatting, workspace tests, and workspace Clippy pass locally after the merge.
+blockers: Production deployment identity, effective configuration, provider credentials, and sanitized inbound/outbound captures remain unavailable; hosted PR #2 validation and mergeability recheck are pending
+next_action: Record the post-test PR #2 head, publish it, and verify hosted checks plus GitHub mergeability
+rollback: Asterisk remains the active/fallback engine; no routing was changed
+notes: The merge commit keeps downstream PR ancestry intact while bringing PR #2 onto PR #1's current documentation and test-contract head.
+```
+
 ### Checkpoint template
 
 Copy this template, assign the next checkpoint ID, fill every field, and append it after each meaningful state change:
@@ -2534,8 +2639,8 @@ Populate one row per PR before implementation begins, then update it at every ch
 
 | Order | PR | Branch | Base / target | Worktree | Scope | Status | Head SHA | CI / evidence | Next action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | [#1](https://github.com/W3Mirror/asterisk/pull/1) | `sip-rtp-engine-rust` | `aistack/main` | `/home/ashutosh/.worktrees/w3mirror/asterisk/sip-rtp-engine-rust` | Phase 0 repository surface inventory and evidence boundary | in_progress | `5458080094149d3d0034dfd8d23ca0db29144c3d` | Hosted run [33431176191](https://github.com/W3Mirror/asterisk/actions/runs/33431176191) passed; GitHub reports CLEAN/MERGEABLE; Rust checks skipped because this docs-only stack layer has no Cargo manifests | Update PR #2's base branch in stack order |
-| 2+ | Open stacked PRs | per PR metadata | immediately preceding PR branch | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-*` | Follow-on Rust protocol, media, runtime, test, and operational slices | in_progress | per PR | Downstream branches exist, but must be revalidated after PR #1 base reconciliation | Update downstream branches sequentially after PR #1 is green |
+| 1 | [#1](https://github.com/W3Mirror/asterisk/pull/1) | `sip-rtp-engine-rust` | `aistack/main` | `/home/ashutosh/.worktrees/w3mirror/asterisk/sip-rtp-engine-rust` | Phase 0 repository surface inventory and evidence boundary | in_progress | `8dbd0082823b9444e72a6ceebee27328bd0f506d` | Hosted run [33431290927](https://github.com/W3Mirror/asterisk/actions/runs/33431290927) passed; GitHub reports CLEAN/MERGEABLE; Rust checks skipped because this docs-only stack layer has no Cargo manifests | Validate PR #2 on this base |
+| 2 | [#2](https://github.com/W3Mirror/asterisk/pull/2) | `rust-core-foundation` | `sip-rtp-engine-rust` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-2-rust-foundation` | Provider-neutral bounded SIP/SDP/RTP/RTCP/DTMF/media/call foundations | in_progress | `d3bb4295a60e8c5764921663b180c9061708ebca` | PR #2 base reconciliation is staged locally; focused workspace validation and hosted recheck pending | Run focused workspace tests and hosted checks before continuing the stack |
 
 ## 59.4 Stacked-PR Checkpoints
 
