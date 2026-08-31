@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-108 — PR #39 published with hosted validation running
-**Last checkpoint (UTC):** 2026-08-31T01:05:56Z
+**Current checkpoint:** CP-109 — PR #39 hosted Sender Report validation green
+**Last checkpoint (UTC):** 2026-08-31T01:10:46Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Per-leg RTCP Sender Report scheduling<br>
-**Next resume action:** Push the PR #39 publication checkpoint and verify Workspace, Protocol fuzz, and Dependency audit on its final head
+**Next resume action:** Push the PR #39 green-check reconciliation and verify all three hosted jobs on its documentation-only final head; then begin bounded jitter playout work
 **Active PR:** [#39](https://github.com/W3Mirror/asterisk/pull/39) — `runtime-rtcp-sender-reports` targets `runtime-rtcp-leg-reports`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-39`
@@ -4407,6 +4407,27 @@ blockers: Hosted validation is pending on the publication checkpoint's final hea
 next_action: Push this publication checkpoint and verify all three hosted Rust quality gates on the final PR #39 head
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #39 if the Sender Report scheduling contract is superseded
 notes: PR #39 contains the relevant RTP/RTCP/media/bridge implementation, affected-module tests, documentation, manifest change, and goal checkpoint. GitHub runs the complete repository suite on the PR, not an affected-module-only subset. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-109 — PR #39 hosted Sender Report validation green
+
+~~~yaml
+checkpoint_id: CP-109
+recorded_at_utc: 2026-08-31T01:10:46Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Per-leg RTCP Sender Report scheduling
+scope: Verify the complete hosted Rust quality suite on PR #39's publication-checkpoint head before beginning bounded jitter playout work
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-39
+branch: runtime-rtcp-sender-reports
+base_branch: runtime-rtcp-leg-reports
+pr: https://github.com/W3Mirror/asterisk/pull/39
+head_sha: f3ebd509e7a481c2c0a09b46f9d4d8a0dcd9baa2 before this green-check reconciliation commit
+evidence: PR #39 is OPEN/non-draft/CLEAN against exact base `runtime-rtcp-leg-reports`, with local, origin, and GitHub publication-head parity; hosted run `33346568177` passed Workspace checks in 49 seconds, including formatting, all 198 tests, all three local SIPp scenarios, the 512-call reclamation smoke, and workspace Clippy; Protocol fuzz checks passed in 59 seconds across all six address-sanitizer targets; Dependency audit passed in 3 minutes 46 seconds
+blockers: Jitter playout, media/WebSocket load, long-duration soak/memory, sanitized captures, provider/Asterisk interoperability, rollback proof, and production evidence remain active goal work; the integrating event loop must supply correlated monotonic/NTP values; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Push this reconciliation checkpoint, verify all three hosted jobs on that documentation-only final head, then implement the next bounded jitter-buffer/playout slice without enabling Rust traffic
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #39 if the Sender Report scheduling contract is superseded
+notes: Relevant tests shipped with the implementation. Hosted PR CI and pushes to `aistack/main` continue to run the complete repository suite rather than affected-module selection. Scheduled-only extended property and reclamation steps were correctly skipped for the pull-request event. The only hosted annotation is the known non-blocking Node.js 20 runtime deprecation notice for `actions/checkout@v4`. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
