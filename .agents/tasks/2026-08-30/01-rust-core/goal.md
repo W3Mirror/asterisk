@@ -1762,9 +1762,10 @@ Current repository behavior is intentionally stronger than affected-module-only
 selection: every pull request runs formatting, the full locked Rust workspace
 test suite, all three local SIPp scenarios, the deterministic 512-call
 signaling reclamation smoke, the deterministic 64-stream bidirectional media
-reclamation smoke, workspace Clippy across all targets, the dependency audit,
-and compile/address-sanitizer checks for all six protocol fuzz targets. A push
-to `aistack/main` runs the same complete set. There are no path filters or
+reclamation smoke, the deterministic 64-stream bidirectional WebSocket-media
+transport smoke, workspace Clippy across all targets, the dependency audit, and
+compile/address-sanitizer checks for all six protocol fuzz targets. A push to
+`aistack/main` runs the same complete set. There are no path filters or
 affected-module test selection. Relevant focused tests must still ship with the
 code that changes their behavior; the full suite supplements those tests rather
 than replacing them.
@@ -1773,9 +1774,9 @@ The intended CI tiers are:
 
 | Tier | Trigger | Required coverage |
 | --- | --- | --- |
-| Pull request | Every pull request | Complete locked workspace tests (including tests introduced by the change), three local SIPp scenarios, 512-call signaling reclamation smoke, 64-stream bidirectional media reclamation smoke, all fuzz-target checks, dependency audit, format, and workspace Clippy |
+| Pull request | Every pull request | Complete locked workspace tests (including tests introduced by the change), three local SIPp scenarios, 512-call signaling reclamation smoke, 64-stream bidirectional RTP/media smoke, 64-stream bidirectional WebSocket-media transport smoke, all fuzz-target checks, dependency audit, format, and workspace Clippy |
 | Full branch | Every push to `aistack/main` | The same complete hosted suite as pull requests |
-| Scheduled | Monday 02:30 UTC, with dedicated jobs added as harnesses mature | The complete hosted suite plus the current 16,384-call signaling run, 4,096-stream/524,288-packet-per-direction media run, and 4,096 cases per property; later extended fuzzing, broader SIPp/WebSocket/combined load, differential replay, and long-duration soak/memory tests |
+| Scheduled | Monday 02:30 UTC, with dedicated jobs added as harnesses mature | The complete hosted suite plus the current 16,384-call signaling run, 4,096-stream/524,288-packet-per-direction RTP/media run, 4,096-stream/524,288-frame-per-direction WebSocket-media transport run, and 4,096 cases per property; later extended fuzzing, broader SIPp/socket/combined load, differential replay, and long-duration soak/memory tests |
 | Evidence gate | Before enabling or expanding Rust traffic | Sanitized Asterisk/provider replay plus real provider interoperability and rollback proof |
 
 Until affected-module selection is implemented and proven safe, PR CI must keep
@@ -2667,7 +2668,8 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 22 | [#22](https://github.com/W3Mirror/asterisk/pull/22) | `rust-quality-ci` | `protocol-fuzz` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-22-rust-quality-ci` | Documentation-only reconciliation of the hosted Rust CI rollout and explicit offline verification/CI tiers | in_progress | `1f22d5b39` before CP-060 ledger commit | PR22 is OPEN/non-draft/CLEAN at `1f22d5b39`; inherited hosted Workspace checks, Protocol fuzz checks, and Dependency audit all passed in run `33334469075`; repository-native workflow commit `534de1996` remains on `aistack/main` | Publish CP-060, then implement the deterministic synthetic SIP fixture/replay foundation in the next stacked PR |
 | 25 | [#25](https://github.com/W3Mirror/asterisk/pull/25) | `sip-scenario-replay` | `rust-quality-ci` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-25` | Offline deterministic replay foundation: bounded atomic scenario execution across raw SIP parsing, transactions, dialogs, calls, lifecycle events, RTP, and AI-media queues | in_progress | `c98312e75` before CP-063 green-check reconciliation | Five focused replay tests and all 134 workspace tests pass; formatting, strict package Clippy, workspace Clippy, lockfile, and diff checks pass; PR #25 is OPEN/non-draft/CLEAN; run `33335704000` passed Workspace checks, Protocol fuzz checks, and Dependency audit | Publish CP-063, then create the next stacked corpus-expansion PR |
 | 40 | [#40](https://github.com/W3Mirror/asterisk/pull/40) | `runtime-jitter-playout` | `runtime-rtcp-sender-reports` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-40` | Bounded caller-driven fixed-delay RTP audio jitter buffering and bridge/scenario playout integration | hosted green | `19ce0fd17` | CP-110–CP-112; focused media/runtime/bridge/replay tests and the full local matrix pass; PR #40 is OPEN/non-draft/CLEAN with local/origin/GitHub parity and final-head run `33348027308` passing Workspace checks, Protocol fuzz checks, and Dependency audit | Publish the bounded media-load slice from exact base `runtime-jitter-playout` |
-| 41 | [#41](https://github.com/W3Mirror/asterisk/pull/41) | `media-load-smoke` | `runtime-jitter-playout` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-41` | Bounded media-only RTP/jitter/AI-queue/RTP reclamation and capacity-reuse smoke for ordinary and scheduled CI | hosted green | `753aeb97a` before CP-115 green-check reconciliation | CP-113–CP-115; three focused tests and full local validation pass; PR #41 is OPEN/non-draft/CLEAN and run `33348850790` passed Workspace checks including the ordinary media smoke, Protocol fuzz checks, and Dependency audit | Push CP-115 and verify every hosted job on the documentation-only final head |
+| 41 | [#41](https://github.com/W3Mirror/asterisk/pull/41) | `media-load-smoke` | `runtime-jitter-playout` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-41` | Bounded media-only RTP/jitter/AI-queue/RTP reclamation and capacity-reuse smoke for ordinary and scheduled CI | hosted green | `7100981da` | CP-113–CP-115; three focused tests and full local validation pass; PR #41 is OPEN/non-draft/CLEAN with local/origin/GitHub parity and final-head run `33349070621` passing Workspace checks including the ordinary media smoke, Protocol fuzz checks, and Dependency audit | Publish the bounded WebSocket-media transport smoke from exact base `media-load-smoke` |
+| 42 | pending [#42](https://github.com/W3Mirror/asterisk/pull/42) | `websocket-load-smoke` | `media-load-smoke` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-42` | Bounded in-memory WebSocket/media transport parsing, partial-write backpressure, reclamation, and capacity-reuse smoke for ordinary and scheduled CI | locally green | `7100981da` before the implementation/checkpoint commit | CP-116; three focused WebSocket-load tests and all 213 workspace tests pass; all three pinned SIPp scenarios, ordinary and extended signaling/media/WebSocket smoke tiers, formatting, workspace and strict package Clippy, workflow YAML, six address-sanitizer fuzz-target checks, and diff checks pass | Commit and publish stacked PR #42 against exact base `media-load-smoke`, then verify every hosted Rust quality job on its final head |
 
 ### CP-026 — PR10 published and stacked remote parity verified
 
@@ -4557,6 +4559,27 @@ blockers: The 1,000/5,000/10,000 concurrent-call capacity matrix, real UDP/WebSo
 next_action: Push this green-check reconciliation, verify all three hosted jobs on its documentation-only final head, then continue the next smallest bounded offline load, soak, or runtime-composition slice without enabling Rust traffic
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #41 or remove the media-load CI steps if the bounded harness contract is superseded
 notes: Relevant implementation and three focused tests shipped together. Hosted PR CI and pushes to aistack/main continue to run the complete repository suite rather than affected-module selection. Scheduled-only 16,384-call signaling, 4,096-stream media, and 4,096-case property steps were correctly skipped for the pull-request event. All jobs remain on hosted ubuntu-latest; Docker is used only inside Workspace checks for pinned SIPp. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-116 — bounded WebSocket-media transport load smoke locally green
+
+~~~yaml
+checkpoint_id: CP-116
+recorded_at_utc: 2026-08-31T02:10:13Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: WebSocket-media transport load, backpressure, reclamation, and capacity reuse
+scope: Add a provider-neutral bounded in-memory harness that repeatedly creates real MediaWebSocketTransport, MediaWebSocketSession, and MediaSession batches; parses masked peer control/audio frames; serializes WebSocket audio to RTP and RTP audio to WebSocket; forces bounded full-queue backpressure and partial writes; decodes every emitted frame; and verifies logical reclamation and capacity reuse in ordinary and scheduled hosted CI
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-42
+branch: websocket-load-smoke
+base_branch: media-load-smoke
+pr: pending #42 publication
+head_sha: 7100981dad93b1b27de35763724156c316fb0150 before the implementation/checkpoint commit
+evidence: PR #41 is OPEN/non-draft/CLEAN at final head 7100981da with local, origin, and GitHub parity; hosted final-head run 33349070621 passed Workspace checks in 43 seconds, Protocol fuzz checks in 1 minute 4 seconds, and Dependency audit in 3 minutes 3 seconds. The new WebSocket harness has explicit bounds for total/concurrent streams, frames per stream, media/pending-write frame and byte capacity, read/message/control/identifier sizes, and retained batches; reports deterministic bidirectional protocol, RTP, backpressure, queue, and reclamation counters plus best-effort elapsed throughput, Linux RSS, and file-descriptor observations; retains output across deliberately 37-byte partial writes and decodes every final WebSocket frame. Three focused WebSocket-load tests and all ten load-smoke tests pass; all 213 locked workspace tests, all three pinned Docker-backed SIPp scenarios, the 512-call signaling smoke, ordinary and extended RTP/media and WebSocket-media smokes, workspace Clippy/all targets, strict load-smoke Clippy with denied warnings, formatting, workflow YAML parsing, all six address-sanitizer fuzz-target checks, and git diff checks pass. The ordinary 64-stream WebSocket run completed 2,048 frames and RTP packets in each direction with 448 deterministic write-backpressure events, a four-frame/656-byte pending-write peak, stable observed file descriptors, and zero final logical resources. The scheduled-sized 4,096-stream run completed 524,288 frames and RTP packets in each direction with 61,440 deterministic write-backpressure events, an eight-frame/1,312-byte pending-write peak, stable observed file descriptors, and zero final logical resources
+blockers: This in-memory transport tier does not establish TCP, TLS, HTTP-upgrade, kernel-socket, provider, or Asterisk throughput; the 1,000/5,000/10,000 concurrent-call capacity matrix; combined signaling/media throughput; CPU per call; multi-hour soak or stable allocator-memory behavior; sanitized captures; provider/Asterisk interoperability; rollback proof; or production readiness. Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Commit and publish stacked PR #42 against exact base media-load-smoke, then verify Workspace checks including the ordinary WebSocket-media smoke, Protocol fuzz checks, and Dependency audit on its final head
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #42 or remove the WebSocket-load CI steps if the bounded harness contract is superseded
+notes: Relevant implementation, three focused tests, documentation, lockfile, CI wiring, and this goal checkpoint ship together. Every pull request and push to aistack/main runs the complete hosted suite rather than affected-module-only selection; only the deeper 4,096-stream WebSocket tier remains scheduled. All jobs use hosted ubuntu-latest, with Docker invoked inside the Workspace job only for the pinned SIPp test dependency. Synthetic mask keys are deterministic test fixtures, not a client security implementation. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints

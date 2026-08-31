@@ -172,6 +172,7 @@ dependencies = [
  "call-core",
  "call-engine",
  "media-core",
+ "media-websocket",
  "rtp",
  "sip-transaction",
  "sip-types",
