@@ -14,9 +14,14 @@ There are no hidden clocks, timer tasks, sockets, or unbounded queues.
 - duplicate and already-played packets are discarded with separate counters;
 - at capacity, the farthest-future packet is discarded so imminent audio is
   retained;
-- an SSRC change clears the old source's retained packets and timeline; and
+- an SSRC change clears the old source's retained packets and timeline;
 - a marker packet re-anchors an empty buffer for a new G.711 talkspurt, avoiding
-  an arbitrary delay after a sender timestamp discontinuity.
+  an arbitrary delay after a sender timestamp discontinuity; and
+- a sender timestamp jump of more than one second of media while audio is still
+  buffered re-anchors the timeline for the new audio. Packets queued earlier
+  keep the deadlines already resolved for them, so a mid-buffer discontinuity
+  can neither stall playout until the jump elapses nor burst buffered audio.
+  Each re-anchor increments the `timestamp_reanchors` counter.
 
 The first accepted packet anchors the RTP clock to its arrival plus the fixed
 delay. A packet that arrives out of order before the deadline can therefore

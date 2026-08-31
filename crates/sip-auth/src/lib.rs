@@ -417,6 +417,12 @@ impl DigestAuthorization {
 
     /// Verifies this authorization against the supplied credentials and SIP
     /// request. The response digest is compared in constant time.
+    ///
+    /// Verification alone does not prove freshness: any nonce accepted by the
+    /// caller's challenge policy is accepted here, and `nonce_count` is not
+    /// checked for monotonicity. Replay protection (per-nonce tracking with
+    /// expiry and non-decreasing nc per nonce) is the caller's responsibility
+    /// before trusting a verified authorization.
     #[must_use]
     pub fn verify(&self, credentials: &DigestCredentials, method: &str, body: &[u8]) -> bool {
         if self.algorithm != DigestAlgorithm::Md5 || self.username != credentials.username {
@@ -452,6 +458,11 @@ impl DigestAuthorization {
     /// Verifies this authorization against a specific challenge, credentials,
     /// and SIP request. This additionally binds the response to the challenge
     /// realm, nonce, opaque value, algorithm, and qop.
+    ///
+    /// Like [`Authorization::verify`], this does not track nonce state: a
+    /// captured authorization replayed while its nonce is still acceptable
+    /// verifies successfully. Callers must enforce nonce freshness and nc
+    /// ordering themselves.
     #[must_use]
     pub fn verify_against(
         &self,

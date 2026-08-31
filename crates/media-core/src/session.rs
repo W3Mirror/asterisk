@@ -554,7 +554,7 @@ impl MediaSession {
         }
         if let Some(jitter_buffer) = &mut self.jitter_buffer {
             let timestamp = packet.timestamp;
-            let outcome = jitter_buffer.push(packet, arrival);
+            let outcome = jitter_buffer.push(packet, arrival, self.config.rtp.clock_rate);
             return Ok(ReceivedMedia::AudioBuffered { outcome, timestamp });
         }
         Ok(self.decode_and_queue_audio(&packet))
@@ -623,19 +623,14 @@ impl MediaSession {
     /// or the earliest packet is not due. Callers own the monotonic clock and
     /// should poll again at [`Self::next_playout_deadline`].
     pub fn playout_audio(&mut self, now: Duration) -> Option<ReceivedMedia> {
-        let packet = self
-            .jitter_buffer
-            .as_mut()?
-            .pop_due(now, self.config.rtp.clock_rate)?;
+        let packet = self.jitter_buffer.as_mut()?.pop_due(now)?;
         Some(self.decode_and_queue_audio(&packet))
     }
 
     /// Returns the monotonic deadline of the earliest buffered audio packet.
     #[must_use]
     pub fn next_playout_deadline(&self) -> Option<Duration> {
-        self.jitter_buffer
-            .as_ref()?
-            .next_deadline(self.config.rtp.clock_rate)
+        self.jitter_buffer.as_ref()?.next_deadline()
     }
 
     /// Borrows the oldest decoded frame waiting for the AI application
