@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-140 — provider-routing Rust origination gate locally green
-**Last checkpoint (UTC):** 2026-08-31T06:43:43Z
+**Current checkpoint:** CP-141 — PR #48 published with hosted validation running
+**Last checkpoint (UTC):** 2026-08-31T06:44:48Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Provider-route-gated outbound origination and Asterisk fallback<br>
 **Next resume action:** Connect validated provider route targets to runtime origination with lazy address resolution, transport compatibility, and atomic fallback/error tests
@@ -2686,7 +2686,7 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 45 | [#45](https://github.com/W3Mirror/asterisk/pull/45) | `lifecycle-soak` | `combined-load-smoke` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-45` | Repeated mixed answered, rejected, and cancelled call lifecycles with media work, exact logical reclamation, stable descriptor/thread bounds, and post-warmup resident-memory observations | hosted green | `1bcacd853` before CP-130 evidence reconciliation | CP-126–CP-130; four directly relevant soak regressions, all 19 load-smoke tests, all 222 workspace tests, local SIPp, sanitizer fuzz checks, ordinary/extended load tiers, and standalone strict-resource probes pass; final ordinary run 33353745023 passed, and manual run 33353926272 passed the full suite, exact signaling matrix, and two-hour lifecycle soak with zero final logical resources, stable descriptors/threads, and 225,280-byte post-warmup RSS range | Push CP-130, verify ordinary CI on its final documentation head, then continue the next bounded offline goal gap without enabling Rust traffic |
 | 46 | [#46](https://github.com/W3Mirror/asterisk/pull/46) | `outbound-digest-auth` | `lifecycle-soak` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-46` | Provider-neutral bounded outbound INVITE handling for 401/407 Digest challenges, authenticated retry, and exact call/transaction lifecycle preservation | hosted green | `4cdffb72a` | CP-131–CP-135; four directly relevant regressions, all 226 locked workspace tests, the complete local matrix, publication-head run 33362228237, and final documentation-head run 33362484592 pass; PR is OPEN/non-draft/CLEAN/MERGEABLE with exact local/origin/GitHub parity | Review and merge in stack order; retain Asterisk fallback and every real-provider traffic gate |
 | 47 | [#47](https://github.com/W3Mirror/asterisk/pull/47) | `provider-digest-runtime` | `outbound-digest-auth` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-47` | Resolve rotated Digest credentials from provider authentication policy for each challenge without retaining secrets or enabling provider traffic | hosted green | `9fc6e9b26` | CP-135–CP-138; three directly relevant regressions, all 229 locked workspace tests, the complete local matrix, publication-head run 33363950164, and final documentation-head run 33364255850 pass; PR #47 is OPEN/non-draft/CLEAN/MERGEABLE with exact local/origin/GitHub parity | Review and merge in stack order; retain Asterisk fallback and every real-provider traffic gate |
-| 48 | pending | `provider-route-runtime` | `provider-digest-runtime` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-48` | Gate outbound Rust origination on an explicit provider-routing Rust target, lazily resolve the profile signaling address, enforce transport compatibility, and preserve Asterisk fallback on all default/error paths | local_green | `9fc6e9b26` exact base before implementation | CP-139–CP-140; two directly relevant regressions, 32 call-runtime tests, 231 locked workspace tests, strict runtime Clippy, workspace Clippy, formatting, diff checks, all three pinned Docker SIPp scenarios, all six sanitizer fuzz targets, and ordinary signaling/RTP/WebSocket/combined/short-soak smokes pass | Commit and publish stacked PR #48, then verify hosted checks on its final head |
+| 48 | [#48](https://github.com/W3Mirror/asterisk/pull/48) | `provider-route-runtime` | `provider-digest-runtime` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-48` | Gate outbound Rust origination on an explicit provider-routing Rust target, lazily resolve the profile signaling address, enforce transport compatibility, and preserve Asterisk fallback on all default/error paths | in_progress | `0c814a9c7` | CP-139–CP-140; route-gating regressions, 231 locked workspace tests, strict/runtime and workspace Clippy, formatting, diff checks, all three pinned Docker SIPp scenarios, all six sanitizer fuzz targets, and ordinary reclamation smokes pass; PR #48 is OPEN/non-draft/MERGEABLE against exact base provider-digest-runtime with local/origin/GitHub parity; hosted run 33365425108 started Workspace, Protocol fuzz, and Dependency audit, with Signaling capacity correctly skipped | Push this publication checkpoint, verify local, origin, and GitHub parity on the final head, and wait for the ordinary hosted suite to pass |
 
 ### CP-026 — PR10 published and stacked remote parity verified
 
@@ -5101,6 +5101,27 @@ blockers: This is offline route-policy and local-UDP evidence only. DNS/service 
 next_action: Commit and push CP-139–CP-140 normally, open stacked PR #48 against provider-digest-runtime, and verify local, origin, and GitHub parity plus the complete ordinary hosted suite
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #48 or revert the route-gated origination integration if its contract is superseded
 notes: Relevant tests ship with the route-gating behavior. Every pull request and push to aistack/main runs the complete ordinary hosted suite rather than affected-module-only selection. All workflow runners remain hosted ubuntu-latest, and Docker remains limited to pinned SIPp inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-141 — PR #48 published with hosted validation running
+
+~~~yaml
+checkpoint_id: CP-141
+recorded_at_utc: 2026-08-31T06:44:48Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Provider-route-gated outbound origination and Asterisk fallback
+scope: Publish the locally green provider-route runtime integration as stacked PR #48 and reconcile its worktree, branch, base, implementation head, and initial hosted-check state
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-48
+branch: provider-route-runtime
+base_branch: provider-digest-runtime
+pr: https://github.com/W3Mirror/asterisk/pull/48
+head_sha: 0c814a9c7d7e974784a5c8c3c1d5b7a31b599630 implementation and local-green checkpoint head before this publication checkpoint
+evidence: Implementation, two directly relevant regressions, CP-139–CP-140, and the route-gating ledger updates were committed normally as 0c814a9c7 without bypassing hooks and pushed with exact local, origin/provider-route-runtime, and GitHub PR-head parity. PR #48 is OPEN, non-draft, MERGEABLE, and targets exact base provider-digest-runtime. Hosted Rust quality run 33365425108 started Workspace checks, Protocol fuzz checks, and Dependency audit; the schedule/manual-only Signaling capacity matrix correctly reports skipped for this pull-request event
+blockers: The complete hosted ordinary suite is still running. This route boundary does not implement DNS/service discovery, TLS/WebSocket transport, provider credentials, route failover execution, carrier/Asterisk interoperability, rollback execution, or safe Rust traffic enablement. Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Push this CP-141 publication checkpoint, verify local, origin, and GitHub parity on its final head, and wait for Workspace checks, Protocol fuzz checks, and Dependency audit to reach a successful terminal state
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #48 or revert the route-gated origination integration if its contract is superseded
+notes: PR #48 contains the implementation, two directly relevant regressions, and goal checkpoints. Every pull request and push to aistack/main runs the complete ordinary hosted suite. All workflow runners remain hosted ubuntu-latest, and Docker remains limited to pinned SIPp inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
