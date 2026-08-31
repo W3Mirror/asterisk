@@ -10,6 +10,7 @@ call-api = { path = "../call-api" }
 call-core = { path = "../call-core" }
 call-engine = { path = "../call-engine" }
 media-core = { path = "../media-core" }
+media-websocket = { path = "../media-websocket" }
 rtp = { path = "../rtp" }
 sip-transaction = { path = "../sip-transaction" }
 sip-types = { path = "../sip-types" }

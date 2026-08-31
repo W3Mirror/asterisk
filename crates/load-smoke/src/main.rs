@@ -3,8 +3,8 @@
 use std::{env, error::Error};
 
 use load_smoke::{
-    MediaSmokeConfig, SignalingSmokeConfig, run_media_reclamation_smoke,
-    run_signaling_reclamation_smoke,
+    MediaSmokeConfig, SignalingSmokeConfig, WebSocketSmokeConfig, run_media_reclamation_smoke,
+    run_signaling_reclamation_smoke, run_websocket_reclamation_smoke,
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -12,6 +12,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let first = arguments.next();
     if first.as_deref() == Some("media") {
         return run_media(arguments);
+    }
+    if first.as_deref() == Some("websocket") {
+        return run_websocket(arguments);
     }
     run_signaling(first, arguments)
 }
@@ -107,6 +110,70 @@ fn run_media(mut arguments: impl Iterator<Item = String>) -> Result<(), Box<dyn 
     Ok(())
 }
 
+fn run_websocket(mut arguments: impl Iterator<Item = String>) -> Result<(), Box<dyn Error>> {
+    let defaults = WebSocketSmokeConfig::default();
+    let total_streams = parse_bound(arguments.next(), "total_streams", defaults.total_streams)?;
+    let concurrent_streams = parse_bound(
+        arguments.next(),
+        "concurrent_streams",
+        defaults.concurrent_streams,
+    )?;
+    let frames_per_stream = parse_bound(
+        arguments.next(),
+        "frames_per_stream",
+        defaults.frames_per_stream,
+    )?;
+    let queue_capacity = parse_bound(arguments.next(), "queue_capacity", defaults.queue_capacity)?;
+    if arguments.next().is_some() {
+        return Err(usage().into());
+    }
+
+    let report = run_websocket_reclamation_smoke(WebSocketSmokeConfig {
+        total_streams,
+        concurrent_streams,
+        frames_per_stream,
+        queue_capacity,
+    })?;
+    let frame_rate = if report.elapsed.is_zero() {
+        0
+    } else {
+        u128::from(
+            report
+                .inbound_websocket_frames
+                .saturating_add(report.outbound_websocket_frames),
+        )
+        .saturating_mul(1_000_000_000)
+            / report.elapsed.as_nanos()
+    };
+    println!(
+        "attempted_streams={} completed_streams={} failed_streams={} batches={} peak_active_streams={} inbound_websocket_frames={} outbound_rtp_packets={} inbound_rtp_packets={} outbound_websocket_frames={} write_backpressure_events={} peak_pending_write_frames={} peak_pending_write_bytes={} peak_media_queue_depth={} final_active_streams={} final_pending_write_frames={} final_media_queue_depth={} elapsed_ms={} bidirectional_websocket_frames_per_second={frame_rate} resident_before_bytes={} resident_peak_bytes={} resident_after_bytes={} fds_before={} fds_peak={} fds_after={}",
+        report.attempted_streams,
+        report.completed_streams,
+        report.failed_streams,
+        report.batches,
+        report.peak_active_streams,
+        report.inbound_websocket_frames,
+        report.outbound_rtp_packets,
+        report.inbound_rtp_packets,
+        report.outbound_websocket_frames,
+        report.write_backpressure_events,
+        report.peak_pending_write_frames,
+        report.peak_pending_write_bytes,
+        report.peak_media_queue_depth,
+        report.final_active_streams,
+        report.final_pending_write_frames,
+        report.final_media_queue_depth,
+        report.elapsed.as_millis(),
+        display_optional(report.process_before.resident_bytes),
+        display_optional(report.process_peak.resident_bytes),
+        display_optional(report.process_after.resident_bytes),
+        display_optional(report.process_before.open_file_descriptors),
+        display_optional(report.process_peak.open_file_descriptors),
+        display_optional(report.process_after.open_file_descriptors),
+    );
+    Ok(())
+}
+
 fn parse_bound(value: Option<String>, name: &str, default: usize) -> Result<usize, Box<dyn Error>> {
     value.map_or(Ok(default), |value| {
         value
@@ -120,5 +187,5 @@ fn display_optional<T: std::fmt::Display>(value: Option<T>) -> String {
 }
 
 fn usage() -> &'static str {
-    "usage: load-smoke [total_calls] [concurrent_calls] | load-smoke media [total_streams] [concurrent_streams] [packets_per_stream] [queue_capacity]"
+    "usage: load-smoke [total_calls] [concurrent_calls] | load-smoke media [total_streams] [concurrent_streams] [packets_per_stream] [queue_capacity] | load-smoke websocket [total_streams] [concurrent_streams] [frames_per_stream] [queue_capacity]"
 }

@@ -6,10 +6,15 @@
 //! return to zero before capacity is reused by the next batch.
 
 mod media;
+mod websocket;
 
 pub use media::{
     MediaSmokeConfig, MediaSmokeError, MediaSmokePhase, MediaSmokeReport, ProcessSample,
     run_media_reclamation_smoke,
+};
+pub use websocket::{
+    WebSocketSmokeConfig, WebSocketSmokeError, WebSocketSmokePhase, WebSocketSmokeReport,
+    run_websocket_reclamation_smoke,
 };
 
 use std::{
