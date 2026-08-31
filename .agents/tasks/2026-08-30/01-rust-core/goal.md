@@ -2726,6 +2726,27 @@ rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain 
 notes: PR4 remains provider-neutral and stacked on PR3; the response fix is covered by the UAS in-dialog response regression test
 ```
 
+### CP-021 — Reconcile PR #4 onto the validated PR #3 head
+
+```yaml
+checkpoint_id: CP-021
+recorded_at_utc: 2026-08-31T20:04:00Z
+status: in_progress
+phase: Phase 2 — SIP edge shadow mode
+milestone: Milestone 4 — Dialog + SDP + Basic Calls
+scope: Merge the validated PR #3 head into PR #4 while preserving dialog implementation history and the expanded offline test contract
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-4-sip-dialog
+branch: sip-dialog-core
+base_branch: sip-transaction-core
+pr: "#4 https://github.com/W3Mirror/asterisk/pull/4"
+head_sha: dc5ede1c43bcc56d56b81153d77b630272d5888e
+evidence: Merged origin/sip-transaction-core at 05a33ed4 into PR #4 and resolved the shared goal ledger. Local cargo fmt --all -- --check, cargo test -p sip-dialog --locked, and cargo clippy -p sip-dialog --all-targets --locked passed; git diff --check passed; branch was published with normal git push. Hosted run 33433995407 is validating this exact head, with workspace and protocol-fuzz jobs green so far and dependency audit still in progress.
+blockers: Production deployment identity, effective configuration, provider credentials, and sanitized inbound/outbound captures remain unavailable; hosted dependency audit is pending
+next_action: Verify hosted run 33433995407 reaches success, then record the final PR #4 head and mergeability
+rollback: Asterisk remains the active/fallback engine; no routing was changed
+notes: The merge commit preserves the stacked ancestry; focused dialog tests remain required PR content and are exercised by the complete hosted workspace invocation.
+```
+
 ### Checkpoint template
 
 Copy this template, assign the next checkpoint ID, fill every field, and append it after each meaningful state change:
