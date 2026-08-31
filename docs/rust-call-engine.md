@@ -52,6 +52,18 @@ idempotency-key lookup, so denied requests cannot probe state or replay events.
 The existing unqualified methods remain trusted internal APIs for SIP-driven
 engine work.
 
+## Aggregate metrics
+
+`CallEngine::metrics` returns bounded lifecycle counters and signaling gauges.
+`EngineMetrics::prometheus` renders a label-free Prometheus text snapshot with
+call starts, answers, failures, completions, active calls, event queue/history
+depth, retained idempotency keys, active transactions/dialogs, final INVITE
+retransmission state, and reliable provisional responses awaiting PRACK. The
+snapshot intentionally contains no call IDs, SIP Call-IDs, phone numbers,
+provider names, principal IDs, or credentials, preventing sensitive values and
+unbounded per-call label cardinality from entering metrics. `CallRuntime::metrics`
+exposes the same snapshot at the transport boundary.
+
 ## Safety boundary
 
 Engine and registry bounds reject zero-sized configurations and cap calls,

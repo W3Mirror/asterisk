@@ -24,7 +24,7 @@ use std::{
 use call_api::{AuthenticatedPrincipal, CallCommand};
 use call_bridge::{BridgeError, BridgeEvent, BridgeRegistry, BridgeState};
 use call_core::{BridgeId, CallEventKind, CallId, CommandId, LegId, LifecycleEvent};
-use call_engine::{CallEngine, EngineError, EngineOutput, SendAction};
+use call_engine::{CallEngine, EngineError, EngineMetrics, EngineOutput, SendAction};
 use provider_routing::{
     AuthenticationPolicy, EngineTarget, ProviderRouteTable, RouteMatch, SignalingTransport,
 };
@@ -422,6 +422,12 @@ impl CallRuntime {
     #[must_use]
     pub fn engine(&self) -> &CallEngine {
         &self.engine
+    }
+
+    /// Returns aggregate runtime, call, and signaling metrics.
+    #[must_use]
+    pub fn metrics(&self) -> EngineMetrics {
+        self.engine.metrics()
     }
 
     /// Borrows the current transport endpoint.
@@ -1311,6 +1317,27 @@ mod tests {
             )
             .unwrap();
         (runtime, bridge_id, caller_id)
+    }
+
+    #[test]
+    fn runtime_metrics_delegate_without_exposing_call_identifiers() {
+        let runtime_transport = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 2_048).unwrap();
+        let peer = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 2_048).unwrap();
+        let mut runtime = CallRuntime::udp(
+            CallEngine::new(EngineConfig::default()).unwrap(),
+            runtime_transport,
+        );
+        let (call_id, _) = runtime
+            .originate(invite(), peer.local_addr().unwrap(), Duration::ZERO)
+            .unwrap();
+        let _ = peer.recv().unwrap();
+
+        let metrics = runtime.metrics();
+        assert_eq!(metrics.calls.calls_started_total, 1);
+        assert_eq!(metrics.calls.calls_active, 1);
+        assert_eq!(metrics.active_transactions, 1);
+        assert_eq!(metrics.active_dialogs, 1);
+        assert!(!metrics.prometheus().contains(call_id.as_str()));
     }
 
     #[test]

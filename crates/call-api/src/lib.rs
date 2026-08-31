@@ -221,6 +221,34 @@ pub struct CommandResult {
     pub replayed: bool,
 }
 
+/// Bounded, cardinality-safe call-control metrics.
+///
+/// Counters are cumulative for the lifetime of a registry. Gauges describe
+/// the currently retained in-memory state. No call, SIP, provider, principal,
+/// or credential identifiers are included, so this snapshot can be exported
+/// without creating unbounded metric-label cardinality or leaking secrets.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct CallMetrics {
+    /// Number of calls registered since the registry was created.
+    pub calls_started_total: u64,
+    /// Number of calls that reached the answered state.
+    pub calls_answered_total: u64,
+    /// Number of calls marked failed.
+    pub calls_failed_total: u64,
+    /// Number of calls that reached the ended state.
+    pub calls_completed_total: u64,
+    /// Number of non-terminal calls currently retained.
+    pub calls_active: usize,
+    /// Number of lifecycle events emitted since the registry was created.
+    pub lifecycle_events_total: u64,
+    /// Number of events waiting for delivery.
+    pub pending_events: usize,
+    /// Number of events available for bounded replay.
+    pub retained_event_history: usize,
+    /// Number of idempotency keys currently retained.
+    pub retained_command_keys: usize,
+}
+
 /// The bounded audio offer/answer result retained for a call.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NegotiatedAudio {
@@ -386,6 +414,11 @@ pub struct CallRegistry {
     event_history: VecDeque<LifecycleEvent>,
     applied_commands: HashMap<CommandId, AppliedCommand>,
     command_order: VecDeque<CommandId>,
+    calls_started_total: u64,
+    calls_answered_total: u64,
+    calls_failed_total: u64,
+    calls_completed_total: u64,
+    lifecycle_events_total: u64,
     next_call_sequence: u64,
     next_event_sequence: u64,
 }
@@ -400,6 +433,11 @@ impl CallRegistry {
             event_history: VecDeque::new(),
             applied_commands: HashMap::new(),
             command_order: VecDeque::new(),
+            calls_started_total: 0,
+            calls_answered_total: 0,
+            calls_failed_total: 0,
+            calls_completed_total: 0,
+            lifecycle_events_total: 0,
             next_call_sequence: 1,
             next_event_sequence: 1,
         })
@@ -409,6 +447,26 @@ impl CallRegistry {
     #[must_use]
     pub fn config(&self) -> CallRegistryConfig {
         self.config
+    }
+
+    /// Returns bounded lifecycle counters and current queue gauges.
+    #[must_use]
+    pub fn metrics(&self) -> CallMetrics {
+        CallMetrics {
+            calls_started_total: self.calls_started_total,
+            calls_answered_total: self.calls_answered_total,
+            calls_failed_total: self.calls_failed_total,
+            calls_completed_total: self.calls_completed_total,
+            calls_active: self
+                .calls
+                .values()
+                .filter(|entry| !matches!(entry.call.state, CallState::Ended | CallState::Failed))
+                .count(),
+            lifecycle_events_total: self.lifecycle_events_total,
+            pending_events: self.events.len(),
+            retained_event_history: self.event_history.len(),
+            retained_command_keys: self.applied_commands.len(),
+        }
     }
 
     /// Registers a generated application call identifier and emits `Created`.
@@ -442,6 +500,7 @@ impl CallRegistry {
     }
 
     fn insert_created_call(&mut self, id: CallId) {
+        self.calls_started_total = self.calls_started_total.saturating_add(1);
         self.calls.insert(
             id.clone(),
             CallEntry {
@@ -469,6 +528,18 @@ impl CallRegistry {
             .call
             .transition(next_state)
             .map_err(|_| ApiError::InvalidCommand { state, command })?;
+        match command {
+            CallCommand::Answer => {
+                self.calls_answered_total = self.calls_answered_total.saturating_add(1);
+            }
+            CallCommand::Fail => {
+                self.calls_failed_total = self.calls_failed_total.saturating_add(1);
+            }
+            CallCommand::End => {
+                self.calls_completed_total = self.calls_completed_total.saturating_add(1);
+            }
+            _ => {}
+        }
         Ok(match event_kind {
             Some(kind) => Some(self.commit_event(
                 event_id.ok_or(ApiError::IdentifierExhausted)?,
@@ -825,6 +896,7 @@ impl CallRegistry {
         kind: CallEventKind,
     ) -> LifecycleEvent {
         self.next_event_sequence += 1;
+        self.lifecycle_events_total = self.lifecycle_events_total.saturating_add(1);
         let event = LifecycleEvent {
             event_id,
             call_id,
@@ -1052,6 +1124,76 @@ mod tests {
         assert_eq!(registry.snapshot(&id).unwrap().state, CallState::Ended);
         registry.remove_terminal(&id).unwrap();
         assert!(matches!(registry.create(), Ok(next) if next.as_str() == "call_2"));
+    }
+
+    #[test]
+    fn metrics_track_lifecycle_counters_and_bounded_gauges() {
+        let mut registry = CallRegistry::new(CallRegistryConfig {
+            max_calls: 1,
+            max_pending_events: 8,
+            max_command_keys: 1,
+        })
+        .unwrap();
+        assert_eq!(registry.metrics(), CallMetrics::default());
+
+        let id = registry.create().unwrap();
+        let created = registry.metrics();
+        assert_eq!(created.calls_started_total, 1);
+        assert_eq!(created.calls_active, 1);
+        assert_eq!(created.lifecycle_events_total, 1);
+        assert_eq!(created.pending_events, 1);
+        assert_eq!(created.retained_event_history, 1);
+        assert_eq!(created.retained_command_keys, 0);
+        registry.drain_events(8).unwrap();
+
+        registry.apply(&id, CallCommand::InviteReceived).unwrap();
+        registry.apply(&id, CallCommand::Ringing).unwrap();
+        registry.apply(&id, CallCommand::Answer).unwrap();
+        let answered = registry.metrics();
+        assert_eq!(answered.calls_started_total, 1);
+        assert_eq!(answered.calls_answered_total, 1);
+        assert_eq!(answered.calls_failed_total, 0);
+        assert_eq!(answered.calls_completed_total, 0);
+        assert_eq!(answered.calls_active, 1);
+        assert_eq!(answered.lifecycle_events_total, 4);
+        assert_eq!(answered.pending_events, 3);
+        assert_eq!(answered.retained_event_history, 4);
+
+        registry.apply(&id, CallCommand::Hangup).unwrap();
+        registry.apply(&id, CallCommand::End).unwrap();
+        let ended = registry.metrics();
+        assert_eq!(ended.calls_completed_total, 1);
+        assert_eq!(ended.calls_active, 0);
+        assert_eq!(ended.lifecycle_events_total, 6);
+        registry.remove_terminal(&id).unwrap();
+        assert_eq!(registry.metrics().calls_started_total, 1);
+        assert_eq!(registry.metrics().calls_active, 0);
+    }
+
+    #[test]
+    fn failed_calls_are_counted_once_and_idempotency_gauge_is_bounded() {
+        let mut registry = CallRegistry::new(CallRegistryConfig {
+            max_calls: 1,
+            max_pending_events: 8,
+            max_command_keys: 1,
+        })
+        .unwrap();
+        let id = registry.create().unwrap();
+        registry.drain_events(8).unwrap();
+        let command_id = CommandId::from_sequence(1);
+        registry
+            .apply_idempotent(&id, CallCommand::Fail, command_id.clone())
+            .unwrap();
+        let failed = registry.metrics();
+        assert_eq!(failed.calls_failed_total, 1);
+        assert_eq!(failed.calls_active, 0);
+        assert_eq!(failed.retained_command_keys, 1);
+        let replay = registry
+            .apply_idempotent(&id, CallCommand::Fail, command_id)
+            .unwrap();
+        assert!(replay.replayed);
+        assert_eq!(registry.metrics().calls_failed_total, 1);
+        assert_eq!(registry.metrics().retained_command_keys, 1);
     }
 
     #[test]
