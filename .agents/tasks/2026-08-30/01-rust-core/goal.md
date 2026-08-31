@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
-**Status: Proposed**  
-**Current checkpoint:** CP-011 — Hosted main-push validation of test execution contract
-**Last checkpoint (UTC):** 2026-08-31T17:03:49Z
+**Status: In Progress**  
+**Current checkpoint:** CP-012 — Reconcile hosted test-contract ledger with current main head
+**Last checkpoint (UTC):** 2026-08-31T19:23:46Z
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
 **Active milestone:** Milestone 1 — Scope Baseline  
 **Next resume action:** Confirm the production deployment and obtain sanitized inbound/outbound provider call-flow captures
@@ -2367,6 +2367,27 @@ evidence: Hosted Rust quality run 33417495859 (https://github.com/W3Mirror/aster
 blockers: Rust test execution is not yet possible on aistack/main because the Rust workspace has not landed; this is a recorded stack-layer condition, not a workflow failure
 next_action: Confirm the production deployment and obtain sanitized inbound/outbound provider call-flow captures
 rollback: Asterisk remains the active/fallback engine; no routing was changed
+```
+
+### CP-012 — Reconcile hosted test-contract ledger with current main head
+
+```yaml
+checkpoint_id: CP-012
+recorded_at_utc: 2026-08-31T19:23:46Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 1 — Scope Baseline
+scope: Reconcile the goal header and hosted test-contract checkpoint with the current aistack/main head
+worktree: /home/ashutosh/PROJECTS/w3mirror/asterisk
+branch: aistack/main
+base_branch: aistack/main
+pr: none
+head_sha: 0c8f5027077c3ae144df294308922da85891770f
+evidence: git status is clean; HEAD equals origin/aistack/main at 0c8f5027; git diff --check is clean. The goal's CI contract records hosted ubuntu-latest pull_request checks and aistack/main push checks, focused affected-module tests shipped in each implementation PR, and extended or credentialed suites as scheduled/manual gates.
+blockers: Rust test execution remains stack-layer dependent until the Rust workspace exists on aistack/main; no workflow failure is indicated
+next_action: Confirm the production deployment and obtain sanitized inbound/outbound provider call-flow captures
+rollback: Asterisk remains the active/fallback engine; no routing was changed
+notes: CP-011 recorded 2933239d, which was superseded by later documentation commits; the header now points to this reconciliation checkpoint and the current branch head.
 ```
 
 ### Checkpoint template
