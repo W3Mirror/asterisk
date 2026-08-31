@@ -1998,7 +1998,7 @@ worktree: /home/ashutosh/PROJECTS/w3mirror/asterisk
 branch: aistack/main
 base_branch: aistack/main
 pr: none
-head_sha: pending documentation commit
+head_sha: c7b04990b6cc6dcb3b0fd071f0e6fb568736a3fc
 evidence: goal.md now covers post-call finalization, failure/recovery, security and authorization, redacted observability, health/readiness, audit signals, bounded capacity and reclamation, replay/differential fixtures, deployment/configuration validation, and tested Asterisk rollback. It records that each PR must ship focused affected-module tests, while the current hosted workflow runs the complete ordinary workspace suite (when a Rust workspace exists) on every pull_request event and every push to aistack/main; extended capacity, property, soak, and credentialed live-provider tiers remain scheduled/manual or explicitly gated.
 blockers: none
 next_action: Inventory production call flows, providers, and the current Asterisk surface
