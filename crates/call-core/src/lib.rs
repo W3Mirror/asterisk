@@ -154,16 +154,16 @@ fn is_valid_transition(from: CallState, to: CallState) -> bool {
         ) | (
             CallState::Ringing,
             CallState::Answered | CallState::Ending | CallState::Failed
-        ) | (CallState::Answered, CallState::Active | CallState::Ending)
-            | (
-                CallState::Active,
-                CallState::Transferring | CallState::Ending
-            )
-            | (
-                CallState::Transferring,
-                CallState::Active | CallState::Ending | CallState::Failed
-            )
-            | (CallState::Ending, CallState::Ended)
+        ) | (
+            CallState::Answered,
+            CallState::Active | CallState::Ending | CallState::Failed
+        ) | (
+            CallState::Active,
+            CallState::Transferring | CallState::Ending | CallState::Failed
+        ) | (
+            CallState::Transferring,
+            CallState::Active | CallState::Ending | CallState::Failed
+        ) | (CallState::Ending, CallState::Ended)
             | (CallState::Failed, CallState::Ended)
     )
 }
@@ -200,5 +200,19 @@ mod tests {
         }
         assert_eq!(call.state, CallState::Ended);
         assert!(call.transition(CallState::Active).is_err());
+    }
+
+    #[test]
+    fn answered_and_active_calls_can_fail_during_transport_loss() {
+        let mut answered = Call::new(CallId::from_sequence(2));
+        answered.transition(CallState::Inviting).unwrap();
+        answered.transition(CallState::Answered).unwrap();
+        answered.transition(CallState::Failed).unwrap();
+
+        let mut active = Call::new(CallId::from_sequence(3));
+        active.transition(CallState::Inviting).unwrap();
+        active.transition(CallState::Answered).unwrap();
+        active.transition(CallState::Active).unwrap();
+        active.transition(CallState::Failed).unwrap();
     }
 }

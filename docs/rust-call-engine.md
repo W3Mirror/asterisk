@@ -32,6 +32,15 @@ failure/cleanup. The operation runs against a cloned engine state and commits
 only on success, so event-queue and state-transition errors do not leave a
 partially applied call operation.
 
+When a transport or process boundary becomes unusable, `fail_active_calls`
+transitions every non-terminal call through `Failed` and `Ended` (or completes
+an already-ending call), removes all owned SIP dialogs, transactions, and
+retransmission state, and returns the terminal lifecycle events without
+generating wire actions. Terminal call records remain bounded and retained
+until `reclaim_terminal_call` is called, allowing post-call consumers to export
+state before releasing the registry slot. The operation is transactional and
+idempotent.
+
 ## Graceful drain and restart
 
 `begin_drain` stops new call admission without interrupting existing dialogs or
