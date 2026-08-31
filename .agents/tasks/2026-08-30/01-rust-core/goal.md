@@ -3208,6 +3208,27 @@ rollback: Asterisk remains the active/fallback engine; no routing was changed
 notes: The current goal ledger includes focused affected-module tests as mandatory PR content; the hosted workflow runs the complete ordinary offline workspace suite on pull_request and aistack/main pushes, with extended and credentialed live-provider tiers scheduled or manually gated.
 ```
 
+### CP-032 — Reconcile PR #11 onto the validated PR #10 head
+
+```yaml
+checkpoint_id: CP-032
+recorded_at_utc: 2026-08-31T21:43:36Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Milestone 4 — Dialog + SDP + Basic Calls
+scope: Merge the hosted-green PR #10 head into the provider-routing slice while preserving the expanded offline test contract
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-11-provider-routing
+branch: provider-routing
+base_branch: sip-auth-routing
+pr: "#11 https://github.com/W3Mirror/asterisk/pull/11"
+head_sha: cb580ad5daa63c70c4beb6fb47a1d3b87bdecbe6
+evidence: Merged origin/sip-auth-routing at `c3bb96fd7064` and resolved the goal-ledger conflict while preserving PR #11's provider-routing implementation history and the expanded non-real-time acceptance/test contract. Local `cargo fmt --all -- --check`, `cargo test -p provider-routing --locked` (5 passed), `cargo clippy -p provider-routing --all-targets --locked`, `cargo test --workspace --locked`, and `git diff --check` passed. Hosted PR validation and mergeability are pending publication of this reconciled head.
+blockers: Production deployment identity, effective configuration, provider credentials, and sanitized inbound/outbound captures remain unavailable; no live provider or Asterisk route was exercised
+next_action: Publish the reconciled PR #11 head and verify hosted CI and mergeability
+rollback: Asterisk remains the active/fallback engine; no routing was changed
+notes: Focused provider-routing tests ship with this implementation; hosted pull_request and aistack/main pushes run the complete ordinary offline workspace suite, while extended fuzz, SIPp, load/soak, credentialed, and live-provider tiers remain scheduled or manually gated.
+```
+
 ### Checkpoint template
 
 Copy this template, assign the next checkpoint ID, fill every field, and append it after each meaningful state change:
@@ -3314,7 +3335,7 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 8 | [#8](https://github.com/W3Mirror/asterisk/pull/8) | `media-session-core` | `call-engine-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-8-media-session` | Bounded RTP↔AI media session, RFC 4733 DTMF handling, and non-blocking PCM/WAV recording sink | in_progress | `4237adddea26` | Hosted run [33438853171](https://github.com/W3Mirror/asterisk/actions/runs/33438853171) passed workspace checks, protocol fuzz detection, and dependency audit; GitHub reports CLEAN/MERGEABLE | Keep the verified offline/hosted test contract in force while adding the next bounded slice |
 | 9 | [#9](https://github.com/W3Mirror/asterisk/pull/9) | `sip-engine-runtime` | `media-session-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-9-sip-runtime` | Bounded blocking UDP/TCP SIP runtime dispatch into `CallEngine`, outbound origination, application response wrappers, and atomic delivery | in_progress | `5c90b38f0e5ca2d254f7a7e296721797d8710584` | Hosted run [33440306835](https://github.com/W3Mirror/asterisk/actions/runs/33440306835) passed workspace checks, protocol-fuzz detection, and dependency audit; GitHub reports CLEAN/MERGEABLE against `media-session-core`; local focused runtime fmt/test/clippy and diff checks passed | Reconcile PR #10 onto this validated head |
 
-| 11 | [#11](https://github.com/W3Mirror/asterisk/pull/11) | provider-routing | sip-auth-routing | /home/ashutosh/.worktrees/w3mirror/asterisk/pr-11-provider-routing | Milestone 4 provider abstraction: bounded provider profiles for signaling/media/auth/NAT policy plus deterministic inbound/outbound routing and mandatory Asterisk fallback | in_progress | 068b69a4c | workspace format/tests/clippy green; local HEAD equals origin/provider-routing at 068b69a4c; PR #11 is OPEN/non-draft against sip-auth-routing at 5677ca7ed; no GitHub checks are configured; provider profile is repository-derived only; no provider/runtime or live-call evidence; Asterisk fallback remains active | Preserve Asterisk fallback and continue with provider interoperability evidence and security/load slices |
+| 11 | [#11](https://github.com/W3Mirror/asterisk/pull/11) | `provider-routing` | `sip-auth-routing` | /home/ashutosh/.worktrees/w3mirror/asterisk/pr-11-provider-routing | Milestone 4 provider abstraction: bounded provider profiles for signaling/media/auth/NAT policy plus deterministic inbound/outbound routing and mandatory Asterisk fallback | in_progress | `cb580ad5daa63c70c4beb6fb47a1d3b87bdecbe6` | Reconciled onto origin/sip-auth-routing at `c3bb96fd7064`; focused provider-routing tests (5 passed), workspace tests, formatting, Clippy, and diff checks pass locally; hosted PR validation is pending publication; Asterisk fallback remains active | Publish the reconciled PR #11 head and verify hosted CI/mergeability |
 | 10 | [#10](https://github.com/W3Mirror/asterisk/pull/10) | `sip-auth-routing` | `sip-engine-runtime` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-10-sip-auth` | Milestone 4 security/provider primitive: bounded SIP Digest challenge/authorization parsing, RFC 2617 MD5 auth/auth-int responses, redacted credentials, constant-time verification, and bounded failure throttling | in_progress | `d6b07d23f417297f86d3a29736e7c39feb7bf7da` | Hosted run [33441800800](https://github.com/W3Mirror/asterisk/actions/runs/33441800800) passed workspace checks, protocol-fuzz detection, and dependency audit; GitHub reports CLEAN/MERGEABLE against `sip-engine-runtime`; local focused auth and workspace tests pass | Reconcile PR #11 onto this validated head |
 
 ### CP-026 — PR10 published and stacked remote parity verified
