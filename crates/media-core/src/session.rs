@@ -8,7 +8,8 @@ use std::time::Duration;
 
 use dtmf::{Deduplicator, DtmfEvent, EncodeError, Notification, ParseError, encode, parse};
 use rtcp::{
-    ReceiverReport, ReceptionReport, RtcpPacket, RtcpSession, RtcpSessionConfig, RtcpSessionStats,
+    NtpTimestamp, ReceiverReport, ReceptionReport, RtcpPacket, RtcpSession, RtcpSessionConfig,
+    RtcpSessionStats, SenderReport,
 };
 use rtp::{
     ParseConfig, RtpPacket, RtpSession, RtpSessionConfig, RtpSessionStats, SessionError,
@@ -455,6 +456,29 @@ impl MediaSession {
         }))
     }
 
+    /// Builds an RTCP Sender Report from this session's current RTP send state.
+    ///
+    /// `ntp` is the caller-supplied 64-bit NTP wall-clock timestamp. Keeping that
+    /// clock explicit makes scheduling deterministic and avoids hiding a wall
+    /// clock dependency inside the media session. The RTP timestamp is the
+    /// next regular-media timestamp, and packet/octet counters saturate at the
+    /// RTCP field width.
+    ///
+    /// Returns `None` until at least one RTP packet has been serialized.
+    #[must_use]
+    pub fn sender_report(&self, ntp: NtpTimestamp) -> Option<RtcpPacket> {
+        let snapshot = self.rtp.sender_snapshot()?;
+        Some(RtcpPacket::SenderReport(SenderReport {
+            ssrc: snapshot.source_ssrc,
+            ntp_msw: ntp.seconds,
+            ntp_lsw: ntp.fraction,
+            rtp_timestamp: snapshot.rtp_timestamp,
+            packets_sent: u32::try_from(snapshot.packets_sent).unwrap_or(u32::MAX),
+            octets_sent: u32::try_from(snapshot.octets_sent).unwrap_or(u32::MAX),
+            reports: Vec::new(),
+        }))
+    }
+
     fn receive_rtp_inner(
         &mut self,
         input: &[u8],
@@ -884,6 +908,44 @@ mod tests {
         assert_eq!(second.reports[0].fraction_lost, 0);
         assert_eq!(second.reports[0].cumulative_lost, 1);
         assert_eq!(second.reports[0].delay_since_last_sender_report, 3 << 16);
+    }
+
+    #[test]
+    fn generates_sender_report_from_current_rtp_send_state() {
+        let mut media = session();
+        assert_eq!(
+            media.sender_report(NtpTimestamp {
+                seconds: 1,
+                fraction: 2,
+            }),
+            None
+        );
+        assert_eq!(
+            media.push_from_ai(AudioFrame {
+                timestamp: 2_000,
+                codec: AudioCodec::Pcmu,
+                sample_rate: 8_000,
+                samples: vec![0, 1, -1],
+            }),
+            PushOutcome::Accepted
+        );
+        media.next_audio_rtp(false).unwrap().unwrap();
+
+        assert_eq!(
+            media.sender_report(NtpTimestamp {
+                seconds: 0xeeb1_2345,
+                fraction: 0x8000_0000,
+            }),
+            Some(RtcpPacket::SenderReport(SenderReport {
+                ssrc: 1,
+                ntp_msw: 0xeeb1_2345,
+                ntp_lsw: 0x8000_0000,
+                rtp_timestamp: 2_003,
+                packets_sent: 1,
+                octets_sent: 3,
+                reports: Vec::new(),
+            }))
+        );
     }
 
     #[test]

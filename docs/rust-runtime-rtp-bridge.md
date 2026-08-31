@@ -51,6 +51,11 @@ copying it to the opposite peer. It can also generate an identity-correct
 Receiver Report back to either peer using that same leg's accepted RTP loss,
 highest extended sequence, jitter, and Sender Report timing. Bridge fail-back
 or endpoint replacement rejects RTCP before consuming the stale socket.
+After either bridge direction has emitted RTP, the same state gate can poll a
+due Sender Report for that destination leg. Each report uses the leg's local
+SSRC, RTP timestamp, packet/payload-octet counters, caller-supplied NTP words,
+and a constant-size successful-send schedule. Fail-back rejects the poll before
+the schedule or RTCP counters advance.
 
 Run the focused verification with:
 
@@ -59,7 +64,7 @@ cargo test -p call-runtime --locked
 cargo clippy -p call-runtime --all-targets --no-deps --locked -- -D warnings
 ```
 
-This localhost composition is not jitter playout, RTCP Sender Report scheduling, transcoding
+This localhost composition is not jitter playout, transcoding
 beyond the existing negotiated G.711 session behavior, provider authentication,
 Asterisk/carrier interoperability, or load/soak evidence. Production traffic
 remains on Asterisk until the later compatibility, reliability, and rollback

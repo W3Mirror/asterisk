@@ -11,6 +11,15 @@ use sip_security::SourceIpPolicy;
 
 const MAX_PACKET_BYTES: usize = 65_535;
 
+/// One 64-bit NTP timestamp represented by its seconds and fractional words.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NtpTimestamp {
+    /// Whole seconds in the NTP epoch.
+    pub seconds: u32,
+    /// Fractional second in units of 2^-32 seconds.
+    pub fraction: u32,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReceptionReport {
     pub source_ssrc: u32,

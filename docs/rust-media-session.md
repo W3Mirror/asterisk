@@ -53,6 +53,10 @@ After at least one valid RTP packet, `receiver_report` generates a local-SSRC
 Receiver Report for the current remote RTP source. It includes interval loss,
 cumulative observed loss, highest extended sequence, jitter, and the latest
 Sender Report timing without retaining unbounded packet history.
+After the first local RTP send, `sender_report` generates a local-SSRC Sender
+Report using the current RTP clock and bounded packet/payload-octet counters.
+The caller injects the corresponding NTP seconds and fractional words so clock
+ownership remains explicit and deterministic.
 
 ## Recording
 

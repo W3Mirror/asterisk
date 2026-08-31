@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-106 — PR #38 hosted RTCP validation green
-**Last checkpoint (UTC):** 2026-08-31T00:52:02Z
+**Current checkpoint:** CP-107 — per-leg RTCP Sender Report scheduling locally green
+**Last checkpoint (UTC):** 2026-08-31T01:04:54Z
 **Active phase:** Phase 1 — Rust media engine
-**Active milestone:** Per-leg RTCP termination and Receiver Reports<br>
-**Next resume action:** Push the PR #38 green-check reconciliation and verify all three hosted jobs on its documentation-only final head; then select the next bounded offline media reliability slice
-**Active PR:** [#38](https://github.com/W3Mirror/asterisk/pull/38) — `runtime-rtcp-leg-reports` targets `runtime-dtmf-timeline`
+**Active milestone:** Per-leg RTCP Sender Report scheduling<br>
+**Next resume action:** Commit and publish stacked PR #39 against `runtime-rtcp-leg-reports`, then verify Workspace, Protocol fuzz, and Dependency audit on its final head
+**Active PR:** pending publication — `runtime-rtcp-sender-reports` targets `runtime-rtcp-leg-reports`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-38`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-39`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -4365,6 +4365,27 @@ blockers: Sender Report scheduling, jitter playout, media/WebSocket load, long-d
 next_action: Push this reconciliation checkpoint, verify all three hosted jobs on that documentation-only final head, then implement the next smallest bounded offline media reliability slice without enabling Rust traffic
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #38 if the per-leg RTCP reporting contract is superseded
 notes: Relevant tests shipped with the implementation. Hosted PR CI and pushes to `aistack/main` continue to run the complete repository suite rather than affected-module selection. Scheduled-only extended property and reclamation steps were correctly skipped for the pull-request event. The only hosted annotations are known non-blocking Node.js 20 runtime deprecation notices for `actions/checkout@v4`. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-107 — per-leg RTCP Sender Report scheduling locally green
+
+~~~yaml
+checkpoint_id: CP-107
+recorded_at_utc: 2026-08-31T01:04:54Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Per-leg RTCP Sender Report scheduling
+scope: Generate and interval-gate identity-correct RTCP Sender Reports for RTP emitted on each active caller/human leg while keeping monotonic scheduling and correlated NTP wall-clock input explicit
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-39
+branch: runtime-rtcp-sender-reports
+base_branch: runtime-rtcp-leg-reports
+pr: pending publication
+head_sha: 50f011754e75691a81466207c0c2ac6dbea4abf8 before the implementation commit
+evidence: PR #38 remains OPEN/non-draft/CLEAN at final head `50f011754`, with local, origin, and GitHub parity; hosted final-head run `33345866871` passed Workspace checks in 45 seconds, Protocol fuzz checks in 53 seconds, and Dependency audit in 3 minutes. RTP now exposes a constant-size send snapshot only after its first serialized packet; media-core builds local-SSRC Sender Reports with the next regular RTP timestamp and saturating packet/payload-octet counters; a typed `NtpTimestamp` keeps the caller-owned NTP seconds/fraction explicit; media-runtime validates a non-zero configurable interval, returns no work before RTP or between intervals, and advances its single successful-send timestamp only after a complete RTCP datagram write; caller/human bridge methods validate the exact active endpoints before polling either leg. Tests cover no-RTP behavior, zero interval rejection, missing-RTCP-destination retry without schedule advancement, exact interval boundary, repeated reports, per-leg SSRC/timestamp/counters/NTP identity, and AI failback before report state changes. Focused suites pass with 26 call-runtime, 12 media-core, 10 media-runtime, 11 RTCP, and 10 RTP tests; all 198 locked workspace tests pass; strict media-runtime/call-runtime Clippy with `--no-deps -- -D warnings`, workspace Clippy/all targets, formatting, workflow YAML parsing, and `git diff --check` pass
+blockers: Jitter playout, media/WebSocket load, long-duration soak/memory, sanitized captures, provider/Asterisk interoperability, rollback proof, and production evidence remain active goal work; the event loop must supply correlated monotonic/NTP values when integrating this polling API; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Commit and publish stacked PR #39 against `runtime-rtcp-leg-reports`, record its exact implementation head, and verify every hosted Rust quality job on the final PR head
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the Sender Report scheduling PR or remove its event-loop polling API if the clock contract is superseded
+notes: Relevant implementation, directly affected-module tests, documentation, and manifest changes ship together. Every PR and push to `aistack/main` runs the complete repository suite rather than affected-module selection. This deterministic slice does not claim a production timer loop, clock synchronization, live-provider RTCP interoperability, or traffic readiness.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints

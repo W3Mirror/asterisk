@@ -13,13 +13,13 @@ call-engine = { path = "../call-engine" }
 dtmf = { path = "../dtmf" }
 media-core = { path = "../media-core" }
 media-runtime = { path = "../media-runtime" }
+rtcp = { path = "../rtcp" }
 sip-transaction = { path = "../sip-transaction" }
 sip-transport = { path = "../sip-transport" }
 sip-types = { path = "../sip-types" }
 sip-security = { path = "../sip-security" }
 
 [dev-dependencies]
-rtcp = { path = "../rtcp" }
 rtp = { path = "../rtp" }
 sip-parser = { path = "../sip-parser" }
 
