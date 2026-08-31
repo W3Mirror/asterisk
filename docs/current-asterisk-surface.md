@@ -23,6 +23,13 @@ also did not have `.env.aistack`, a host `asterisk` CLI, or permission to inspec
 the host firewall. The facts below therefore distinguish configured behavior
 from behavior that still requires a controlled live probe.
 
+A fresh read-only probe on 2026-08-31 returned `65.1.135.111` for
+`sip-trunk.w3.run` from `1.1.1.1`, not the configured host address
+`195.201.246.125`. An `openssl s_client` probe to
+`sip-trunk.w3.run:5061` with SNI timed out after 12 seconds. DNS, certificate,
+firewall, and provider onboarding therefore remain unverified; no live call or
+credentialed provider traffic was attempted.
+
 ## Configured call flows
 
 | Flow | Direction | Provider/peer | Signaling | Media | Current behavior | Status |
