@@ -127,6 +127,19 @@ pub struct RecordingMetadata {
     pub dropped_frames: u64,
 }
 
+/// A bounded post-call snapshot of one recording channel.
+///
+/// The WAV bytes are materialized from the recorder's retained frames and the
+/// metadata describes that exact snapshot. Persistence and upload remain the
+/// caller's responsibility.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecordingSnapshot {
+    /// Metadata for the retained frames included in [`Self::wav`].
+    pub metadata: RecordingMetadata,
+    /// PCM16 WAV bytes for the retained frames.
+    pub wav: Vec<u8>,
+}
+
 /// A non-blocking, bounded PCM recorder.
 ///
 /// Callers feed already-decoded [`AudioFrame`] values from the media path.
@@ -263,6 +276,24 @@ impl AudioRecorder {
             .flat_map(|frame| frame.samples.iter().copied())
             .collect::<Vec<_>>();
         wav_bytes(self.config, &samples)
+    }
+
+    /// Materializes a stable snapshot without changing recorder state.
+    pub fn snapshot(&self) -> Result<RecordingSnapshot, RecordingError> {
+        Ok(RecordingSnapshot {
+            metadata: self.metadata(),
+            wav: self.wav()?,
+        })
+    }
+
+    /// Materializes a stable snapshot and releases the retained frames.
+    ///
+    /// Cumulative drop counters remain available when the recorder is reused.
+    /// If WAV serialization fails, the recorder is left unchanged.
+    pub fn finalize(&mut self) -> Result<RecordingSnapshot, RecordingError> {
+        let snapshot = self.snapshot()?;
+        self.clear();
+        Ok(snapshot)
     }
 
     /// Mixes two bounded mono recordings into a timestamp-ordered PCM16 WAV.
@@ -449,5 +480,37 @@ mod tests {
         assert!(caller.is_empty());
         assert_eq!(caller.metadata().samples, 0);
         assert_eq!(caller.metadata().dropped_frames, 0);
+    }
+
+    #[test]
+    fn finalize_returns_snapshot_then_releases_retained_frames() {
+        let mut recorder = AudioRecorder::new(RecorderConfig {
+            max_frames: 1,
+            max_samples_per_frame: 4,
+            ..RecorderConfig::default()
+        })
+        .unwrap();
+        recorder.push(frame(100, &[1, 2])).unwrap();
+        recorder.push(frame(200, &[3, 4])).unwrap();
+
+        let snapshot = recorder.finalize().unwrap();
+        assert_eq!(snapshot.metadata.frames, 1);
+        assert_eq!(snapshot.metadata.samples, 2);
+        assert_eq!(snapshot.metadata.first_timestamp, Some(200));
+        assert_eq!(snapshot.metadata.dropped_frames, 1);
+        assert_eq!(
+            u32::from_le_bytes(snapshot.wav[40..44].try_into().unwrap()),
+            4
+        );
+        assert!(recorder.is_empty());
+        assert_eq!(recorder.metadata().frames, 0);
+        assert_eq!(recorder.metadata().samples, 0);
+        assert_eq!(recorder.metadata().dropped_frames, 1);
+
+        let second = recorder.finalize().unwrap();
+        assert_eq!(second.metadata.frames, 0);
+        assert_eq!(second.metadata.samples, 0);
+        assert_eq!(second.metadata.dropped_frames, 1);
+        assert_eq!(second.wav.len(), 44);
     }
 }
