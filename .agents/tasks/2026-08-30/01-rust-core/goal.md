@@ -1,12 +1,12 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-185 — AI/WebSocket disconnect cleanup locally green
-**Last checkpoint (UTC):** 2026-08-31T14:23:24Z
+**Current checkpoint:** CP-186 — PR #62 hosted validation green
+**Last checkpoint (UTC):** 2026-08-31T14:29:06Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** AI/WebSocket disconnect cleanup and Asterisk fallback<br>
-**Next resume action:** Commit and publish the AI/WebSocket disconnect cleanup slice, then verify hosted PR #62 checks and exact SHA parity
-**Active PR:** #62 — `media-ai-disconnect-cleanup` targets `transport-failure-cleanup` (local validation green; publication pending)
+**Next resume action:** Reconcile the green PR #62 publication and continue the next bounded offline acceptance slice without enabling Rust traffic
+**Active PR:** #62 — `media-ai-disconnect-cleanup` targets `transport-failure-cleanup` (hosted green)
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-62-media-ai-disconnect`
 **Primary language:** Rust  
@@ -6134,6 +6134,27 @@ blockers: Commit/push, PR #62 publication, hosted Workspace/fuzz/dependency-audi
 next_action: Commit the AI/WebSocket disconnect cleanup implementation/tests/docs/ledger normally, push `media-ai-disconnect-cleanup`, open PR #62 against `transport-failure-cleanup`, and verify exact local/origin/GitHub parity plus the complete ordinary hosted suite.
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #62 or revert the AI/WebSocket disconnect cleanup implementation if its contract is superseded.
 notes: Every pull request event (opened, reopened, or synchronized) runs the complete ordinary hosted suite, not an affected-module-only subset; a push to `aistack/main` runs that same complete suite. Scheduled/manual jobs add larger capacity, extended property, multi-hour soak, and credentialed provider/live-call evidence. All workflow runners remain hosted `ubuntu-latest`; Docker is limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-186 — PR #62 hosted validation green
+
+~~~yaml
+checkpoint_id: CP-186
+recorded_at_utc: 2026-08-31T14:29:06Z
+status: hosted_green
+phase: Phase 1 — Rust media engine
+milestone: AI/WebSocket disconnect cleanup and Asterisk fallback
+scope: Verify the complete ordinary hosted Rust quality suite on PR #62's exact AI/WebSocket disconnect cleanup publication
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-62-media-ai-disconnect
+branch: media-ai-disconnect-cleanup
+base_branch: transport-failure-cleanup
+pr: https://github.com/W3Mirror/asterisk/pull/62
+head_sha: c93bf28b66f1a1114f37b0c949d079a6f2e6bff9
+evidence: PR #62 is OPEN, non-draft, CLEAN, and MERGEABLE against exact base `transport-failure-cleanup` at `ba4bdde6d5162656f77ab365b0d4c789f5d2513a`, with local, origin, and GitHub head parity at `c93bf28b66f1a1114f37b0c949d079a6f2e6bff9`. Hosted Rust quality run `33402518906` passed Workspace checks `99522040918` (formatting, complete locked workspace tests including the new media/WebSocket/load-smoke regressions, three pinned Docker-backed SIPp scenarios, deterministic signaling/RTP-media/WebSocket-media/combined/short-soak reclamation smokes, and workspace Clippy), Protocol fuzz checks `99522040595` (all six address-sanitizer targets), and Dependency audit `99522041107`. The schedule/manual-only Signaling capacity matrix `99522042143` and Two-hour lifecycle soak `99522042436` correctly skipped for the pull-request event.
+blockers: This remains provider-neutral offline disconnect/reclamation evidence. It does not prove real Asterisk/provider interoperability, provider credentials, live traffic, route failover, production rollout/rollback execution, or safe Rust traffic enablement. Rust traffic stays disabled and Asterisk remains the fallback. Later lifecycle, deployment, and real-provider evidence gates remain open.
+next_action: Reconcile PR #62's hosted-green publication and select the next bounded offline acceptance slice while preserving the provider/Asterisk evidence gate.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #62 or revert `c93bf28b6` if the disconnect/reclamation contract is superseded.
+notes: Focused tests ship with the implementation and are included in the full ordinary hosted workspace run. Every pull request event (opened, reopened, or synchronized) and every push to `aistack/main` runs the complete ordinary hosted suite; scheduled/manual jobs add larger capacity, extended property, multi-hour soak, and credentialed provider/live-call evidence. All workflow runners remain hosted `ubuntu-latest`; Docker is limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
