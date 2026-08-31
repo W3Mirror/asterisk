@@ -34,9 +34,18 @@ Control-plane callers can use the `*_authorized` runtime wrappers with an
 runtime retains no bearer token, password, signature, or verification key—only
 the bounded non-secret principal ID and permission bits are handed to the
 engine. Authorization runs before call lookup and idempotency-key lookup, and
-denials preserve clone/commit atomicity so they cannot mutate state, queues, or
-transport output. The unqualified methods remain available for trusted
-internal/SIP dispatch.
+denials preserve call state, lifecycle queues, and transport output. Their
+bounded audit record is intentionally committed even though no wire action is
+produced, so rejected control-plane attempts remain observable. The
+unqualified methods remain available for trusted internal/SIP dispatch.
+
+Authorized control-plane operations append bounded, credential-free audit
+records. A record contains the verified principal ID, application call ID,
+operation, and stable outcome code; it excludes SIP Call-IDs, phone numbers,
+credentials, and raw request bodies. A caller with `calls:read` (or
+`calls:admin`) can drain the records with `drain_audit_records`. The oldest
+record is evicted at the configured event bound, and queue depth is exposed as
+an aggregate metric without labels.
 
 The adapter has no async-runtime or provider-specific dependency. An
 application can call it from its own event loop, wrap it in an async worker, or

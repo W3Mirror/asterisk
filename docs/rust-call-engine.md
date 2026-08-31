@@ -52,13 +52,23 @@ idempotency-key lookup, so denied requests cannot probe state or replay events.
 The existing unqualified methods remain trusted internal APIs for SIP-driven
 engine work.
 
+Authorized command, origination, response, media-negotiation, and terminal
+reclamation paths append a bounded `AuditRecord` containing only the verified
+principal ID, application call ID, operation, and stable outcome code. Audit
+records never contain SIP Call-IDs, phone numbers, credentials, or raw request
+bodies. Consumers with `calls:read` (or `calls:admin`) can drain the records
+through `CallEngine::drain_audit_records`; the oldest record is evicted at the
+configured event bound so audit traffic cannot create an unbounded queue or
+block the media path.
+
 ## Aggregate metrics
 
 `CallEngine::metrics` returns bounded lifecycle counters and signaling gauges.
 `EngineMetrics::prometheus` renders a label-free Prometheus text snapshot with
 call starts, answers, failures, completions, active calls, event queue/history
 depth, retained idempotency keys, active transactions/dialogs, final INVITE
-retransmission state, and reliable provisional responses awaiting PRACK. The
+retransmission state, reliable provisional responses awaiting PRACK, and
+bounded audit queue depth. The
 snapshot intentionally contains no call IDs, SIP Call-IDs, phone numbers,
 provider names, principal IDs, or credentials, preventing sensitive values and
 unbounded per-call label cardinality from entering metrics. `CallRuntime::metrics`

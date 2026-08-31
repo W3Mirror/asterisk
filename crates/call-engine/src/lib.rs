@@ -16,8 +16,8 @@ use std::{
 };
 
 use call_api::{
-    ApiError, AuthenticatedPrincipal, CallCommand, CallMetrics, CallRegistry, CallRegistryConfig,
-    CallSnapshot, NegotiatedAudio,
+    ApiError, AuditOperation, AuditOutcome, AuditRecord, AuthenticatedPrincipal, CallCommand,
+    CallMetrics, CallRegistry, CallRegistryConfig, CallSnapshot, NegotiatedAudio,
 };
 use call_core::{CallId, CallState, CommandId, LifecycleEvent};
 use sip_auth::{DigestAuthorization, DigestChallenge, DigestCredentials, DigestError};
@@ -208,6 +208,13 @@ impl From<DigestError> for EngineError {
     }
 }
 
+fn engine_error_code(error: &EngineError) -> &'static str {
+    match error {
+        EngineError::CallApi(error) => error.code(),
+        _ => "engine_error",
+    }
+}
+
 /// A message that the outer transport adapter should send.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SendAction {
@@ -325,6 +332,11 @@ impl EngineMetrics {
             output,
             "call_idempotency_keys_retained {}",
             calls.retained_command_keys
+        );
+        let _ = writeln!(
+            output,
+            "call_audit_queue_depth {}",
+            calls.pending_audit_records
         );
         let _ = writeln!(
             output,
@@ -502,6 +514,22 @@ impl CallEngine {
         self.dialogs.len()
     }
 
+    /// Drains bounded control-plane audit records after verifying read access.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the principal lacks `calls:read` or when `limit`
+    /// is zero.
+    pub fn drain_audit_records(
+        &mut self,
+        principal: &AuthenticatedPrincipal,
+        limit: usize,
+    ) -> Result<Vec<AuditRecord>, EngineError> {
+        Ok(self
+            .registry
+            .drain_audit_records_authorized(principal, limit)?)
+    }
+
     /// Returns a stable call snapshot.
     pub fn snapshot(&self, id: &CallId) -> Result<CallSnapshot, EngineError> {
         Ok(self.registry.snapshot(id)?)
@@ -652,8 +680,27 @@ impl CallEngine {
         principal: &AuthenticatedPrincipal,
         id: &CallId,
     ) -> Result<CallSnapshot, EngineError> {
-        principal.authorize(CallCommand::End)?;
-        self.reclaim_terminal_call(id)
+        let operation = AuditOperation::ReclaimTerminal;
+        if let Err(error) = principal.authorize(CallCommand::End) {
+            self.registry.record_audit(
+                principal,
+                Some(id),
+                operation,
+                AuditOutcome::Rejected(error.code()),
+            );
+            return Err(error.into());
+        }
+        let result = self.reclaim_terminal_call(id);
+        self.registry.record_audit(
+            principal,
+            Some(id),
+            operation,
+            result.as_ref().map_or_else(
+                |error| AuditOutcome::Rejected(engine_error_code(error)),
+                |_| AuditOutcome::Succeeded,
+            ),
+        );
+        result
     }
 
     /// Negotiates and retains audio for a registered call.
@@ -674,8 +721,27 @@ impl CallEngine {
         local: &sdp::SessionDescription,
         remote: &sdp::SessionDescription,
     ) -> Result<NegotiatedAudio, EngineError> {
-        principal.authorize(CallCommand::MediaStarted)?;
-        self.negotiate_audio(id, local, remote)
+        let operation = AuditOperation::NegotiateAudio;
+        if let Err(error) = principal.authorize(CallCommand::MediaStarted) {
+            self.registry.record_audit(
+                principal,
+                Some(id),
+                operation,
+                AuditOutcome::Rejected(error.code()),
+            );
+            return Err(error.into());
+        }
+        let result = self.negotiate_audio(id, local, remote);
+        self.registry.record_audit(
+            principal,
+            Some(id),
+            operation,
+            result.as_ref().map_or_else(
+                |error| AuditOutcome::Rejected(engine_error_code(error)),
+                |_| AuditOutcome::Succeeded,
+            ),
+        );
+        result
     }
 
     /// Starts an outbound INVITE transaction and creates its UAC dialog.
@@ -726,8 +792,28 @@ impl CallEngine {
         now: Duration,
         reliability: TransportReliability,
     ) -> Result<(CallId, EngineOutput), EngineError> {
-        principal.authorize(CallCommand::InviteReceived)?;
-        self.originate(request, destination, now, reliability)
+        let operation = AuditOperation::Originate;
+        if let Err(error) = principal.authorize(CallCommand::InviteReceived) {
+            self.registry.record_audit(
+                principal,
+                None,
+                operation,
+                AuditOutcome::Rejected(error.code()),
+            );
+            return Err(error.into());
+        }
+        let result = self.originate(request, destination, now, reliability);
+        let call_id = result.as_ref().ok().map(|(id, _)| id);
+        self.registry.record_audit(
+            principal,
+            call_id,
+            operation,
+            result.as_ref().map_or_else(
+                |error| AuditOutcome::Rejected(engine_error_code(error)),
+                |_| AuditOutcome::Succeeded,
+            ),
+        );
+        result
     }
 
     /// Receives an inbound SIP request from a parsed UDP/TCP transport.
@@ -1372,12 +1458,32 @@ impl CallEngine {
         body: Vec<u8>,
         now: Duration,
     ) -> Result<EngineOutput, EngineError> {
-        if (300..=699).contains(&status_code) {
-            principal.authorize(CallCommand::Fail)?;
+        let operation = AuditOperation::RespondToInvite;
+        let permission_command = if (300..=699).contains(&status_code) {
+            CallCommand::Fail
         } else {
-            principal.authorize(CallCommand::Answer)?;
+            CallCommand::Answer
+        };
+        if let Err(error) = principal.authorize(permission_command) {
+            self.registry.record_audit(
+                principal,
+                Some(id),
+                operation,
+                AuditOutcome::Rejected(error.code()),
+            );
+            return Err(error.into());
         }
-        self.respond_to_invite(id, status_code, reason, body, now)
+        let result = self.respond_to_invite(id, status_code, reason, body, now);
+        self.registry.record_audit(
+            principal,
+            Some(id),
+            operation,
+            result.as_ref().map_or_else(
+                |error| AuditOutcome::Rejected(engine_error_code(error)),
+                |_| AuditOutcome::Succeeded,
+            ),
+        );
+        result
     }
 
     /// Polls all transaction timers at a deterministic monotonic time.
@@ -2354,7 +2460,7 @@ fn header_has_token(headers: &Headers, name: &str, expected: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use call_api::ControlPermission;
+    use call_api::{AuditOperation, AuditOutcome, ControlPermission};
     use call_core::{CallEventKind, CommandId};
     use std::net::{IpAddr, Ipv4Addr};
 
@@ -2786,6 +2892,128 @@ mod tests {
             .unwrap();
         assert_eq!(retry.events(), first.events());
         assert_eq!(engine.snapshot(&call_id).unwrap().state, CallState::Ending);
+
+        assert_eq!(
+            engine.apply_authorized_idempotent_call_command(
+                &hangup,
+                &call_id,
+                CallCommand::End,
+                CommandId::from_sequence(9),
+            ),
+            Err(EngineError::CallApi(ApiError::IdempotencyConflict))
+        );
+        let audit = engine.drain_audit_records(&read_only, 16).unwrap();
+        assert_eq!(audit.len(), 6);
+        assert_eq!(
+            audit[0].outcome,
+            AuditOutcome::Rejected("permission_denied")
+        );
+        assert_eq!(audit[1].operation, AuditOperation::Originate);
+        assert_eq!(audit[2].outcome, AuditOutcome::Succeeded);
+        assert_eq!(
+            audit[3].outcome,
+            AuditOutcome::Rejected("permission_denied")
+        );
+        assert_eq!(audit[4].outcome, AuditOutcome::Replayed);
+        assert_eq!(
+            audit[5].outcome,
+            AuditOutcome::Rejected("idempotency_conflict")
+        );
+    }
+
+    #[test]
+    fn authorized_origination_and_rejection_are_auditable_without_sip_identifiers() {
+        let mut engine = CallEngine::new(EngineConfig::default()).unwrap();
+        let originate = principal(&[ControlPermission::OriginateCalls]);
+        let read_only = principal(&[ControlPermission::ReadCalls]);
+        let (call_id, _) = engine
+            .originate_authorized(
+                &originate,
+                invite(
+                    "audit-branch",
+                    "sip-secret-call-id",
+                    "Bob <sip:bob@example.com>",
+                    "1 INVITE",
+                ),
+                address(5060),
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        assert_eq!(engine.metrics().calls.pending_audit_records, 1);
+        assert_eq!(
+            engine.apply_authorized_call_command(&read_only, &call_id, CallCommand::Hangup),
+            Err(EngineError::CallApi(ApiError::PermissionDenied {
+                command: CallCommand::Hangup,
+                permission: ControlPermission::HangupCalls,
+            }))
+        );
+
+        let records = engine.drain_audit_records(&read_only, 8).unwrap();
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].call_id, Some(call_id.clone()));
+        assert_eq!(records[0].operation, AuditOperation::Originate);
+        assert_eq!(records[0].outcome, AuditOutcome::Succeeded);
+        assert_eq!(records[1].call_id, Some(call_id));
+        assert_eq!(
+            records[1].outcome,
+            AuditOutcome::Rejected("permission_denied")
+        );
+        let rendered = engine.metrics().prometheus();
+        assert!(!rendered.contains("sip-secret-call-id"));
+    }
+
+    #[test]
+    fn authorized_audio_negotiation_records_success_and_rejection_outcomes() {
+        let mut engine = CallEngine::new(EngineConfig::default()).unwrap();
+        let (call_id, _) = engine
+            .originate(
+                invite(
+                    "audit-media",
+                    "audit-media-call",
+                    "Bob <sip:bob@example.com>",
+                    "1 INVITE",
+                ),
+                address(5060),
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        let manage = principal(&[ControlPermission::ManageCalls]);
+        let reader = principal(&[ControlPermission::ReadCalls]);
+        let local = sdp::SessionDescription::new_audio(
+            "- 2 2 IN IP4 192.0.2.20",
+            "IN IP4 192.0.2.20",
+            5000,
+        );
+        let remote = sdp::parse(
+            b"v=0\r\no=- 1 1 IN IP4 192.0.2.10\r\ns=-\r\nc=IN IP4 192.0.2.10\r\nt=0 0\r\na=sendonly\r\nm=audio 4000 RTP/AVP 96\r\na=rtpmap:96 PCMU/8000\r\n",
+        )
+        .unwrap();
+        engine
+            .negotiate_audio_authorized(&manage, &call_id, &local, &remote)
+            .unwrap();
+
+        let incompatible = sdp::parse(
+            b"v=0\r\no=- 1 1 IN IP4 192.0.2.10\r\ns=-\r\nc=IN IP4 192.0.2.10\r\nt=0 0\r\nm=audio 4000 RTP/AVP 9\r\na=rtpmap:9 G722/8000\r\n",
+        )
+        .unwrap();
+        assert_eq!(
+            engine.negotiate_audio_authorized(&manage, &call_id, &local, &incompatible),
+            Err(EngineError::CallApi(ApiError::NoCommonCodec))
+        );
+
+        let records = engine.drain_audit_records(&reader, 8).unwrap();
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].call_id, Some(call_id.clone()));
+        assert_eq!(records[0].operation, AuditOperation::NegotiateAudio);
+        assert_eq!(records[0].outcome, AuditOutcome::Succeeded);
+        assert_eq!(records[1].call_id, Some(call_id));
+        assert_eq!(records[1].operation, AuditOperation::NegotiateAudio);
+        assert_eq!(
+            records[1].outcome,
+            AuditOutcome::Rejected("no_common_codec")
+        );
     }
 
     #[test]
@@ -2863,6 +3091,39 @@ mod tests {
         );
         assert_eq!(engine.transaction_count(), 0);
         assert_eq!(engine.dialog_count(), 0);
+
+        let records = engine.drain_audit_records(&read_only, 8).unwrap();
+        assert_eq!(records.len(), 6);
+        assert_eq!(records[0].operation, AuditOperation::RespondToInvite);
+        assert_eq!(
+            records[0].outcome,
+            AuditOutcome::Rejected("permission_denied")
+        );
+        assert_eq!(records[1].operation, AuditOperation::RespondToInvite);
+        assert_eq!(records[1].outcome, AuditOutcome::Succeeded);
+        assert_eq!(
+            records[2].operation,
+            AuditOperation::ApplyCommand {
+                command: CallCommand::Hangup,
+                idempotent: false
+            }
+        );
+        assert_eq!(records[2].outcome, AuditOutcome::Succeeded);
+        assert_eq!(
+            records[3].operation,
+            AuditOperation::ApplyCommand {
+                command: CallCommand::End,
+                idempotent: false
+            }
+        );
+        assert_eq!(records[3].outcome, AuditOutcome::Succeeded);
+        assert_eq!(records[4].operation, AuditOperation::ReclaimTerminal);
+        assert_eq!(
+            records[4].outcome,
+            AuditOutcome::Rejected("permission_denied")
+        );
+        assert_eq!(records[5].operation, AuditOperation::ReclaimTerminal);
+        assert_eq!(records[5].outcome, AuditOutcome::Succeeded);
     }
 
     #[test]
