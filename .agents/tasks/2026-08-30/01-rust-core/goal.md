@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**  
-**Current checkpoint:** CP-017 — PR #2 hosted validation and mergeability confirmed
-**Last checkpoint (UTC):** 2026-08-31T19:43:18Z
+**Current checkpoint:** CP-018 — Reconcile PR #2 checkpoint head after publication
+**Last checkpoint (UTC):** 2026-08-31T19:47:42Z
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
 **Active milestone:** Milestone 1 — Scope Baseline  
 **Next resume action:** Update PR #3's base branch in stack order, run its focused transaction tests and hosted checks, and record the resulting head and mergeability
@@ -2118,7 +2118,7 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 | Workstream | Status | Evidence / checkpoint | PR | Next action |
 | --- | --- | --- | --- | --- |
 | Phase 0 — current Asterisk surface | in_progress | CP-015; PR #1 hosted run 33431290927 passed and GitHub reports CLEAN/MERGEABLE at `8dbd0082823b9444e72a6ceebee27328bd0f506d` | #1 | Keep the verified Asterisk inventory and production-evidence gate in force |
-| Phase 1 — Rust media engine | in_progress | CP-017; PR #2 hosted run 33431734927 passed and GitHub reports CLEAN/MERGEABLE at `4b8c5b318c9cf303bf340c2630a94541791d792a` | [#2](https://github.com/W3Mirror/asterisk/pull/2) | Update PR #3's base branch in stack order and validate its transaction slice |
+| Phase 1 — Rust media engine | in_progress | CP-018; PR #2 hosted run 33432171273 passed and GitHub reports CLEAN/MERGEABLE at `676ce481c3ea5efd7f194d444e186bd38efc5636` | [#2](https://github.com/W3Mirror/asterisk/pull/2) | Update PR #3's base branch in stack order and validate its transaction slice |
 | Phase 2 — SIP edge shadow mode | not_started | — | — | Build sanitized replay and comparison fixtures |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
 | Phase 4 — expanded provider coverage | not_started | — | — | Add one provider compatibility suite per rollout target |
@@ -2579,6 +2579,27 @@ rollback: Asterisk remains the active/fallback engine; no routing was changed
 notes: Rust checks now execute on this branch because the workspace manifests are present; hosted dependency audit completed successfully after a transient multi-minute wait.
 ```
 
+### CP-018 — Reconcile PR #2 checkpoint head after publication
+
+```yaml
+checkpoint_id: CP-018
+recorded_at_utc: 2026-08-31T19:47:42Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Milestone 2 — Rust RTP Core
+scope: Reconcile the PR #2 ledger with the published validation-checkpoint commit
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-2-rust-foundation
+branch: rust-core-foundation
+base_branch: sip-rtp-engine-rust
+pr: "#2 https://github.com/W3Mirror/asterisk/pull/2"
+head_sha: 676ce481c3ea5efd7f194d444e186bd38efc5636
+evidence: Hosted run 33432171273 completed success for the preceding implementation-validation head 4b8c5b318; the subsequent ledger commit is published at 676ce481c3ea5efd7f194d444e186bd38efc5636 with local status and origin parity clean. GitHub reports PR #2 OPEN, CLEAN, and MERGEABLE; the new head's hosted recheck is queued.
+blockers: Production deployment identity, effective configuration, provider credentials, and sanitized inbound/outbound captures remain unavailable; downstream branches require sequential revalidation
+next_action: Verify the hosted recheck for head 676ce481c3ea5efd7f194d444e186bd38efc5636, then update PR #3's base branch
+rollback: Asterisk remains the active/fallback engine; no routing was changed
+notes: This reconciliation corrects the previous CP-017 head mismatch caused by publishing its ledger update as a new commit.
+```
+
 ### Checkpoint template
 
 Copy this template, assign the next checkpoint ID, fill every field, and append it after each meaningful state change:
@@ -2661,7 +2682,7 @@ Populate one row per PR before implementation begins, then update it at every ch
 | Order | PR | Branch | Base / target | Worktree | Scope | Status | Head SHA | CI / evidence | Next action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 1 | [#1](https://github.com/W3Mirror/asterisk/pull/1) | `sip-rtp-engine-rust` | `aistack/main` | `/home/ashutosh/.worktrees/w3mirror/asterisk/sip-rtp-engine-rust` | Phase 0 repository surface inventory and evidence boundary | in_progress | `8dbd0082823b9444e72a6ceebee27328bd0f506d` | Hosted run [33431290927](https://github.com/W3Mirror/asterisk/actions/runs/33431290927) passed; GitHub reports CLEAN/MERGEABLE; Rust checks skipped because this docs-only stack layer has no Cargo manifests | Validate PR #2 on this base |
-| 2 | [#2](https://github.com/W3Mirror/asterisk/pull/2) | `rust-core-foundation` | `sip-rtp-engine-rust` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-2-rust-foundation` | Provider-neutral bounded SIP/SDP/RTP/RTCP/DTMF/media/call foundations | in_progress | `4b8c5b318c9cf303bf340c2630a94541791d792a` | Hosted run [33431734927](https://github.com/W3Mirror/asterisk/actions/runs/33431734927) passed; GitHub reports CLEAN/MERGEABLE; local focused cargo fmt/test/clippy pass | Update PR #3's base branch in stack order |
+| 2 | [#2](https://github.com/W3Mirror/asterisk/pull/2) | `rust-core-foundation` | `sip-rtp-engine-rust` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-2-rust-foundation` | Provider-neutral bounded SIP/SDP/RTP/RTCP/DTMF/media/call foundations | in_progress | `676ce481c3ea5efd7f194d444e186bd38efc5636` | Hosted run [33432171273](https://github.com/W3Mirror/asterisk/actions/runs/33432171273) passed; GitHub reports CLEAN/MERGEABLE; local focused cargo fmt/test/clippy pass | Update PR #3's base branch in stack order |
 
 ## 59.4 Stacked-PR Checkpoints
 
