@@ -762,8 +762,8 @@ mod tests {
             Err(TransportError::MessageTooLarge { .. })
         ));
         client.shutdown().unwrap();
-        drop(client);
         let mut server = server.join().unwrap();
         assert!(server.recv().unwrap().is_empty());
+        drop(client);
     }
 }
