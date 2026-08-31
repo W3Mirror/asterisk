@@ -6043,7 +6043,7 @@ worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-60-graceful-drain
 branch: graceful-drain
 base_branch: audit-signals
 pr: https://github.com/W3Mirror/asterisk/pull/60
-head_sha: pending documentation-only checkpoint commit
+head_sha: 2f96e753c2fdbc4c5b0f38756ab6e6661be3dd2e
 evidence: `.github/workflows/rust-quality.yml` declares `pull_request:` and `push` to `aistack/main`. The PR trigger therefore runs on opened, reopened, and synchronized updates. Its ordinary hosted jobs run the complete locked workspace tests, focused tests included, plus SIPp, reclamation smokes, fuzz-target checks, dependency audit, formatting, and Clippy. The push to `aistack/main` repeats that same ordinary suite. No affected-module-only selector is currently implemented; larger capacity/property/soak jobs remain schedule/manual-only.
 blockers: This clarification does not change provider-neutral implementation status. Provider credentials/runtime access, sanitized real captures, production rollout/rollback execution, and live provider interoperability remain later evidence gates; Rust traffic remains disabled and Asterisk remains the fallback.
 next_action: Commit and publish this goal clarification with the active stack, then continue the next bounded offline acceptance slice from `graceful-drain`.
