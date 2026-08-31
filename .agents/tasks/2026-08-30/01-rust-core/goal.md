@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-105 — PR #38 published with hosted validation running
-**Last checkpoint (UTC):** 2026-08-31T00:47:59Z
+**Current checkpoint:** CP-106 — PR #38 hosted RTCP validation green
+**Last checkpoint (UTC):** 2026-08-31T00:52:02Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Per-leg RTCP termination and Receiver Reports<br>
-**Next resume action:** Push the PR #38 publication checkpoint and verify Workspace, Protocol fuzz, and Dependency audit on its final head
+**Next resume action:** Push the PR #38 green-check reconciliation and verify all three hosted jobs on its documentation-only final head; then select the next bounded offline media reliability slice
 **Active PR:** [#38](https://github.com/W3Mirror/asterisk/pull/38) — `runtime-rtcp-leg-reports` targets `runtime-dtmf-timeline`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-38`
@@ -4344,6 +4344,27 @@ blockers: Hosted validation is pending on the publication checkpoint's final hea
 next_action: Push this publication checkpoint and verify all three hosted Rust quality gates on the final PR #38 head
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #38 if the per-leg RTCP reporting contract is superseded
 notes: PR #38 contains the relevant RTP/RTCP/media/bridge implementation, affected-module tests, documentation, manifest, lockfile, and goal checkpoint. GitHub runs the complete repository suite on the PR, not an affected-module-only subset. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-106 — PR #38 hosted RTCP validation green
+
+~~~yaml
+checkpoint_id: CP-106
+recorded_at_utc: 2026-08-31T00:52:02Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Per-leg RTCP termination and Receiver Reports
+scope: Verify the complete hosted Rust quality suite on PR #38's publication-checkpoint head before continuing media reliability work
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-38
+branch: runtime-rtcp-leg-reports
+base_branch: runtime-dtmf-timeline
+pr: https://github.com/W3Mirror/asterisk/pull/38
+head_sha: fb0c2bca06a7d52ce6b7e0314195dcc43fcc8dbf before this green-check reconciliation commit
+evidence: PR #38 is OPEN/non-draft/CLEAN against exact base `runtime-dtmf-timeline`, with local, origin, and GitHub publication-head parity; hosted run `33345668046` passed Workspace checks in 54 seconds, including formatting, all 193 tests, all three local SIPp scenarios, the 512-call reclamation smoke, and workspace Clippy; Protocol fuzz checks passed in 55 seconds across all six address-sanitizer targets; Dependency audit passed in 3 minutes 3 seconds
+blockers: Sender Report scheduling, jitter playout, media/WebSocket load, long-duration soak/memory, sanitized captures, provider/Asterisk interoperability, rollback proof, and production evidence remain active goal work; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Push this reconciliation checkpoint, verify all three hosted jobs on that documentation-only final head, then implement the next smallest bounded offline media reliability slice without enabling Rust traffic
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #38 if the per-leg RTCP reporting contract is superseded
+notes: Relevant tests shipped with the implementation. Hosted PR CI and pushes to `aistack/main` continue to run the complete repository suite rather than affected-module selection. Scheduled-only extended property and reclamation steps were correctly skipped for the pull-request event. The only hosted annotations are known non-blocking Node.js 20 runtime deprecation notices for `actions/checkout@v4`. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
