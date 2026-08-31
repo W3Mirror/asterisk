@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-121 — PR #43 hosted signaling-capacity validation green
-**Last checkpoint (UTC):** 2026-08-31T02:37:42Z
+**Current checkpoint:** CP-123 — bounded combined signaling/media load locally green
+**Last checkpoint (UTC):** 2026-08-31T02:52:38Z
 **Active phase:** Phase 1 — Rust media engine
-**Active milestone:** Exact scheduled signaling concurrency matrix and process observations<br>
-**Next resume action:** Push the CP-121 green-check reconciliation, verify the complete ordinary suite on its documentation-only final head, then continue the next bounded combined-load or soak slice without enabling Rust traffic
-**Active PR:** [#43](https://github.com/W3Mirror/asterisk/pull/43) — `signaling-capacity-matrix` targets `websocket-load-smoke`
+**Active milestone:** Bounded combined signaling and RTP/media load, reclamation, and capacity reuse<br>
+**Next resume action:** Commit and publish the locally green combined-load slice as stacked PR #44 against exact base `signaling-capacity-matrix`, then verify the complete hosted suite without enabling Rust traffic
+**Active PR:** pending #44 — `combined-load-smoke` targets `signaling-capacity-matrix`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-43`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-44`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -2670,7 +2670,8 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 40 | [#40](https://github.com/W3Mirror/asterisk/pull/40) | `runtime-jitter-playout` | `runtime-rtcp-sender-reports` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-40` | Bounded caller-driven fixed-delay RTP audio jitter buffering and bridge/scenario playout integration | hosted green | `19ce0fd17` | CP-110–CP-112; focused media/runtime/bridge/replay tests and the full local matrix pass; PR #40 is OPEN/non-draft/CLEAN with local/origin/GitHub parity and final-head run `33348027308` passing Workspace checks, Protocol fuzz checks, and Dependency audit | Publish the bounded media-load slice from exact base `runtime-jitter-playout` |
 | 41 | [#41](https://github.com/W3Mirror/asterisk/pull/41) | `media-load-smoke` | `runtime-jitter-playout` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-41` | Bounded media-only RTP/jitter/AI-queue/RTP reclamation and capacity-reuse smoke for ordinary and scheduled CI | hosted green | `7100981da` | CP-113–CP-115; three focused tests and full local validation pass; PR #41 is OPEN/non-draft/CLEAN with local/origin/GitHub parity and final-head run `33349070621` passing Workspace checks including the ordinary media smoke, Protocol fuzz checks, and Dependency audit | Publish the bounded WebSocket-media transport smoke from exact base `media-load-smoke` |
 | 42 | [#42](https://github.com/W3Mirror/asterisk/pull/42) | `websocket-load-smoke` | `media-load-smoke` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-42` | Bounded in-memory WebSocket/media transport parsing, partial-write backpressure, reclamation, and capacity-reuse smoke for ordinary and scheduled CI | hosted green | `782cacd39` | CP-116–CP-118; three focused WebSocket-load tests and all 213 workspace tests plus the complete local verification matrix pass; PR #42 is OPEN/non-draft/CLEAN with local/origin/GitHub parity and final-head run `33350160471` passing Workspace checks including the ordinary WebSocket smoke, Protocol fuzz checks, and Dependency audit | Publish the exact signaling capacity matrix from base `websocket-load-smoke` |
-| 43 | [#43](https://github.com/W3Mirror/asterisk/pull/43) | `signaling-capacity-matrix` | `websocket-load-smoke` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-43` | Exact scheduled 1,000/5,000/10,000 in-memory signaling concurrency matrix with bounded logical reclamation and best-effort process observations | hosted green | `1eb78aab6` before CP-121 green-check reconciliation | CP-119–CP-121; two directly relevant regressions, all 12 load-smoke tests, all 215 workspace tests, the complete local verification matrix, ordinary hosted run `33351061459`, and manual hosted run `33351066748` pass; PR #43 is OPEN/non-draft/CLEAN against the exact base with local/origin/GitHub publication-head parity | Publish CP-121, verify ordinary PR CI on its documentation-only final head, then start the next bounded combined-load or soak slice |
+| 43 | [#43](https://github.com/W3Mirror/asterisk/pull/43) | `signaling-capacity-matrix` | `websocket-load-smoke` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-43` | Exact scheduled 1,000/5,000/10,000 in-memory signaling concurrency matrix with bounded logical reclamation and best-effort process observations | hosted green | `7a6938e98` | CP-119–CP-122; two directly relevant regressions, all 12 load-smoke tests, all 215 workspace tests, the complete local verification matrix, ordinary/manual hosted runs, and final-head run `33351327106` pass; PR #43 is OPEN/non-draft/CLEAN against the exact base with local/origin/GitHub parity | Review and merge in stack order; retain Asterisk fallback and all traffic-enablement gates |
+| 44 | pending | `combined-load-smoke` | `signaling-capacity-matrix` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-44` | Bounded in-memory combined SIP call plus RTP/jitter/AI-media lifecycle, reclamation, and capacity-reuse smoke for ordinary and scheduled CI | locally green | `7a6938e98` exact base before implementation/checkpoint commit | CP-122–CP-123; three directly relevant regressions, all 15 load-smoke tests, all 218 workspace tests, and the complete local verification matrix pass; ordinary and extended combined tiers reclaim calls, transactions, media sessions, queues, and payload bytes to zero | Commit and publish stacked PR #44 against exact base `signaling-capacity-matrix`, then verify the complete hosted suite |
 
 ### CP-026 — PR10 published and stacked remote parity verified
 
@@ -4686,6 +4687,48 @@ blockers: This remains single-process, single-threaded, in-memory signaling-only
 next_action: Push this CP-121 green-check reconciliation and verify Workspace checks, Protocol fuzz checks, and Dependency audit on its documentation-only final PR head
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #43 or remove the dedicated signaling-capacity job if the matrix contract is superseded
 notes: Relevant implementation and two directly affected tests shipped together. Pull requests and pushes to aistack/main run the complete ordinary hosted suite rather than affected-module-only selection; schedule/manual runs add deeper load/property tiers, including this exact matrix. Every job remains on hosted ubuntu-latest, and Docker is used only inside Workspace checks for pinned SIPp. The only hosted annotations are known non-blocking Node.js 20 runtime deprecation notices for actions/checkout@v4. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-122 — bounded combined signaling/media load slice started
+
+~~~yaml
+checkpoint_id: CP-122
+recorded_at_utc: 2026-08-31T02:42:54Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Bounded combined signaling and RTP/media load, reclamation, and capacity reuse
+scope: Start a distinct stacked slice that keeps each SIP call registered while its bounded RTP/jitter/AI-media session is exercised, then terminates and reclaims both resource families before reusing capacity
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-44
+branch: combined-load-smoke
+base_branch: signaling-capacity-matrix
+pr: pending #44 publication
+head_sha: 7a6938e9813bcc765cec2e0a63ff1b5e9d0d8a87 before implementation
+evidence: PR #43 is OPEN/non-draft/CLEAN at exact final head 7a6938e98 with local, origin, and GitHub parity. Final-head pull-request run 33351327106 passed Workspace checks in 48 seconds, Protocol fuzz checks in 51 seconds, and Dependency audit in 3 minutes 7 seconds; the schedule/manual-only signaling matrix correctly skipped. Its earlier exact-head manual run 33351066748 passed the complete ordinary jobs and dedicated 1,000/5,000/10,000 matrix. Remote branch combined-load-smoke and required tracked worktree /home/ashutosh/.worktrees/w3mirror/asterisk/pr-44 were created from exact base 7a6938e98
+blockers: The planned harness is deterministic in-memory composition evidence only; it cannot prove kernel-socket/provider concurrency, end-to-end media quality, CPU per call, multi-hour soak/stable allocator memory, provider/Asterisk interoperability, rollback proof, or production readiness. Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Implement the bounded combined call/media harness with configuration validation, exact lifecycle/resource invariants, telemetry, CLI/CI wiring, documentation, and directly affected regression tests
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; delete or close the unmerged combined-load branch/PR if the harness contract is superseded
+notes: The ordinary combined smoke will run as part of the complete hosted PR and aistack/main suite; only its deeper tier will be schedule-only. All jobs remain hosted ubuntu-latest, and Docker remains limited to the pinned SIPp dependency inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-123 — bounded combined signaling/media load locally green
+
+~~~yaml
+checkpoint_id: CP-123
+recorded_at_utc: 2026-08-31T02:52:38Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Bounded combined signaling and RTP/media load, reclamation, and capacity reuse
+scope: Add a deterministic combined harness that retains each synthetic SIP call and its transactions while a paired real MediaSession processes bounded bidirectional RTP, fixed-delay jitter playout, and AI queue backpressure, then requires exact cross-layer reclamation before capacity reuse
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-44
+branch: combined-load-smoke
+base_branch: signaling-capacity-matrix
+pr: pending #44 publication
+head_sha: 7a6938e9813bcc765cec2e0a63ff1b5e9d0d8a87 before the implementation/checkpoint commit
+evidence: PR #43 remains OPEN/non-draft/CLEAN and fully green at exact base 7a6938e98. The combined harness validates configuration bounds, retains matching call/media counts throughout media work, checks INVITE/CANCEL lifecycle and 200/487 responses, records cross-layer peaks/packets/backpressure/process observations, drains media queues, and requires zero final calls, transactions, media sessions, and logical payload bytes. Three directly relevant regressions cover invalid bounds, five-call uneven batching with exact cross-layer peaks and cleanup, and 128 repeated single-slot capacity-reuse cycles. All 15 load-smoke tests and all 218 locked workspace tests pass. Formatting, strict load-smoke Clippy with denied warnings, workspace Clippy/all targets, workflow YAML parsing, git diff checks, all three pinned Docker-backed SIPp scenarios, all six address-sanitizer fuzz-target checks, ordinary and extended signaling/RTP-media/WebSocket-media/combined smokes, and the exact 1,000/5,000/10,000 signaling matrix pass. The ordinary combined run completed 64 calls and 4,096 bidirectional packets in 48 ms with peak 8 calls, 16 transactions, 8 media sessions, 11,520 retained payload bytes, stable 4 observed file descriptors, zero failures, and zero final logical resources. The extended combined run completed 4,096 calls and 1,048,576 bidirectional packets in 6,670 ms with peak 256 calls, 512 transactions, 256 media sessions, 696,320 retained payload bytes, stable 4 observed file descriptors, zero failures, and zero final logical resources. The exact signaling matrix completed in 66.16 seconds total with zero failures and zero final calls/transactions: 1,000 in 463 ms, 5,000 in 11,125 ms, and 10,000 in 54,576 ms
+blockers: This harness explicitly pairs CallEngine and MediaSession objects in memory; it does not prove provider-driven SDP/media attachment, kernel-socket/provider concurrency, setup/teardown latency percentiles, end-to-end audio quality, CPU per call, WebSocket composition, 1,000/5,000/10,000 combined media capacity, multi-hour soak/stable allocator memory, sanitized provider/Asterisk interoperability, rollback proof, or production readiness. Resident memory remained allocator-retained after reclamation and is not a stable-baseline claim. Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Commit and push the combined harness, directly relevant tests, documentation, CI wiring, and CP-122–CP-123 normally; then open stacked PR #44 against exact base signaling-capacity-matrix and verify its complete ordinary hosted suite
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #44 or remove the combined-load CI steps if the deterministic composition contract is superseded
+notes: Pull requests and pushes to aistack/main continue to run the complete ordinary hosted suite, now including the 64-call combined smoke; the 4,096-call combined tier is schedule-only. All jobs remain on hosted ubuntu-latest, and Docker is used only inside Workspace checks for pinned SIPp. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
