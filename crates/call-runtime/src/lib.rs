@@ -21,7 +21,7 @@ use std::{
     time::Duration,
 };
 
-use call_api::{AuthenticatedPrincipal, CallCommand};
+use call_api::{AuditRecord, AuthenticatedPrincipal, CallCommand};
 use call_bridge::{BridgeError, BridgeEvent, BridgeRegistry, BridgeState};
 use call_core::{BridgeId, CallEventKind, CallId, CommandId, LegId, LifecycleEvent};
 use call_engine::{CallEngine, EngineError, EngineHealth, EngineMetrics, EngineOutput, SendAction};
@@ -436,6 +436,23 @@ impl CallRuntime {
         self.engine.health()
     }
 
+    /// Drains bounded control-plane audit records after verifying read access.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the principal lacks `calls:read` or when `limit`
+    /// is zero.
+    pub fn drain_audit_records(
+        &mut self,
+        principal: &AuthenticatedPrincipal,
+        limit: usize,
+    ) -> Result<Vec<AuditRecord>, RuntimeError> {
+        let mut working_engine = self.engine.clone();
+        let records = working_engine.drain_audit_records(principal, limit)?;
+        self.engine = working_engine;
+        Ok(records)
+    }
+
     /// Borrows the current transport endpoint.
     #[must_use]
     pub fn transport(&self) -> &RuntimeTransport {
@@ -495,15 +512,26 @@ impl CallRuntime {
         now: Duration,
     ) -> Result<(CallId, RuntimeOutput), RuntimeError> {
         let mut working_engine = self.engine.clone();
-        let (call_id, output) = working_engine.originate_authorized(
+        let result = working_engine.originate_authorized(
             principal,
             request,
             destination,
             now,
             self.transport.reliability(),
-        )?;
-        let runtime_output = self.commit_engine_output(working_engine, output)?;
-        Ok((call_id, runtime_output))
+        );
+        match result {
+            Ok((call_id, output)) => {
+                let runtime_output = self.commit_engine_output(working_engine, output)?;
+                Ok((call_id, runtime_output))
+            }
+            Err(error) => {
+                // Authorization and validation failures intentionally emit an
+                // audit record without producing wire output. Preserve that
+                // record while leaving all other committed runtime state alone.
+                self.engine = working_engine;
+                Err(error.into())
+            }
+        }
     }
 
     /// Starts an outbound call only when the provider route explicitly
@@ -622,8 +650,16 @@ impl CallRuntime {
         command: CallCommand,
     ) -> Result<RuntimeOutput, RuntimeError> {
         let mut working_engine = self.engine.clone();
-        let output = working_engine.apply_authorized_call_command(principal, call_id, command)?;
-        self.commit_engine_output(working_engine, output)
+        match working_engine.apply_authorized_call_command(principal, call_id, command) {
+            Ok(output) => self.commit_engine_output(working_engine, output),
+            Err(error) => {
+                // Keep the audit-only mutation from a rejected authorized
+                // operation; no lifecycle event or transport action exists to
+                // commit on this path.
+                self.engine = working_engine;
+                Err(error.into())
+            }
+        }
     }
 
     /// Applies an application command with a bounded idempotency key and
@@ -653,9 +689,15 @@ impl CallRuntime {
         command_id: CommandId,
     ) -> Result<RuntimeOutput, RuntimeError> {
         let mut working_engine = self.engine.clone();
-        let output = working_engine
-            .apply_authorized_idempotent_call_command(principal, call_id, command, command_id)?;
-        self.commit_engine_output(working_engine, output)
+        match working_engine
+            .apply_authorized_idempotent_call_command(principal, call_id, command, command_id)
+        {
+            Ok(output) => self.commit_engine_output(working_engine, output),
+            Err(error) => {
+                self.engine = working_engine;
+                Err(error.into())
+            }
+        }
     }
 
     /// Sends an application-controlled response to an inbound INVITE.
@@ -690,15 +732,21 @@ impl CallRuntime {
         now: Duration,
     ) -> Result<RuntimeOutput, RuntimeError> {
         let mut working_engine = self.engine.clone();
-        let output = working_engine.respond_to_invite_authorized(
+        let result = working_engine.respond_to_invite_authorized(
             principal,
             call_id,
             status_code,
             reason,
             body,
             now,
-        )?;
-        self.commit_engine_output(working_engine, output)
+        );
+        match result {
+            Ok(output) => self.commit_engine_output(working_engine, output),
+            Err(error) => {
+                self.engine = working_engine;
+                Err(error.into())
+            }
+        }
     }
 
     /// Receives and dispatches one blocking transport read.
@@ -1000,7 +1048,7 @@ fn provider_transport_matches(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use call_api::ControlPermission;
+    use call_api::{AuditOperation, AuditOutcome, ControlPermission};
     use call_bridge::{BridgeEventKind, BridgeRegistryConfig};
     use call_core::{CallState, CommandId, StreamId};
     use call_engine::EngineConfig;
@@ -1347,6 +1395,68 @@ mod tests {
     }
 
     #[test]
+    fn runtime_exposes_authorized_audit_records_without_credentials_or_sip_ids() {
+        let runtime_transport = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 2_048).unwrap();
+        let peer = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 2_048).unwrap();
+        let mut runtime = CallRuntime::udp(
+            CallEngine::new(EngineConfig::default()).unwrap(),
+            runtime_transport,
+        );
+        let originate = AuthenticatedPrincipal::from_verified_claims(
+            "runtime-app",
+            [ControlPermission::OriginateCalls],
+        )
+        .unwrap();
+        let reader = AuthenticatedPrincipal::from_verified_claims(
+            "runtime-reader",
+            [ControlPermission::ReadCalls],
+        )
+        .unwrap();
+        assert!(matches!(
+            runtime.originate_authorized(
+                &reader,
+                invite(),
+                peer.local_addr().unwrap(),
+                Duration::ZERO,
+            ),
+            Err(RuntimeError::Engine(EngineError::CallApi(
+                call_api::ApiError::PermissionDenied {
+                    command: CallCommand::InviteReceived,
+                    permission: ControlPermission::OriginateCalls,
+                },
+            )))
+        ));
+        let denied = runtime.drain_audit_records(&reader, 8).unwrap();
+        assert_eq!(denied.len(), 1);
+        assert_eq!(denied[0].principal_id, "runtime-reader");
+        assert_eq!(denied[0].call_id, None);
+        assert_eq!(denied[0].operation, AuditOperation::Originate);
+        assert_eq!(
+            denied[0].outcome,
+            AuditOutcome::Rejected("permission_denied")
+        );
+
+        let (call_id, _) = runtime
+            .originate_authorized(
+                &originate,
+                invite(),
+                peer.local_addr().unwrap(),
+                Duration::ZERO,
+            )
+            .unwrap();
+        let _ = peer.recv().unwrap();
+
+        let records = runtime.drain_audit_records(&reader, 8).unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].principal_id, "runtime-app");
+        assert_eq!(records[0].call_id, Some(call_id));
+        assert_eq!(records[0].operation, AuditOperation::Originate);
+        assert_eq!(records[0].outcome, AuditOutcome::Succeeded);
+        assert!(!format!("{records:?}").contains("runtime-invite@example.com"));
+        assert!(!format!("{runtime:?}").contains("password"));
+    }
+
+    #[test]
     fn runtime_health_delegates_capacity_aware_readiness() {
         let runtime_transport = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 2_048).unwrap();
         let peer = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 2_048).unwrap();
@@ -1457,6 +1567,13 @@ mod tests {
         assert_eq!(
             runtime.engine().snapshot(&call_id).unwrap().state,
             CallState::Inviting
+        );
+        let denied = runtime.drain_audit_records(&read_only, 8).unwrap();
+        assert_eq!(denied.len(), 1);
+        assert_eq!(denied[0].call_id, Some(call_id.clone()));
+        assert_eq!(
+            denied[0].outcome,
+            AuditOutcome::Rejected("permission_denied")
         );
 
         let command_id = CommandId::from_sequence(77);

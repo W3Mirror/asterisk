@@ -199,6 +199,52 @@ fn required_permission(command: CallCommand) -> ControlPermission {
     }
 }
 
+/// A control-plane operation represented in the bounded audit trail.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AuditOperation {
+    /// Apply a lifecycle command, optionally using an idempotency key.
+    ApplyCommand {
+        /// Lifecycle command requested by the caller.
+        command: CallCommand,
+        /// Whether the command was submitted through the idempotent API.
+        idempotent: bool,
+    },
+    /// Start an outbound call.
+    Originate,
+    /// Respond to an inbound INVITE.
+    RespondToInvite,
+    /// Reclaim terminal call resources.
+    ReclaimTerminal,
+    /// Negotiate or update the call's audio media.
+    NegotiateAudio,
+}
+
+/// Outcome recorded for one control-plane audit operation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AuditOutcome {
+    /// The operation completed and changed or read the requested state.
+    Succeeded,
+    /// An idempotent retry returned its retained result.
+    Replayed,
+    /// The operation was rejected; the value is a stable [`ApiError::code`].
+    Rejected(&'static str),
+}
+
+/// One bounded, credential-free control-plane audit record.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuditRecord {
+    /// Monotonic sequence within the lifetime of the registry.
+    pub sequence: u64,
+    /// Verified, non-secret principal identifier.
+    pub principal_id: String,
+    /// Application call identifier supplied to or produced by the operation.
+    pub call_id: Option<CallId>,
+    /// Operation that was requested.
+    pub operation: AuditOperation,
+    /// Result visible to the control-plane caller.
+    pub outcome: AuditOutcome,
+}
+
 /// A stable, read-only view of a registered call.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CallSnapshot {
@@ -250,6 +296,8 @@ pub struct CallMetrics {
     pub retained_event_history: usize,
     /// Number of idempotency keys currently retained.
     pub retained_command_keys: usize,
+    /// Number of audit records waiting to be drained.
+    pub pending_audit_records: usize,
 }
 
 /// The bounded audio offer/answer result retained for a call.
@@ -417,6 +465,7 @@ pub struct CallRegistry {
     event_history: VecDeque<LifecycleEvent>,
     applied_commands: HashMap<CommandId, AppliedCommand>,
     command_order: VecDeque<CommandId>,
+    audit_records: VecDeque<AuditRecord>,
     calls_started_total: u64,
     calls_answered_total: u64,
     calls_failed_total: u64,
@@ -424,6 +473,7 @@ pub struct CallRegistry {
     lifecycle_events_total: u64,
     next_call_sequence: u64,
     next_event_sequence: u64,
+    next_audit_sequence: u64,
 }
 
 impl CallRegistry {
@@ -436,6 +486,7 @@ impl CallRegistry {
             event_history: VecDeque::new(),
             applied_commands: HashMap::new(),
             command_order: VecDeque::new(),
+            audit_records: VecDeque::new(),
             calls_started_total: 0,
             calls_answered_total: 0,
             calls_failed_total: 0,
@@ -443,6 +494,7 @@ impl CallRegistry {
             lifecycle_events_total: 0,
             next_call_sequence: 1,
             next_event_sequence: 1,
+            next_audit_sequence: 1,
         })
     }
 
@@ -470,6 +522,7 @@ impl CallRegistry {
             pending_events: self.events.len(),
             retained_event_history: self.event_history.len(),
             retained_command_keys: self.applied_commands.len(),
+            pending_audit_records: self.audit_records.len(),
         }
     }
 
@@ -564,8 +617,30 @@ impl CallRegistry {
         id: &CallId,
         command: CallCommand,
     ) -> Result<Option<LifecycleEvent>, ApiError> {
-        principal.authorize(command)?;
-        self.apply(id, command)
+        let operation = AuditOperation::ApplyCommand {
+            command,
+            idempotent: false,
+        };
+        if let Err(error) = principal.authorize(command) {
+            self.record_audit(
+                principal,
+                Some(id),
+                operation,
+                AuditOutcome::Rejected(error.code()),
+            );
+            return Err(error);
+        }
+        let result = self.apply(id, command);
+        match &result {
+            Ok(_) => self.record_audit(principal, Some(id), operation, AuditOutcome::Succeeded),
+            Err(error) => self.record_audit(
+                principal,
+                Some(id),
+                operation,
+                AuditOutcome::Rejected(error.code()),
+            ),
+        }
+        result
     }
 
     /// Applies a command exactly once for a bounded idempotency key.
@@ -621,8 +696,33 @@ impl CallRegistry {
         command: CallCommand,
         command_id: CommandId,
     ) -> Result<CommandResult, ApiError> {
-        principal.authorize(command)?;
-        self.apply_idempotent(id, command, command_id)
+        let operation = AuditOperation::ApplyCommand {
+            command,
+            idempotent: true,
+        };
+        if let Err(error) = principal.authorize(command) {
+            self.record_audit(
+                principal,
+                Some(id),
+                operation,
+                AuditOutcome::Rejected(error.code()),
+            );
+            return Err(error);
+        }
+        let result = self.apply_idempotent(id, command, command_id);
+        match &result {
+            Ok(command_result) if command_result.replayed => {
+                self.record_audit(principal, Some(id), operation, AuditOutcome::Replayed)
+            }
+            Ok(_) => self.record_audit(principal, Some(id), operation, AuditOutcome::Succeeded),
+            Err(error) => self.record_audit(
+                principal,
+                Some(id),
+                operation,
+                AuditOutcome::Rejected(error.code()),
+            ),
+        }
+        result
     }
 
     /// Associates a tag-qualified SIP dialog with a call exactly once.
@@ -772,6 +872,42 @@ impl CallRegistry {
         self.events.len()
     }
 
+    /// Returns the number of audit records waiting to be drained.
+    #[must_use]
+    pub fn pending_audit_records(&self) -> usize {
+        self.audit_records.len()
+    }
+
+    /// Drains up to `limit` audit records in emission order.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError::InvalidLimit`] when `limit` is zero.
+    pub fn drain_audit_records(&mut self, limit: usize) -> Result<Vec<AuditRecord>, ApiError> {
+        if limit == 0 {
+            return Err(ApiError::InvalidLimit);
+        }
+        Ok(self
+            .audit_records
+            .drain(..limit.min(self.audit_records.len()))
+            .collect())
+    }
+
+    /// Drains audit records after verifying read permission.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError::ReadPermissionDenied`] when the principal lacks
+    /// `calls:read`, or [`ApiError::InvalidLimit`] when `limit` is zero.
+    pub fn drain_audit_records_authorized(
+        &mut self,
+        principal: &AuthenticatedPrincipal,
+        limit: usize,
+    ) -> Result<Vec<AuditRecord>, ApiError> {
+        principal.authorize_read()?;
+        self.drain_audit_records(limit)
+    }
+
     /// Drains up to `limit` lifecycle events in emission order.
     pub fn drain_events(&mut self, limit: usize) -> Result<Vec<LifecycleEvent>, ApiError> {
         if limit == 0 {
@@ -858,15 +994,53 @@ impl CallRegistry {
         principal: &AuthenticatedPrincipal,
         id: &CallId,
     ) -> Result<CallSnapshot, ApiError> {
-        if !principal.has_permission(ControlPermission::HangupCalls)
-            && !principal.has_permission(ControlPermission::Admin)
-        {
-            return Err(ApiError::PermissionDenied {
-                command: CallCommand::End,
-                permission: ControlPermission::HangupCalls,
-            });
+        if let Err(error) = principal.authorize(CallCommand::End) {
+            self.record_audit(
+                principal,
+                Some(id),
+                AuditOperation::ReclaimTerminal,
+                AuditOutcome::Rejected(error.code()),
+            );
+            return Err(error);
         }
-        self.remove_terminal(id)
+        let result = self.remove_terminal(id);
+        self.record_audit(
+            principal,
+            Some(id),
+            AuditOperation::ReclaimTerminal,
+            result.as_ref().map_or_else(
+                |error| AuditOutcome::Rejected(error.code()),
+                |_| AuditOutcome::Succeeded,
+            ),
+        );
+        result
+    }
+
+    /// Records a control-plane operation performed by an integrating engine.
+    ///
+    /// The record is bounded by `max_pending_events`; the oldest record is
+    /// evicted when the bound is reached so audit traffic cannot block call
+    /// handling or grow memory without limit. The principal contains only a
+    /// verified, non-secret identifier.
+    pub fn record_audit(
+        &mut self,
+        principal: &AuthenticatedPrincipal,
+        call_id: Option<&CallId>,
+        operation: AuditOperation,
+        outcome: AuditOutcome,
+    ) {
+        if self.audit_records.len() >= self.config.max_pending_events {
+            self.audit_records.pop_front();
+        }
+        let sequence = self.next_audit_sequence;
+        self.next_audit_sequence = self.next_audit_sequence.saturating_add(1);
+        self.audit_records.push_back(AuditRecord {
+            sequence,
+            principal_id: principal.id.clone(),
+            call_id: call_id.cloned(),
+            operation,
+            outcome,
+        });
     }
 
     fn allocate_call_id(&mut self) -> Result<CallId, ApiError> {
@@ -1078,6 +1252,80 @@ mod tests {
         assert_eq!(retry.event, first.event);
         assert_eq!(registry.pending_events(), 1);
         assert_eq!(registry.snapshot(&id).unwrap().state, CallState::Inviting);
+    }
+
+    #[test]
+    fn authorized_operations_emit_bounded_credential_free_audit_records() {
+        let mut registry = CallRegistry::new(CallRegistryConfig {
+            max_calls: 1,
+            max_pending_events: 2,
+            max_command_keys: 2,
+        })
+        .unwrap();
+        let id = registry.create().unwrap();
+        registry.drain_events(2).unwrap();
+        let originate = principal(&[ControlPermission::OriginateCalls]);
+        let read_only = principal(&[ControlPermission::ReadCalls]);
+        let command_id = CommandId::from_sequence(1);
+
+        registry
+            .apply_idempotent_authorized(
+                &originate,
+                &id,
+                CallCommand::InviteReceived,
+                command_id.clone(),
+            )
+            .unwrap();
+        let retry = registry
+            .apply_idempotent_authorized(&originate, &id, CallCommand::InviteReceived, command_id)
+            .unwrap();
+        assert!(retry.replayed);
+        assert_eq!(registry.metrics().pending_audit_records, 2);
+
+        assert_eq!(
+            registry.apply_authorized(&read_only, &id, CallCommand::Hangup),
+            Err(ApiError::PermissionDenied {
+                command: CallCommand::Hangup,
+                permission: ControlPermission::HangupCalls,
+            })
+        );
+        let records = registry.drain_audit_records(8).unwrap();
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].sequence + 1, records[1].sequence);
+        assert_eq!(records[0].principal_id, "voice-app");
+        assert_eq!(records[0].call_id, Some(id.clone()));
+        assert_eq!(
+            records[0].operation,
+            AuditOperation::ApplyCommand {
+                command: CallCommand::InviteReceived,
+                idempotent: true,
+            }
+        );
+        assert_eq!(records[0].outcome, AuditOutcome::Replayed);
+        assert_eq!(
+            records[1].outcome,
+            AuditOutcome::Rejected("permission_denied")
+        );
+        assert!(!format!("{records:?}").contains("password"));
+        assert_eq!(registry.drain_audit_records(0), Err(ApiError::InvalidLimit));
+    }
+
+    #[test]
+    fn authorized_terminal_reclamation_is_audited_after_resource_removal() {
+        let mut registry = CallRegistry::new(CallRegistryConfig::default()).unwrap();
+        let id = registry.create().unwrap();
+        registry.drain_events(8).unwrap();
+        let admin = principal(&[ControlPermission::Admin]);
+        registry.apply(&id, CallCommand::InviteReceived).unwrap();
+        registry.apply(&id, CallCommand::Hangup).unwrap();
+        registry.apply(&id, CallCommand::End).unwrap();
+
+        registry.remove_terminal_authorized(&admin, &id).unwrap();
+        let record = registry.drain_audit_records(1).unwrap().pop().unwrap();
+        assert_eq!(record.call_id, Some(id));
+        assert_eq!(record.operation, AuditOperation::ReclaimTerminal);
+        assert_eq!(record.outcome, AuditOutcome::Succeeded);
+        assert_eq!(registry.pending_audit_records(), 0);
     }
 
     #[test]
