@@ -1,12 +1,12 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-107 — per-leg RTCP Sender Report scheduling locally green
-**Last checkpoint (UTC):** 2026-08-31T01:04:54Z
+**Current checkpoint:** CP-108 — PR #39 published with hosted validation running
+**Last checkpoint (UTC):** 2026-08-31T01:05:56Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Per-leg RTCP Sender Report scheduling<br>
-**Next resume action:** Commit and publish stacked PR #39 against `runtime-rtcp-leg-reports`, then verify Workspace, Protocol fuzz, and Dependency audit on its final head
-**Active PR:** pending publication — `runtime-rtcp-sender-reports` targets `runtime-rtcp-leg-reports`
+**Next resume action:** Push the PR #39 publication checkpoint and verify Workspace, Protocol fuzz, and Dependency audit on its final head
+**Active PR:** [#39](https://github.com/W3Mirror/asterisk/pull/39) — `runtime-rtcp-sender-reports` targets `runtime-rtcp-leg-reports`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-39`
 **Primary language:** Rust  
@@ -4386,6 +4386,27 @@ blockers: Jitter playout, media/WebSocket load, long-duration soak/memory, sanit
 next_action: Commit and publish stacked PR #39 against `runtime-rtcp-leg-reports`, record its exact implementation head, and verify every hosted Rust quality job on the final PR head
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the Sender Report scheduling PR or remove its event-loop polling API if the clock contract is superseded
 notes: Relevant implementation, directly affected-module tests, documentation, and manifest changes ship together. Every PR and push to `aistack/main` runs the complete repository suite rather than affected-module selection. This deterministic slice does not claim a production timer loop, clock synchronization, live-provider RTCP interoperability, or traffic readiness.
+~~~
+
+### CP-108 — PR #39 published with hosted validation running
+
+~~~yaml
+checkpoint_id: CP-108
+recorded_at_utc: 2026-08-31T01:05:56Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Per-leg RTCP Sender Report scheduling
+scope: Publish the locally green Sender Report scheduler as a stacked PR and reconcile its worktree, branch, base, implementation head, and hosted-check state
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-39
+branch: runtime-rtcp-sender-reports
+base_branch: runtime-rtcp-leg-reports
+pr: https://github.com/W3Mirror/asterisk/pull/39
+head_sha: 782f8b6c6d460cdccb9d5ee7259f01526f81f9d8 before this publication checkpoint commit
+evidence: Implementation commit `782f8b6c6` was pushed normally with local and `origin/runtime-rtcp-sender-reports` parity; PR #39 is OPEN/non-draft against exact base `runtime-rtcp-leg-reports`; GitHub assigned predicted #39, so the required worktree path already matches; hosted run `33346525917` started Workspace checks, Protocol fuzz checks, and Dependency audit
+blockers: Hosted validation is pending on the publication checkpoint's final head; jitter playout, media/WebSocket load, long-duration soak/memory, sanitized captures, provider/Asterisk interoperability, rollback proof, and production evidence remain active goal work; the integrating event loop must supply correlated monotonic/NTP values; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Push this publication checkpoint and verify all three hosted Rust quality gates on the final PR #39 head
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #39 if the Sender Report scheduling contract is superseded
+notes: PR #39 contains the relevant RTP/RTCP/media/bridge implementation, affected-module tests, documentation, manifest change, and goal checkpoint. GitHub runs the complete repository suite on the PR, not an affected-module-only subset. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
