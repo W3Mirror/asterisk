@@ -80,6 +80,8 @@ impl EngineConfig {
 pub enum EngineError {
     /// A configured engine bound was zero.
     InvalidConfig,
+    /// The engine is draining and cannot admit a new outbound call.
+    Draining,
     /// The transaction bound was reached.
     TransactionLimitReached,
     /// A required SIP header was absent.
@@ -126,6 +128,7 @@ impl Display for EngineError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::InvalidConfig => formatter.write_str("call engine bounds must be non-zero"),
+            Self::Draining => formatter.write_str("call engine is draining new call admission"),
             Self::TransactionLimitReached => {
                 formatter.write_str("call engine reached its transaction limit")
             }
@@ -211,6 +214,7 @@ impl From<DigestError> for EngineError {
 fn engine_error_code(error: &EngineError) -> &'static str {
     match error {
         EngineError::CallApi(error) => error.code(),
+        EngineError::Draining => "engine_draining",
         _ => "engine_error",
     }
 }
@@ -249,6 +253,8 @@ pub struct EngineMetrics {
     pub pending_final_invites: usize,
     /// Number of reliable provisional responses awaiting PRACK.
     pub pending_reliable_provisionals: usize,
+    /// Whether new call admission is currently draining.
+    pub draining: bool,
 }
 
 /// Liveness and admission-readiness state for one call engine.
@@ -263,6 +269,8 @@ pub struct EngineHealth {
     pub live: bool,
     /// Whether all bounded admission resources have spare capacity.
     pub ready: bool,
+    /// Whether new call admission is currently draining.
+    pub draining: bool,
     /// Number of call records retained, including terminal calls.
     pub retained_calls: usize,
     /// Configured maximum retained call records.
@@ -282,9 +290,10 @@ impl EngineHealth {
     #[must_use]
     pub fn prometheus(self) -> String {
         format!(
-            "engine_live {}\nengine_ready {}\nengine_retained_calls {}\nengine_max_calls {}\nengine_active_transactions {}\nengine_max_transactions {}\nengine_pending_events {}\nengine_max_pending_events {}\n",
+            "engine_live {}\nengine_ready {}\nengine_draining {}\nengine_retained_calls {}\nengine_max_calls {}\nengine_active_transactions {}\nengine_max_transactions {}\nengine_pending_events {}\nengine_max_pending_events {}\n",
             u8::from(self.live),
             u8::from(self.ready),
+            u8::from(self.draining),
             self.retained_calls,
             self.max_calls,
             self.active_transactions,
@@ -354,6 +363,7 @@ impl EngineMetrics {
             "sip_pending_reliable_provisionals {}",
             self.pending_reliable_provisionals
         );
+        let _ = writeln!(output, "engine_draining {}", u8::from(self.draining));
         output
     }
 }
@@ -407,6 +417,7 @@ pub struct CallEngine {
     digest_retries: HashMap<CallId, usize>,
     received_reliable_rseq: HashMap<CallId, u32>,
     reliable_provisionals: HashMap<CallId, ReliableProvisional>,
+    draining: bool,
     next_rseq: u32,
     next_local_tag: u64,
     next_branch: u64,
@@ -458,6 +469,7 @@ impl CallEngine {
             digest_retries: HashMap::new(),
             received_reliable_rseq: HashMap::new(),
             reliable_provisionals: HashMap::new(),
+            draining: false,
             next_rseq: 1,
             next_local_tag: 1,
             next_branch: 1,
@@ -479,6 +491,7 @@ impl CallEngine {
             active_dialogs: self.dialog_count(),
             pending_final_invites: self.final_invites.len() + self.final_server_invites.len(),
             pending_reliable_provisionals: self.reliable_provisionals.len(),
+            draining: self.draining,
         }
     }
 
@@ -489,10 +502,12 @@ impl CallEngine {
         let registry_config = self.config.call_registry;
         let ready = metrics.calls.calls_retained < registry_config.max_calls
             && metrics.active_transactions < self.config.max_transactions
-            && metrics.calls.pending_events < registry_config.max_pending_events;
+            && metrics.calls.pending_events < registry_config.max_pending_events
+            && !self.draining;
         EngineHealth {
             live: true,
             ready,
+            draining: self.draining,
             retained_calls: metrics.calls.calls_retained,
             max_calls: registry_config.max_calls,
             active_transactions: metrics.active_transactions,
@@ -512,6 +527,23 @@ impl CallEngine {
     #[must_use]
     pub fn dialog_count(&self) -> usize {
         self.dialogs.len()
+    }
+
+    /// Stops admitting new calls while allowing existing dialogs and
+    /// transactions to continue draining to completion.
+    pub fn begin_drain(&mut self) {
+        self.draining = true;
+    }
+
+    /// Resumes admitting new calls after a drain or restart handoff.
+    pub fn resume(&mut self) {
+        self.draining = false;
+    }
+
+    /// Returns whether the engine is currently draining new call admission.
+    #[must_use]
+    pub fn is_draining(&self) -> bool {
+        self.draining
     }
 
     /// Drains bounded control-plane audit records after verifying read access.
@@ -759,6 +791,9 @@ impl CallEngine {
         if request.method != SipMethod::Invite {
             return Err(EngineError::UnsupportedRequest);
         }
+        if self.draining {
+            return Err(EngineError::Draining);
+        }
         self.ensure_transaction_capacity()?;
         let branch = transaction_branch(&request.headers)?;
         let key = transaction_key(&branch, &request.method);
@@ -909,6 +944,14 @@ impl CallEngine {
         }
 
         if request.method == SipMethod::Invite && !request_has_to_tag(&request) {
+            if self.draining {
+                let response =
+                    response_for_request(&request, 503, "Service Unavailable", None, Vec::new())?;
+                return self.finish(vec![SendAction {
+                    destination: source,
+                    message: SipMessage::Response(response),
+                }]);
+            }
             return self.receive_initial_invite(source, request, branch, reliability);
         }
 
@@ -2588,6 +2631,147 @@ mod tests {
         assert_eq!(reclaimed.retained_calls, 0);
         assert_eq!(reclaimed.active_transactions, 0);
         assert_eq!(reclaimed.pending_events, 0);
+    }
+
+    #[test]
+    fn drain_state_marks_engine_unready_and_can_resume() {
+        let mut engine = CallEngine::new(EngineConfig::default()).unwrap();
+        assert!(!engine.is_draining());
+        assert!(engine.health().ready);
+        assert!(!engine.metrics().draining);
+
+        engine.begin_drain();
+        assert!(engine.is_draining());
+        assert!(engine.health().draining);
+        assert!(!engine.health().ready);
+        assert!(engine.metrics().draining);
+        assert!(engine.health().prometheus().contains("engine_draining 1\n"));
+        assert!(
+            engine
+                .metrics()
+                .prometheus()
+                .contains("engine_draining 1\n")
+        );
+
+        engine.begin_drain();
+        assert!(engine.is_draining());
+        engine.resume();
+        assert!(!engine.is_draining());
+        assert!(!engine.health().draining);
+        assert!(engine.health().ready);
+    }
+
+    #[test]
+    fn draining_rejects_outbound_origination_without_mutating_resources() {
+        let mut engine = CallEngine::new(EngineConfig::default()).unwrap();
+        engine.begin_drain();
+        let before = engine.metrics();
+
+        let error = engine
+            .originate(
+                invite(
+                    "drain-outbound-branch",
+                    "drain-outbound-call",
+                    "<sip:bob@example.com>",
+                    "1 INVITE",
+                ),
+                address(5060),
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+            )
+            .unwrap_err();
+
+        assert_eq!(error, EngineError::Draining);
+        assert_eq!(engine.metrics(), before);
+        assert_eq!(engine.transaction_count(), 0);
+        assert_eq!(engine.dialog_count(), 0);
+        assert_eq!(engine.list(8).unwrap(), Vec::new());
+    }
+
+    #[test]
+    fn draining_rejects_new_inbound_invites_statelessly_but_existing_dialogs_continue() {
+        let mut engine = CallEngine::new(EngineConfig::default()).unwrap();
+        let first_request = invite(
+            "drain-inbound-existing-branch",
+            "drain-inbound-existing-call",
+            "<sip:bob@example.com>",
+            "1 INVITE",
+        );
+        let first = engine
+            .receive_request(
+                address(5070),
+                first_request,
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        let existing_call = first.events()[0].call_id.clone();
+        assert_eq!(first.actions().len(), 1);
+        assert!(matches!(
+            first.actions()[0].message,
+            SipMessage::Response(SipResponse {
+                status_code: 100,
+                ..
+            })
+        ));
+
+        engine.begin_drain();
+        let before = engine.metrics();
+        let rejected = engine
+            .receive_request(
+                address(5071),
+                invite(
+                    "drain-inbound-new-branch",
+                    "drain-inbound-new-call",
+                    "<sip:bob@example.com>",
+                    "1 INVITE",
+                ),
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        assert_eq!(rejected.events(), &[]);
+        assert_eq!(rejected.actions().len(), 1);
+        assert!(matches!(
+            &rejected.actions()[0].message,
+            SipMessage::Response(SipResponse {
+                status_code: 503,
+                reason,
+                ..
+            }) if reason == "Service Unavailable"
+        ));
+        assert_eq!(engine.metrics(), before);
+
+        let continued = engine
+            .respond_to_invite(&existing_call, 200, "OK", Vec::new(), Duration::ZERO)
+            .unwrap();
+        assert!(matches!(
+            continued.actions()[0].message,
+            SipMessage::Response(SipResponse {
+                status_code: 200,
+                ..
+            })
+        ));
+        assert_eq!(
+            engine.snapshot(&existing_call).unwrap().state,
+            CallState::Answered
+        );
+
+        engine.resume();
+        let resumed = engine
+            .originate(
+                invite(
+                    "drain-resumed-branch",
+                    "drain-resumed-call",
+                    "<sip:bob@example.com>",
+                    "1 INVITE",
+                ),
+                address(5060),
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        assert_eq!(resumed.0.as_str(), "call_2");
     }
 
     fn invite(branch: &str, call_id: &str, to: &str, cseq: &str) -> SipRequest {

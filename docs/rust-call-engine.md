@@ -32,6 +32,18 @@ failure/cleanup. The operation runs against a cloned engine state and commits
 only on success, so event-queue and state-transition errors do not leave a
 partially applied call operation.
 
+## Graceful drain and restart
+
+`begin_drain` stops new call admission without interrupting existing dialogs or
+transactions. While draining, outbound `originate` returns the stable
+`EngineError::Draining` error, and a new inbound initial INVITE receives a
+stateless `503 Service Unavailable` without creating a call, dialog, or
+transaction. Retransmissions and in-dialog requests for calls admitted before
+the drain continue normally. `resume` reopens admission. The drain flag is
+included in `EngineHealth`, `EngineMetrics`, and their label-free Prometheus
+snapshots; readiness is false for the entire drain window so a deployment can
+stop traffic before handing the endpoint to Asterisk or a replacement process.
+
 ## Retry-safe application commands
 
 Use `CommandId` with `apply_idempotent_call_command` when a control-plane
@@ -71,19 +83,21 @@ retransmission state, reliable provisional responses awaiting PRACK, and
 bounded audit queue depth. The
 snapshot intentionally contains no call IDs, SIP Call-IDs, phone numbers,
 provider names, principal IDs, or credentials, preventing sensitive values and
-unbounded per-call label cardinality from entering metrics. `CallRuntime::metrics`
-exposes the same snapshot at the transport boundary.
+unbounded per-call label cardinality from entering metrics. The aggregate
+`engine_draining` gauge makes admission state visible without labels.
+`CallRuntime::metrics` exposes the same snapshot at the transport boundary.
 
 ## Health and readiness
 
 `CallEngine::health` and `CallRuntime::health` expose a small, runtime-agnostic
 health contract. `live` is true for a successfully constructed engine;
 `ready` is true only while another retained call record, SIP transaction, and
-pending lifecycle event can be admitted under the configured bounds. Terminal
-calls continue to count against readiness until `reclaim_terminal_call` has
-released their resources. `EngineHealth::prometheus` provides a label-free
-snapshot suitable for a health/readiness adapter without exposing call or SIP
-identifiers.
+pending lifecycle event can be admitted under the configured bounds and the
+engine is not draining. Terminal calls continue to count against readiness
+until `reclaim_terminal_call` has released their resources. `begin_drain` and
+`resume` are idempotent control-plane operations; query `is_draining` before a
+handoff when needed. `EngineHealth::prometheus` provides a label-free snapshot
+suited to a health/readiness adapter without exposing call or SIP identifiers.
 
 ## Safety boundary
 

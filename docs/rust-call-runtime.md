@@ -16,6 +16,12 @@ in `call-engine`.
 - `receive_once` and `poll` clone the engine before processing and only commit
   state after all generated actions are delivered. A malformed batch or a
   delivery error therefore cannot leave a partially applied engine state.
+- `begin_drain`, `resume`, and `is_draining` delegate the engine's graceful
+  restart admission state. During a drain, outbound origination is rejected
+  with `EngineError::Draining`; new inbound initial INVITEs receive a stateless
+  `503 Service Unavailable`, while existing dialogs and transactions continue.
+  Runtime health/readiness exposes the same drain state and reports `ready` as
+  false until `resume` is called.
 - UDP and connected TCP runtimes default to the PR12 source policy's
   default-allow behavior for backward compatibility. Use
   `udp_with_source_policy`, `tcp_with_source_policy`, or
