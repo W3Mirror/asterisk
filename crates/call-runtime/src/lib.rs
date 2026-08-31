@@ -949,6 +949,21 @@ impl CallRuntime {
         self.commit_runtime_output(working_engine, output)
     }
 
+    /// Fails active calls after the connected transport or process boundary
+    /// becomes unusable, then synchronizes bridge and provider context state.
+    ///
+    /// The call records remain retained in `Ended` state for explicit
+    /// post-call inspection and reclamation. No SIP action is emitted because
+    /// the transport is assumed to be unavailable. Callers should invoke this
+    /// after handling [`RuntimeError::ConnectionClosed`] or another fatal
+    /// transport error before dropping or replacing the runtime.
+    pub fn handle_transport_failure(&mut self) -> Result<RuntimeOutput, RuntimeError> {
+        let mut working_engine = self.engine.clone();
+        let mut output = RuntimeOutput::default();
+        output.append(working_engine.fail_active_calls()?);
+        self.commit_runtime_output(working_engine, output)
+    }
+
     /// Polls call-engine timers and delivers any retransmissions or failures.
     ///
     /// # Errors
@@ -1070,7 +1085,7 @@ mod tests {
     use super::*;
     use call_api::{AuditOperation, AuditOutcome, ControlPermission};
     use call_bridge::{BridgeEventKind, BridgeRegistryConfig};
-    use call_core::{CallState, CommandId, StreamId};
+    use call_core::{CallEventKind, CallState, CommandId, StreamId};
     use call_engine::EngineConfig;
     use provider_routing::{ProviderProfile, RoutingConfig};
     use rcgen::generate_simple_self_signed;
@@ -2227,6 +2242,75 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn tcp_connection_loss_emits_terminal_events_and_releases_call_state() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        let (close_tx, close_rx) = std::sync::mpsc::channel();
+        let client_thread = thread::spawn(move || {
+            let mut stream = TcpStream::connect(address).unwrap();
+            ready_tx.send(()).unwrap();
+            let mut invite_wire = Vec::new();
+            let mut chunk = [0; 256];
+            loop {
+                let bytes_read = stream.read(&mut chunk).unwrap();
+                if bytes_read == 0 {
+                    break;
+                }
+                invite_wire.extend_from_slice(&chunk[..bytes_read]);
+                if invite_wire.windows(4).any(|window| window == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            close_rx.recv().unwrap();
+            drop(stream);
+        });
+
+        let (stream, peer) = listener.accept().unwrap();
+        ready_rx.recv().unwrap();
+        let transport = TcpTransport::from_stream(stream, 2_048).unwrap();
+        let mut runtime = CallRuntime::tcp(
+            CallEngine::new(EngineConfig::default()).unwrap(),
+            transport,
+            peer,
+        );
+        let (call_id, originated) = runtime.originate(invite(), peer, Duration::ZERO).unwrap();
+        assert_eq!(originated.actions().len(), 1);
+        assert_eq!(runtime.metrics().active_transactions, 1);
+        assert_eq!(runtime.metrics().active_dialogs, 1);
+
+        close_tx.send(()).unwrap();
+        client_thread.join().unwrap();
+        let error = runtime.receive_once(Duration::ZERO).unwrap_err();
+        assert!(matches!(error, RuntimeError::ConnectionClosed { peer: actual } if actual == peer));
+
+        let cleanup = runtime.handle_transport_failure().unwrap();
+        assert!(cleanup.actions().is_empty());
+        assert_eq!(
+            cleanup
+                .events()
+                .iter()
+                .map(|event| event.kind)
+                .collect::<Vec<_>>(),
+            vec![CallEventKind::Failed, CallEventKind::Ended]
+        );
+        assert_eq!(
+            runtime.engine().snapshot(&call_id).unwrap().state,
+            CallState::Ended
+        );
+        assert_eq!(runtime.metrics().calls.calls_active, 0);
+        assert_eq!(runtime.metrics().active_transactions, 0);
+        assert_eq!(runtime.metrics().active_dialogs, 0);
+        assert_eq!(runtime.metrics().calls.calls_retained, 1);
+
+        runtime
+            .engine_mut()
+            .reclaim_terminal_call(&call_id)
+            .unwrap();
+        assert_eq!(runtime.metrics().calls.calls_retained, 0);
     }
 
     #[test]

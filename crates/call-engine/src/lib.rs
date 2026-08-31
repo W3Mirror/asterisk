@@ -677,32 +677,7 @@ impl CallEngine {
     /// `Failed`. Rejected reclamation leaves the engine unchanged.
     pub fn reclaim_terminal_call(&mut self, id: &CallId) -> Result<CallSnapshot, EngineError> {
         let snapshot = self.registry.remove_terminal(id)?;
-        self.dialogs.remove(id);
-
-        let client_branches = self
-            .client_calls
-            .iter()
-            .filter(|(_, call_id)| *call_id == id)
-            .map(|(branch, _)| branch.clone())
-            .collect::<Vec<_>>();
-        for branch in client_branches {
-            self.remove_client_transaction(&branch);
-        }
-
-        let server_branches = self
-            .server_calls
-            .iter()
-            .filter(|(_, call_id)| *call_id == id)
-            .map(|(branch, _)| branch.clone())
-            .collect::<Vec<_>>();
-        for branch in server_branches {
-            self.remove_server_transaction(&branch);
-        }
-
-        self.remove_final_invites_for_call(id);
-        self.remove_final_server_invites_for_call(id);
-        self.digest_retries.remove(id);
-        self.remove_reliable_provisional_state(id);
+        self.remove_call_resources(id);
         Ok(snapshot)
     }
 
@@ -1537,6 +1512,51 @@ impl CallEngine {
         Ok(output)
     }
 
+    /// Fails every non-terminal call after a transport or process boundary
+    /// has become unusable, and releases its SIP signaling resources.
+    ///
+    /// The call records remain retained in their terminal `Ended` state until
+    /// [`Self::reclaim_terminal_call`] is called. This preserves the final
+    /// lifecycle events and lets an application export post-call state before
+    /// releasing the bounded registry slot. No BYE or other wire action is
+    /// generated because the transport is assumed to be unavailable.
+    ///
+    /// The operation is transactional: if a state transition or bounded
+    /// registry operation fails, the engine is left unchanged.
+    pub fn fail_active_calls(&mut self) -> Result<EngineOutput, EngineError> {
+        let mut working = self.clone();
+        let output = working.fail_active_calls_inner()?;
+        *self = working;
+        Ok(output)
+    }
+
+    fn fail_active_calls_inner(&mut self) -> Result<EngineOutput, EngineError> {
+        let snapshots = self.registry.list(self.config.call_registry.max_calls)?;
+        let mut events = self.registry.drain_events(usize::MAX)?;
+
+        for snapshot in snapshots {
+            match snapshot.state {
+                CallState::Ended | CallState::Failed => {}
+                CallState::Ending => {
+                    self.registry.apply(&snapshot.id, CallCommand::End)?;
+                    events.extend(self.registry.drain_events(usize::MAX)?);
+                }
+                _ => {
+                    self.registry.apply(&snapshot.id, CallCommand::Fail)?;
+                    events.extend(self.registry.drain_events(usize::MAX)?);
+                    self.registry.apply(&snapshot.id, CallCommand::End)?;
+                    events.extend(self.registry.drain_events(usize::MAX)?);
+                }
+            }
+            self.remove_call_resources(&snapshot.id);
+        }
+
+        Ok(EngineOutput {
+            actions: Vec::new(),
+            events,
+        })
+    }
+
     fn poll_inner(&mut self, now: Duration) -> Result<EngineOutput, EngineError> {
         let client_branches = self.client_transactions.keys().cloned().collect::<Vec<_>>();
         let server_branches = self.server_transactions.keys().cloned().collect::<Vec<_>>();
@@ -1977,6 +1997,35 @@ impl CallEngine {
         }
         self.remove_reliable_provisional_state(id);
         Ok(())
+    }
+
+    fn remove_call_resources(&mut self, id: &CallId) {
+        self.dialogs.remove(id);
+
+        let client_branches = self
+            .client_calls
+            .iter()
+            .filter(|(_, call_id)| *call_id == id)
+            .map(|(branch, _)| branch.clone())
+            .collect::<Vec<_>>();
+        for branch in client_branches {
+            self.remove_client_transaction(&branch);
+        }
+
+        let server_branches = self
+            .server_calls
+            .iter()
+            .filter(|(_, call_id)| *call_id == id)
+            .map(|(branch, _)| branch.clone())
+            .collect::<Vec<_>>();
+        for branch in server_branches {
+            self.remove_server_transaction(&branch);
+        }
+
+        self.remove_final_invites_for_call(id);
+        self.remove_final_server_invites_for_call(id);
+        self.digest_retries.remove(id);
+        self.remove_reliable_provisional_state(id);
     }
 
     fn remove_client_transaction(&mut self, branch: &str) {
@@ -2772,6 +2821,82 @@ mod tests {
             )
             .unwrap();
         assert_eq!(resumed.0.as_str(), "call_2");
+    }
+
+    #[test]
+    fn transport_failure_fails_active_calls_and_releases_signaling_state() {
+        let mut engine = CallEngine::new(EngineConfig::default()).unwrap();
+        let (outbound_id, _) = engine
+            .originate(
+                invite(
+                    "transport-failure-outbound",
+                    "transport-failure-outbound-call",
+                    "Bob <sip:bob@example.com>",
+                    "1 INVITE",
+                ),
+                address(5060),
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        engine
+            .apply_call_command(&outbound_id, CallCommand::Hangup)
+            .unwrap();
+
+        let inbound = engine
+            .receive_request(
+                address(5070),
+                invite(
+                    "transport-failure-inbound",
+                    "transport-failure-inbound-call",
+                    "Bob <sip:bob@example.com>",
+                    "1 INVITE",
+                ),
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        let inbound_id = inbound.events()[0].call_id.clone();
+        engine
+            .respond_to_invite(&inbound_id, 200, "OK", Vec::new(), Duration::ZERO)
+            .unwrap();
+
+        let output = engine.fail_active_calls().unwrap();
+        assert!(output.actions().is_empty());
+        assert_eq!(
+            output
+                .events()
+                .iter()
+                .map(|event| (event.call_id.clone(), event.kind))
+                .collect::<Vec<_>>(),
+            vec![
+                (outbound_id.clone(), CallEventKind::Ended),
+                (inbound_id.clone(), CallEventKind::Failed),
+                (inbound_id.clone(), CallEventKind::Ended),
+            ]
+        );
+        assert_eq!(
+            engine.snapshot(&outbound_id).unwrap().state,
+            CallState::Ended
+        );
+        assert_eq!(
+            engine.snapshot(&inbound_id).unwrap().state,
+            CallState::Ended
+        );
+        let metrics = engine.metrics();
+        assert_eq!(metrics.calls.calls_active, 0);
+        assert_eq!(metrics.calls.calls_retained, 2);
+        assert_eq!(metrics.active_transactions, 0);
+        assert_eq!(metrics.active_dialogs, 0);
+        assert_eq!(metrics.pending_final_invites, 0);
+        assert_eq!(metrics.pending_reliable_provisionals, 0);
+
+        // Cleanup is idempotent after the transport has already failed and
+        // does not emit duplicate terminal events.
+        assert!(engine.fail_active_calls().unwrap().events().is_empty());
+        engine.reclaim_terminal_call(&outbound_id).unwrap();
+        engine.reclaim_terminal_call(&inbound_id).unwrap();
+        assert_eq!(engine.metrics().calls.calls_retained, 0);
     }
 
     fn invite(branch: &str, call_id: &str, to: &str, cseq: &str) -> SipRequest {

@@ -22,6 +22,13 @@ in `call-engine`.
   `503 Service Unavailable`, while existing dialogs and transactions continue.
   Runtime health/readiness exposes the same drain state and reports `ready` as
   false until `resume` is called.
+- If a connected transport reaches EOF or another fatal I/O boundary, call
+  `handle_transport_failure` before dropping or replacing the runtime. It
+  emits `Failed` and `Ended` lifecycle events for every non-terminal call,
+  releases dialogs, transactions, retransmission state, and provider-auth
+  context, and retains the terminal call records for post-call inspection and
+  explicit reclamation. It emits no SIP action because the transport is
+  unavailable.
 - UDP and connected TCP runtimes default to the PR12 source policy's
   default-allow behavior for backward compatibility. Use
   `udp_with_source_policy`, `tcp_with_source_policy`, or
