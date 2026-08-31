@@ -64,6 +64,17 @@ provider names, principal IDs, or credentials, preventing sensitive values and
 unbounded per-call label cardinality from entering metrics. `CallRuntime::metrics`
 exposes the same snapshot at the transport boundary.
 
+## Health and readiness
+
+`CallEngine::health` and `CallRuntime::health` expose a small, runtime-agnostic
+health contract. `live` is true for a successfully constructed engine;
+`ready` is true only while another retained call record, SIP transaction, and
+pending lifecycle event can be admitted under the configured bounds. Terminal
+calls continue to count against readiness until `reclaim_terminal_call` has
+released their resources. `EngineHealth::prometheus` provides a label-free
+snapshot suitable for a health/readiness adapter without exposing call or SIP
+identifiers.
+
 ## Safety boundary
 
 Engine and registry bounds reject zero-sized configurations and cap calls,

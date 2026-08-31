@@ -244,6 +244,50 @@ pub struct EngineMetrics {
     pub pending_reliable_provisionals: usize,
 }
 
+/// Liveness and admission-readiness state for one call engine.
+///
+/// A successfully constructed engine is live. Readiness is deliberately
+/// capacity-aware: the engine is ready only while another call record,
+/// transaction, and lifecycle event can be admitted. Terminal calls remain
+/// retained until explicit reclamation, so they continue to affect readiness.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EngineHealth {
+    /// Whether the engine has a valid initialized state.
+    pub live: bool,
+    /// Whether all bounded admission resources have spare capacity.
+    pub ready: bool,
+    /// Number of call records retained, including terminal calls.
+    pub retained_calls: usize,
+    /// Configured maximum retained call records.
+    pub max_calls: usize,
+    /// Number of active client and server transactions.
+    pub active_transactions: usize,
+    /// Configured maximum active transactions.
+    pub max_transactions: usize,
+    /// Number of lifecycle events waiting for delivery.
+    pub pending_events: usize,
+    /// Configured maximum pending lifecycle events.
+    pub max_pending_events: usize,
+}
+
+impl EngineHealth {
+    /// Renders a label-free Prometheus health snapshot.
+    #[must_use]
+    pub fn prometheus(self) -> String {
+        format!(
+            "engine_live {}\nengine_ready {}\nengine_retained_calls {}\nengine_max_calls {}\nengine_active_transactions {}\nengine_max_transactions {}\nengine_pending_events {}\nengine_max_pending_events {}\n",
+            u8::from(self.live),
+            u8::from(self.ready),
+            self.retained_calls,
+            self.max_calls,
+            self.active_transactions,
+            self.max_transactions,
+            self.pending_events,
+            self.max_pending_events,
+        )
+    }
+}
+
 impl EngineMetrics {
     /// Renders a label-free Prometheus text exposition snapshot.
     #[must_use]
@@ -265,6 +309,7 @@ impl EngineMetrics {
             calls.calls_completed_total
         );
         let _ = writeln!(output, "calls_active {}", calls.calls_active);
+        let _ = writeln!(output, "calls_retained {}", calls.calls_retained);
         let _ = writeln!(
             output,
             "call_lifecycle_events_total {}",
@@ -422,6 +467,26 @@ impl CallEngine {
             active_dialogs: self.dialog_count(),
             pending_final_invites: self.final_invites.len() + self.final_server_invites.len(),
             pending_reliable_provisionals: self.reliable_provisionals.len(),
+        }
+    }
+
+    /// Returns liveness and capacity-aware admission readiness.
+    #[must_use]
+    pub fn health(&self) -> EngineHealth {
+        let metrics = self.metrics();
+        let registry_config = self.config.call_registry;
+        let ready = metrics.calls.calls_retained < registry_config.max_calls
+            && metrics.active_transactions < self.config.max_transactions
+            && metrics.calls.pending_events < registry_config.max_pending_events;
+        EngineHealth {
+            live: true,
+            ready,
+            retained_calls: metrics.calls.calls_retained,
+            max_calls: registry_config.max_calls,
+            active_transactions: metrics.active_transactions,
+            max_transactions: self.config.max_transactions,
+            pending_events: metrics.calls.pending_events,
+            max_pending_events: registry_config.max_pending_events,
         }
     }
 
@@ -2322,6 +2387,7 @@ mod tests {
         let started = engine.metrics();
         assert_eq!(started.calls.calls_started_total, 1);
         assert_eq!(started.calls.calls_active, 1);
+        assert_eq!(started.calls.calls_retained, 1);
         assert_eq!(started.active_transactions, 1);
         assert_eq!(started.active_dialogs, 1);
         assert_eq!(started.pending_final_invites, 0);
@@ -2345,6 +2411,7 @@ mod tests {
         assert!(exposition.contains("calls_started_total 1\n"));
         assert!(exposition.contains("calls_answered_total 1\n"));
         assert!(exposition.contains("calls_completed_total 1\n"));
+        assert!(exposition.contains("calls_retained 1\n"));
         assert!(!exposition.contains("metrics-call"));
         assert!(!exposition.contains("metrics-branch"));
 
@@ -2353,6 +2420,68 @@ mod tests {
         assert_eq!(reclaimed.active_transactions, 0);
         assert_eq!(reclaimed.active_dialogs, 0);
         assert_eq!(reclaimed.calls.calls_active, 0);
+        assert_eq!(reclaimed.calls.calls_retained, 0);
+    }
+
+    #[test]
+    fn health_is_capacity_aware_until_terminal_resources_are_reclaimed() {
+        let mut engine = CallEngine::new(EngineConfig {
+            call_registry: CallRegistryConfig {
+                max_calls: 1,
+                ..CallRegistryConfig::default()
+            },
+            max_transactions: 1,
+            ..EngineConfig::default()
+        })
+        .unwrap();
+
+        let initial = engine.health();
+        assert!(initial.live);
+        assert!(initial.ready);
+        assert_eq!(initial.retained_calls, 0);
+        assert_eq!(initial.max_calls, 1);
+        assert_eq!(initial.max_transactions, 1);
+
+        let (call_id, _) = engine
+            .originate(
+                invite(
+                    "health-branch",
+                    "health-call",
+                    "<sip:bob@example.com>",
+                    "1 INVITE",
+                ),
+                address(5060),
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        let saturated = engine.health();
+        assert!(saturated.live);
+        assert!(!saturated.ready);
+        assert_eq!(saturated.retained_calls, 1);
+        assert_eq!(saturated.active_transactions, 1);
+        assert_eq!(saturated.pending_events, 0);
+        assert!(saturated.prometheus().contains("engine_ready 0\n"));
+        assert!(!saturated.prometheus().contains("health-call"));
+
+        engine
+            .apply_call_command(&call_id, CallCommand::Answer)
+            .unwrap();
+        engine
+            .apply_call_command(&call_id, CallCommand::Hangup)
+            .unwrap();
+        engine
+            .apply_call_command(&call_id, CallCommand::End)
+            .unwrap();
+        assert!(!engine.health().ready);
+
+        engine.reclaim_terminal_call(&call_id).unwrap();
+        let reclaimed = engine.health();
+        assert!(reclaimed.live);
+        assert!(reclaimed.ready);
+        assert_eq!(reclaimed.retained_calls, 0);
+        assert_eq!(reclaimed.active_transactions, 0);
+        assert_eq!(reclaimed.pending_events, 0);
     }
 
     fn invite(branch: &str, call_id: &str, to: &str, cseq: &str) -> SipRequest {
