@@ -1862,6 +1862,28 @@ Protocol fuzz-target checks and dependency audits are also configured for these
 events when their respective workspaces exist; stack-layer detection may mark
 them skipped when the Rust workspace has not reached that branch yet.
 
+The current repository behavior is intentionally stronger than a changed-module
+shortcut: every pull request runs formatting, the complete locked workspace test
+suite, workspace Clippy across all targets, dependency auditing, and protocol
+fuzz-target compilation/sanitizer checks whenever those manifests exist. A push
+to `aistack/main` repeats the same complete ordinary hosted suite. The workflow
+does not infer affected files or select only their tests; focused affected-module
+tests remain mandatory PR content and are exercised by the full workspace run.
+
+The offline verification tiers are explicit:
+
+| Tier | Trigger | Required coverage |
+| --- | --- | --- |
+| Fast PR | Every pull request | Focused tests shipped by the change, dependent-module/API-event contracts, deterministic fixtures, short fault/reclamation smoke tests, formatting, and Clippy |
+| Full branch | Every push to `aistack/main` | Complete locked workspace tests, deterministic integration/fixture tests, fuzz-target checks, and dependency/security audit |
+| Scheduled/manual | Nightly, weekly, or dispatch | Extended fuzzing, SIPp/interoperability replay, property/capacity matrices, differential checks, and long-duration soak/memory tests |
+| Traffic evidence gate | Before enabling or expanding Rust routing | Sanitized Asterisk/provider replay, credentialed real-time interoperability, and tested rollback proof |
+
+Provider access is not required to build the replay foundation. Synthetic SIP
+scenarios, timer advancement, RTP/RTCP/DTMF fault injection, fake AI-media peers,
+state/event assertions, and reclamation checks should be implemented offline;
+sanitized Asterisk/provider captures can extend that same corpus later.
+
 Every push to `aistack/main` runs that same complete ordinary hosted suite
 against the integrated stack whenever a Rust workspace is present. “All tests”
 here means the complete ordinary Rust workspace and its offline checks, not
@@ -2119,6 +2141,7 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 | --- | --- | --- | --- | --- |
 | Phase 0 — current Asterisk surface | in_progress | CP-015; PR #1 hosted run 33431290927 passed and GitHub reports CLEAN/MERGEABLE at `8dbd0082823b9444e72a6ceebee27328bd0f506d` | #1 | Keep the verified Asterisk inventory and production-evidence gate in force |
 | Phase 1 — Rust media engine | in_progress | CP-038; PR #11 hosted run 33527453388 passed at `31fdb6c1b81a548e05e7afb89e09ef2d2522fda8`; PR #11 is OPEN/CLEAN/MERGEABLE against the validated PR #10 head | [#11](https://github.com/W3Mirror/asterisk/pull/11) | Reconcile PR #12 onto this validated head and run focused SIP-security checks |
+| Offline deterministic verification | in_progress | CP-058 defines focused per-module tests, synthetic SIP replay, property invariants, API/event contracts, media fault injection, bridge/transfer state tests, differential tooling, load/soak/reclamation tiers, and hosted PR/main-push execution semantics | [#21](https://github.com/W3Mirror/asterisk/pull/21) | Implement the smallest reusable synthetic SIP scenario format and replay/state assertions |
 | Phase 2 — SIP edge shadow mode | in_progress | CP-026; PR #7 hosted run 33436951454 passed and GitHub reports CLEAN/MERGEABLE at `fe87301a5322e278a8fb39404d675c6372d87ad9` | [#7](https://github.com/W3Mirror/asterisk/pull/7) | Publish and validate PR #8's media-session slice |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
 | Phase 4 — expanded provider coverage | not_started | — | — | Add one provider compatibility suite per rollout target |
