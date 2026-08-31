@@ -739,6 +739,7 @@ fn call_event(value: CallEventKind) -> &'static str {
         CallEventKind::Transferring => "transferring",
         CallEventKind::Transferred => "transferred",
         CallEventKind::Hangup => "hangup",
+        CallEventKind::Ended => "ended",
         CallEventKind::Failed => "failed",
     }
 }

@@ -106,6 +106,8 @@ pub enum ApiError {
     UnknownCall,
     /// The pending event bound was reached.
     EventQueueFull,
+    /// The requested replay cursor is no longer retained in the bounded history.
+    EventHistoryUnavailable,
     /// A caller supplied a zero event/list limit.
     InvalidLimit,
     /// The requested command is not valid in the current state.
@@ -137,6 +139,7 @@ impl ApiError {
             Self::DuplicateCall => "duplicate_call",
             Self::UnknownCall => "unknown_call",
             Self::EventQueueFull => "event_queue_full",
+            Self::EventHistoryUnavailable => "event_history_unavailable",
             Self::InvalidLimit => "invalid_limit",
             Self::InvalidCommand { .. } => "invalid_command",
             Self::IdentifierExhausted => "identifier_exhausted",
@@ -156,6 +159,9 @@ impl Display for ApiError {
             Self::DuplicateCall => formatter.write_str("call identifier is already registered"),
             Self::UnknownCall => formatter.write_str("call identifier is not registered"),
             Self::EventQueueFull => formatter.write_str("call lifecycle event queue is full"),
+            Self::EventHistoryUnavailable => {
+                formatter.write_str("call lifecycle event cursor is outside the retained history")
+            }
             Self::InvalidLimit => formatter.write_str("call API limit must be non-zero"),
             Self::InvalidCommand { state, command } => {
                 write!(
@@ -192,6 +198,7 @@ pub struct CallRegistry {
     config: CallRegistryConfig,
     calls: HashMap<CallId, CallEntry>,
     events: VecDeque<LifecycleEvent>,
+    event_history: VecDeque<LifecycleEvent>,
     next_call_sequence: u64,
     next_event_sequence: u64,
 }
@@ -203,6 +210,7 @@ impl CallRegistry {
             config: config.validate()?,
             calls: HashMap::new(),
             events: VecDeque::new(),
+            event_history: VecDeque::new(),
             next_call_sequence: 1,
             next_event_sequence: 1,
         })
@@ -417,6 +425,54 @@ impl CallRegistry {
         Ok(self.events.drain(..limit.min(self.events.len())).collect())
     }
 
+    /// Returns retained lifecycle events emitted after an optional cursor.
+    ///
+    /// The cursor is exclusive: passing the last event returned by a consumer
+    /// yields only newer events. Events remain replayable after
+    /// [`Self::drain_events`] so a reconnecting consumer can backfill without
+    /// duplicating already acknowledged events. A cursor that has fallen out
+    /// of the bounded history is rejected instead of silently returning a
+    /// partial stream.
+    pub fn replay_events_after(
+        &self,
+        after: Option<&EventId>,
+        limit: usize,
+    ) -> Result<Vec<LifecycleEvent>, ApiError> {
+        if limit == 0 {
+            return Err(ApiError::InvalidLimit);
+        }
+        let start = match after {
+            None => 0,
+            Some(cursor) => self
+                .event_history
+                .iter()
+                .position(|event| &event.event_id == cursor)
+                .map_or_else(
+                    || Err(ApiError::EventHistoryUnavailable),
+                    |position| Ok(position.saturating_add(1)),
+                )?,
+        };
+        Ok(self
+            .event_history
+            .iter()
+            .skip(start)
+            .take(limit)
+            .cloned()
+            .collect())
+    }
+
+    /// Returns the newest retained lifecycle event identifier, if any.
+    #[must_use]
+    pub fn latest_event_id(&self) -> Option<&EventId> {
+        self.event_history.back().map(|event| &event.event_id)
+    }
+
+    /// Returns the oldest retained lifecycle event identifier, if any.
+    #[must_use]
+    pub fn oldest_event_id(&self) -> Option<&EventId> {
+        self.event_history.front().map(|event| &event.event_id)
+    }
+
     /// Removes a call only after it reached `Ended` or `Failed`.
     pub fn remove_terminal(&mut self, id: &CallId) -> Result<CallSnapshot, ApiError> {
         let snapshot = self.snapshot(id)?;
@@ -467,6 +523,10 @@ impl CallRegistry {
             kind,
         };
         self.events.push_back(event.clone());
+        self.event_history.push_back(event.clone());
+        while self.event_history.len() > self.config.max_pending_events {
+            self.event_history.pop_front();
+        }
         event
     }
 }
@@ -484,7 +544,7 @@ fn command_transition(
         CallCommand::BeginTransfer => (CallState::Transferring, Some(CallEventKind::Transferring)),
         CallCommand::CompleteTransfer => (CallState::Active, Some(CallEventKind::Transferred)),
         CallCommand::Hangup => (CallState::Ending, Some(CallEventKind::Hangup)),
-        CallCommand::End => (CallState::Ended, None),
+        CallCommand::End => (CallState::Ended, Some(CallEventKind::Ended)),
         CallCommand::Fail => (CallState::Failed, Some(CallEventKind::Failed)),
     }
 }
@@ -514,7 +574,7 @@ mod tests {
     fn bounded_registry_emits_stable_events_and_reclaims_terminal_calls() {
         let mut registry = CallRegistry::new(CallRegistryConfig {
             max_calls: 1,
-            max_pending_events: 4,
+            max_pending_events: 8,
         })
         .unwrap();
         let id = registry.create().unwrap();
@@ -581,6 +641,69 @@ mod tests {
         assert_eq!(registry.create(), Err(ApiError::EventQueueFull));
         registry.drain_events(1).unwrap();
         assert_eq!(registry.create().unwrap().as_str(), "call_2");
+    }
+
+    #[test]
+    fn terminal_end_emits_an_explicit_event_and_replay_is_cursored() {
+        let mut registry = CallRegistry::new(CallRegistryConfig {
+            max_calls: 1,
+            max_pending_events: 8,
+        })
+        .unwrap();
+        let id = registry.create().unwrap();
+        registry.apply(&id, CallCommand::InviteReceived).unwrap();
+        registry.apply(&id, CallCommand::Hangup).unwrap();
+        registry.apply(&id, CallCommand::End).unwrap();
+
+        let events = registry.drain_events(8).unwrap();
+        assert_eq!(
+            events.iter().map(|event| event.kind).collect::<Vec<_>>(),
+            vec![
+                CallEventKind::Created,
+                CallEventKind::InviteReceived,
+                CallEventKind::Hangup,
+                CallEventKind::Ended,
+            ]
+        );
+        assert_eq!(registry.latest_event_id(), Some(&events[3].event_id));
+        assert_eq!(registry.oldest_event_id(), Some(&events[0].event_id));
+        assert_eq!(
+            registry
+                .replay_events_after(Some(&events[0].event_id), 2)
+                .unwrap(),
+            events[1..3].to_vec()
+        );
+        assert_eq!(
+            registry
+                .replay_events_after(Some(&events[3].event_id), 2)
+                .unwrap(),
+            Vec::<LifecycleEvent>::new()
+        );
+    }
+
+    #[test]
+    fn replay_rejects_evicted_cursors_instead_of_silently_skipping_events() {
+        let mut registry = CallRegistry::new(CallRegistryConfig {
+            max_calls: 1,
+            max_pending_events: 2,
+        })
+        .unwrap();
+        let id = registry.create().unwrap();
+        let created = registry.drain_events(2).unwrap().pop().unwrap();
+        registry.apply(&id, CallCommand::InviteReceived).unwrap();
+        registry.drain_events(2).unwrap();
+        registry.apply(&id, CallCommand::Ringing).unwrap();
+        registry.drain_events(2).unwrap();
+
+        assert_eq!(
+            registry.replay_events_after(Some(&created.event_id), 1),
+            Err(ApiError::EventHistoryUnavailable)
+        );
+        assert_eq!(registry.replay_events_after(None, 8).unwrap().len(), 2);
+        assert_eq!(
+            registry.replay_events_after(None, 0),
+            Err(ApiError::InvalidLimit)
+        );
     }
 
     #[test]

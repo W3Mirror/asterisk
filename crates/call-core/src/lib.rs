@@ -82,6 +82,7 @@ pub enum CallEventKind {
     Transferring,
     Transferred,
     Hangup,
+    Ended,
     Failed,
 }
 

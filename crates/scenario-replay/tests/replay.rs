@@ -379,6 +379,7 @@ fn replay_fixture_covers_retransmission_cancel_failure_and_timer_reclamation() {
             CallEventKind::Created,
             CallEventKind::InviteReceived,
             CallEventKind::Failed,
+            CallEventKind::Ended,
         ]
     );
     assert_eq!(
@@ -466,6 +467,7 @@ fn replays_transfer_lifecycle_and_reclaims_the_terminal_call() {
             CallEventKind::Transferring,
             CallEventKind::Transferred,
             CallEventKind::Hangup,
+            CallEventKind::Ended,
         ]
     );
 }
