@@ -41,6 +41,15 @@ until `reclaim_terminal_call` is called, allowing post-call consumers to export
 state before releasing the registry slot. The operation is transactional and
 idempotent.
 
+For a controlled process replacement, `prepare_restart_handoff` combines that
+terminal cleanup with admission drain. It returns a bounded report containing
+the application call IDs that were active at handoff and their ordered
+terminal lifecycle events, leaves the engine draining, and emits no wire
+actions. Repeating the handoff is safe and returns no duplicate terminal
+events. A supervisor can persist the report and exported diagnostics before
+dropping the old engine; `resume` is available when a planned restart is
+cancelled.
+
 ## Graceful drain and restart
 
 `begin_drain` stops new call admission without interrupting existing dialogs or

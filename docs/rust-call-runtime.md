@@ -29,6 +29,13 @@ in `call-engine`.
   context, and retains the terminal call records for post-call inspection and
   explicit reclamation. It emits no SIP action because the transport is
   unavailable.
+- For a planned process replacement, `prepare_restart_handoff` additionally
+  stops admission, ends every retained bridge, removes provider-auth context,
+  and returns a bounded report of call and bridge lifecycle events. It drains
+  any already-queued bridge events before ending bridges, so a full bridge
+  event queue cannot cause a partial handoff; repeated calls return no
+  duplicate terminal events. The runtime remains draining until `resume` is
+  called if the restart is cancelled.
 - UDP and connected TCP runtimes default to the PR12 source policy's
   default-allow behavior for backward compatibility. Use
   `udp_with_source_policy`, `tcp_with_source_policy`, or
