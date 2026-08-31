@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-098 — PR #36 published with hosted validation running
-**Last checkpoint (UTC):** 2026-08-31T00:07:14Z
+**Current checkpoint:** CP-099 — PR #36 hosted DTMF-relay validation green
+**Last checkpoint (UTC):** 2026-08-31T00:11:49Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Runtime caller/human RFC 4733 DTMF relay<br>
-**Next resume action:** Push the PR #36 publication checkpoint, then verify Workspace, Protocol fuzz, and Dependency audit on the documentation-only final head
+**Next resume action:** Push the PR #36 green-check reconciliation and verify Workspace, Protocol fuzz, and Dependency audit on its documentation-only final head; then select the next bounded offline media reliability slice
 **Active PR:** [#36](https://github.com/W3Mirror/asterisk/pull/36) — `runtime-dtmf-leg-bridge` targets `runtime-rtp-leg-bridge`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-36`
@@ -4197,6 +4197,27 @@ blockers: Hosted validation is pending on the publication checkpoint's final hea
 next_action: Push this publication checkpoint and verify all three hosted Rust quality gates on the final PR #36 head
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #36 if the DTMF relay contract is superseded
 notes: PR #36 contains the relevant relay implementation, three DTMF-specific bridge tests including failback and retransmission coverage, media-session assertions, documentation, manifest, lockfile, and CI-contract goal update. Every PR and push to `aistack/main` runs the complete repository suite. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-099 — PR #36 hosted DTMF-relay validation green
+
+~~~yaml
+checkpoint_id: CP-099
+recorded_at_utc: 2026-08-31T00:11:49Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Runtime caller/human RFC 4733 DTMF relay
+scope: Verify the published state-gated DTMF relay through every repository-hosted Rust quality gate before continuing media reliability work
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-36
+branch: runtime-dtmf-leg-bridge
+base_branch: runtime-rtp-leg-bridge
+pr: https://github.com/W3Mirror/asterisk/pull/36
+head_sha: 0f3b00ab6fcf591b7ed315dd4123e61eed7f7b6d before this green-check reconciliation commit
+evidence: PR #36 is OPEN/non-draft/CLEAN against exact base `runtime-rtp-leg-bridge` at `436d571ef`, with local, origin, and GitHub head parity; hosted run `33343639323` passed Workspace checks in 49 seconds, including formatting, all 184 tests, all three local SIPp scenarios, the 512-call reclamation smoke, and workspace Clippy; Protocol fuzz checks passed in 1 minute 1 second across all six address-sanitizer targets; Dependency audit passed in 3 minutes 15 seconds
+blockers: DTMF-to-subsequent-audio timestamp advancement, RTCP relay, jitter playout, media/WebSocket load, long-duration soak/memory, sanitized captures, provider/Asterisk interoperability, rollback proof, and production evidence remain active goal work; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Push this reconciliation checkpoint, verify all three hosted jobs on that documentation-only final head, then select the next smallest bounded offline media reliability slice
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #36 if the DTMF relay contract is superseded
+notes: Relevant tests shipped with the implementation. Hosted PR CI and pushes to `aistack/main` continue to run the complete repository suite rather than affected-module selection. The scheduled-only extended load and property steps were correctly skipped for the pull-request event. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
