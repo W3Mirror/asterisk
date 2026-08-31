@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-198 — PR #65 final head parity reconciled
-**Last checkpoint (UTC):** 2026-08-31T16:16:00Z
+**Current checkpoint:** CP-199 — Call diagnostics locally green
+**Last checkpoint (UTC):** 2026-08-31T16:38:00Z
 **Active phase:** Phase 1 — Rust media engine
-**Active milestone:** Media recorder error propagation and Asterisk fallback<br>
+**Active milestone:** Redaction-safe call diagnostics and Asterisk fallback<br>
 **Next resume action:** Continue the next bounded offline acceptance slice without enabling Rust traffic
-**Active PR:** #65 — `media-recording-errors` targets `media-recording-finalize` (hosted green)
+**Active PR:** next — `call-diagnostics` targets `media-recording-errors` (local validation green; publication pending)
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-65-media-recording-errors`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-66-call-diagnostics`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -6424,6 +6424,27 @@ blockers: This remains provider-neutral offline evidence. Production configurati
 next_action: Continue the next bounded offline acceptance slice without enabling Rust traffic.
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #65 or revert `c298e81` if the ledger reconciliation is superseded.
 notes: This reconciliation changes only the goal ledger after the hosted-green implementation; no implementation behavior or CI configuration changed.
+~~~
+
+### CP-199 — Call diagnostics locally green
+
+~~~yaml
+checkpoint_id: CP-199
+recorded_at_utc: 2026-08-31T16:38:00Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Redaction-safe call diagnostics and Asterisk fallback
+scope: Add bounded, authorization-aware diagnostics export across call-engine and call-runtime without exposing SIP identifiers, credentials, addresses, or raw bodies
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-66-call-diagnostics
+branch: call-diagnostics
+base_branch: media-recording-errors
+pr: none
+head_sha: not yet committed
+evidence: Added redaction-safe `CallDiagnostics`, dialog/media/signaling detail types, deterministic listing, and read-authorized engine/runtime APIs. Diagnostics retain only application call ID, lifecycle state, bounded dialog sequence/route metadata, negotiated codec/direction/remote port, transaction/retransmission counts, reliable-provisional state, and Digest retry count. Focused call-engine tests pass (33 tests) and call-runtime tests pass (46 tests), including lifecycle transitions, media negotiation, redaction, authorization, listing, and terminal reclamation. `cargo test --workspace --locked --quiet`, `cargo clippy --workspace --all-targets --locked` (exit 0 with existing baseline warnings), `cargo fmt --all -- --check`, and `git diff --check` pass locally. Documentation added at `docs/rust-call-diagnostics.md`.
+blockers: Hosted validation, commit/publication, and PR checks are pending; provider/runtime configuration, sanitized provider captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated.
+next_action: Commit the diagnostics implementation/tests/docs/ledger normally, push `call-diagnostics`, open PR #66 against `media-recording-errors`, and verify exact local/origin/GitHub parity plus the complete ordinary hosted suite.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #66 or revert its commit if the diagnostics contract is superseded.
+notes: Every implementation slice includes focused tests for its affected module and dependent API boundary. Pull-request opened/reopened/synchronized events run the complete ordinary hosted workspace suite; pushes to `aistack/main` repeat that suite. The workflow does not currently select only affected modules, and larger capacity/property/soak or credentialed provider/live-call evidence remains scheduled/manual or approval-gated. All runners remain hosted `ubuntu-latest`; Docker remains limited to the pinned SIPp integration dependency.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
