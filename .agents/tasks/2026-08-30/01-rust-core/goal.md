@@ -1,12 +1,12 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-199 — Call diagnostics locally green
-**Last checkpoint (UTC):** 2026-08-31T16:38:00Z
+**Current checkpoint:** CP-200 — PR #66 hosted validation green
+**Last checkpoint (UTC):** 2026-08-31T16:42:00Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Redaction-safe call diagnostics and Asterisk fallback<br>
 **Next resume action:** Continue the next bounded offline acceptance slice without enabling Rust traffic
-**Active PR:** next — `call-diagnostics` targets `media-recording-errors` (local validation green; publication pending)
+**Active PR:** #66 — `call-diagnostics` targets `media-recording-errors` (hosted green)
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-66-call-diagnostics`
 **Primary language:** Rust  
@@ -6445,6 +6445,27 @@ blockers: Hosted validation, commit/publication, and PR checks are pending; prov
 next_action: Commit the diagnostics implementation/tests/docs/ledger normally, push `call-diagnostics`, open PR #66 against `media-recording-errors`, and verify exact local/origin/GitHub parity plus the complete ordinary hosted suite.
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #66 or revert its commit if the diagnostics contract is superseded.
 notes: Every implementation slice includes focused tests for its affected module and dependent API boundary. Pull-request opened/reopened/synchronized events run the complete ordinary hosted workspace suite; pushes to `aistack/main` repeat that suite. The workflow does not currently select only affected modules, and larger capacity/property/soak or credentialed provider/live-call evidence remains scheduled/manual or approval-gated. All runners remain hosted `ubuntu-latest`; Docker remains limited to the pinned SIPp integration dependency.
+~~~
+
+### CP-200 — PR #66 hosted validation green
+
+~~~yaml
+checkpoint_id: CP-200
+recorded_at_utc: 2026-08-31T16:42:00Z
+status: hosted_green
+phase: Phase 1 — Rust media engine
+milestone: Redaction-safe call diagnostics and Asterisk fallback
+scope: Verify the complete ordinary hosted Rust quality suite on PR #66's publication head
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-66-call-diagnostics
+branch: call-diagnostics
+base_branch: media-recording-errors
+pr: https://github.com/W3Mirror/asterisk/pull/66
+head_sha: 8a3cddfb8381c322304bbed26b7cd38ec73698bc
+evidence: PR #66 is OPEN, non-draft, CLEAN, and MERGEABLE against `media-recording-errors`, with local HEAD, `origin/call-diagnostics`, and GitHub head parity at `8a3cddfb8381c322304bbed26b7cd38ec73698bc`. Hosted Rust quality run `33415277539` passed Workspace checks `99564318988` (formatting, complete locked workspace tests, pinned SIPp scenarios, deterministic signaling/media/WebSocket/combined/short-soak reclamation smokes, and workspace Clippy), Protocol fuzz checks `99564318891` (all address-sanitizer targets), and Dependency audit `99564319347`. Schedule/manual-only Signaling capacity matrix `99564320820` and Two-hour lifecycle soak `99564320227` correctly skipped for the pull-request event.
+blockers: This remains provider-neutral offline evidence. Production configuration, sanitized provider captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated.
+next_action: Continue the next bounded offline acceptance slice without enabling Rust traffic; retain Asterisk as the fallback until external interoperability and rollout gates are approved.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #66 or revert `8a3cddf` if the diagnostics contract is superseded.
+notes: Focused call-engine and call-runtime tests ship with the diagnostics implementation and are included in the complete ordinary hosted PR workspace run. Every pull-request event (`opened`, `reopened`, or `synchronize`) and every push to `aistack/main` runs that ordinary hosted suite. Larger capacity, extended property, multi-hour soak, and credentialed provider/live-call evidence remain scheduled/manual or approval-gated. All workflow runners remain hosted `ubuntu-latest`; Docker is limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
