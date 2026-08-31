@@ -2667,7 +2667,7 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 22 | [#22](https://github.com/W3Mirror/asterisk/pull/22) | `rust-quality-ci` | `protocol-fuzz` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-22-rust-quality-ci` | Documentation-only reconciliation of the hosted Rust CI rollout and explicit offline verification/CI tiers | in_progress | `1f22d5b39` before CP-060 ledger commit | PR22 is OPEN/non-draft/CLEAN at `1f22d5b39`; inherited hosted Workspace checks, Protocol fuzz checks, and Dependency audit all passed in run `33334469075`; repository-native workflow commit `534de1996` remains on `aistack/main` | Publish CP-060, then implement the deterministic synthetic SIP fixture/replay foundation in the next stacked PR |
 | 25 | [#25](https://github.com/W3Mirror/asterisk/pull/25) | `sip-scenario-replay` | `rust-quality-ci` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-25` | Offline deterministic replay foundation: bounded atomic scenario execution across raw SIP parsing, transactions, dialogs, calls, lifecycle events, RTP, and AI-media queues | in_progress | `c98312e75` before CP-063 green-check reconciliation | Five focused replay tests and all 134 workspace tests pass; formatting, strict package Clippy, workspace Clippy, lockfile, and diff checks pass; PR #25 is OPEN/non-draft/CLEAN; run `33335704000` passed Workspace checks, Protocol fuzz checks, and Dependency audit | Publish CP-063, then create the next stacked corpus-expansion PR |
 | 40 | [#40](https://github.com/W3Mirror/asterisk/pull/40) | `runtime-jitter-playout` | `runtime-rtcp-sender-reports` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-40` | Bounded caller-driven fixed-delay RTP audio jitter buffering and bridge/scenario playout integration | hosted green | `19ce0fd17` | CP-110–CP-112; focused media/runtime/bridge/replay tests and the full local matrix pass; PR #40 is OPEN/non-draft/CLEAN with local/origin/GitHub parity and final-head run `33348027308` passing Workspace checks, Protocol fuzz checks, and Dependency audit | Publish the bounded media-load slice from exact base `runtime-jitter-playout` |
-| 41 | [#41](https://github.com/W3Mirror/asterisk/pull/41) | `media-load-smoke` | `runtime-jitter-playout` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-41` | Bounded media-only RTP/jitter/AI-queue/RTP reclamation and capacity-reuse smoke for ordinary and scheduled CI | hosted validation running | `2c524520f` before CP-114 publication checkpoint | CP-113–CP-114; three focused tests, all 210 workspace tests, SIPp, signaling/media load tiers, workspace and strict package Clippy, formatting, workflow parsing, six fuzz checks, and diff checks pass; PR #41 is OPEN/non-draft against the exact stacked base | Push CP-114 and verify every hosted job on its final head |
+| 41 | [#41](https://github.com/W3Mirror/asterisk/pull/41) | `media-load-smoke` | `runtime-jitter-playout` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-41` | Bounded media-only RTP/jitter/AI-queue/RTP reclamation and capacity-reuse smoke for ordinary and scheduled CI | hosted green | `753aeb97a` before CP-115 green-check reconciliation | CP-113–CP-115; three focused tests and full local validation pass; PR #41 is OPEN/non-draft/CLEAN and run `33348850790` passed Workspace checks including the ordinary media smoke, Protocol fuzz checks, and Dependency audit | Push CP-115 and verify every hosted job on the documentation-only final head |
 
 ### CP-026 — PR10 published and stacked remote parity verified
 
@@ -4536,6 +4536,27 @@ blockers: Hosted validation is pending on the publication checkpoint's final hea
 next_action: Push this publication checkpoint and verify all three hosted Rust quality gates, including the new ordinary media smoke, on the final PR #41 head
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #41 or remove the media-load CI steps if the bounded harness contract is superseded
 notes: PR #41 contains the relevant media-load implementation, three focused tests, documentation, lockfile, CI wiring, and goal checkpoint. Every pull request and push to aistack/main runs the complete hosted suite rather than affected-module-only selection; only the deeper 4,096-stream media tier remains scheduled. All jobs use hosted ubuntu-latest, with Docker invoked inside the Workspace job only for the pinned SIPp test dependency. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-115 — PR #41 hosted media-load validation green
+
+~~~yaml
+checkpoint_id: CP-115
+recorded_at_utc: 2026-08-31T01:55:19Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Media-only load, backpressure, reclamation, and capacity reuse
+scope: Verify the complete hosted Rust quality suite on PR #41's publication-checkpoint head before continuing the next bounded offline goal slice
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-41
+branch: media-load-smoke
+base_branch: runtime-jitter-playout
+pr: https://github.com/W3Mirror/asterisk/pull/41
+head_sha: 753aeb97a39c15ff75cbfac7dd6c8ce04dd07abe before this green-check reconciliation commit
+evidence: PR #41 is OPEN/non-draft/CLEAN against exact base runtime-jitter-playout, with local, origin, and GitHub publication-head parity; hosted run 33348850790 passed Workspace checks in 43 seconds, including formatting, all 210 tests, all three local SIPp scenarios, the 512-call signaling smoke, the new 64-stream bidirectional media smoke, and workspace Clippy; Protocol fuzz checks passed in 43 seconds across all six address-sanitizer targets; Dependency audit passed in 3 minutes 17 seconds
+blockers: The 1,000/5,000/10,000 concurrent-call capacity matrix, real UDP/WebSocket and combined signaling-media throughput, CPU per call, long-duration soak and stable memory baselines, sanitized captures, provider/Asterisk interoperability, rollback proof, and production evidence remain active goal work; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Push this green-check reconciliation, verify all three hosted jobs on its documentation-only final head, then continue the next smallest bounded offline load, soak, or runtime-composition slice without enabling Rust traffic
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #41 or remove the media-load CI steps if the bounded harness contract is superseded
+notes: Relevant implementation and three focused tests shipped together. Hosted PR CI and pushes to aistack/main continue to run the complete repository suite rather than affected-module selection. Scheduled-only 16,384-call signaling, 4,096-stream media, and 4,096-case property steps were correctly skipped for the pull-request event. All jobs remain on hosted ubuntu-latest; Docker is used only inside Workspace checks for pinned SIPp. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
