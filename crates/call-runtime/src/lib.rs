@@ -29,7 +29,8 @@ use call_engine::{
     RestartHandoff as EngineRestartHandoff, SendAction,
 };
 use provider_routing::{
-    AuthenticationPolicy, EngineTarget, ProviderRouteTable, RouteMatch, SignalingTransport,
+    AuthenticationPolicy, EngineTarget, ProviderRouteTable, RouteController, RouteDecision,
+    RouteMatch, SignalingTransport,
 };
 use sip_auth::DigestCredentials;
 use sip_security::SourceIpPolicy;
@@ -650,10 +651,52 @@ impl CallRuntime {
     where
         R: ProviderAddressResolver + ?Sized,
     {
+        let decision = routes.route_outbound(provider_id);
+        self.originate_with_route_decision(routes, &decision, request, resolver, now)
+    }
+
+    /// Starts an outbound call through a generation-checked deployment route
+    /// controller.
+    ///
+    /// The controller starts fail-closed on Asterisk and can be switched to
+    /// explicitly Rust-targeted profiles only by the deployment supervisor.
+    /// Rolling the controller back therefore prevents address resolution and
+    /// wire delivery before this runtime mutates any call state.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`Self::originate_with_provider_route`]. A
+    /// controller in its Asterisk rollback state returns
+    /// [`RuntimeError::ProviderRouteFallback`] without invoking `resolver`.
+    pub fn originate_with_route_controller<R>(
+        &mut self,
+        routes: &RouteController,
+        provider_id: &str,
+        request: SipRequest,
+        resolver: &mut R,
+        now: Duration,
+    ) -> Result<(CallId, RuntimeOutput), RuntimeError>
+    where
+        R: ProviderAddressResolver + ?Sized,
+    {
+        let decision = routes.route_outbound(provider_id);
+        self.originate_with_route_decision(routes.table(), &decision, request, resolver, now)
+    }
+
+    fn originate_with_route_decision<R>(
+        &mut self,
+        routes: &ProviderRouteTable,
+        decision: &RouteDecision,
+        request: SipRequest,
+        resolver: &mut R,
+        now: Duration,
+    ) -> Result<(CallId, RuntimeOutput), RuntimeError>
+    where
+        R: ProviderAddressResolver + ?Sized,
+    {
         if self.engine.is_draining() {
             return Err(RuntimeError::Engine(EngineError::Draining));
         }
-        let decision = routes.route_outbound(provider_id);
         if decision.target() != EngineTarget::Rust {
             return Err(RuntimeError::ProviderRouteFallback {
                 matched_by: decision.matched_by(),
@@ -1220,7 +1263,7 @@ mod tests {
     use call_bridge::{BridgeEventKind, BridgeRegistryConfig};
     use call_core::{CallEventKind, CallState, CommandId, StreamId};
     use call_engine::EngineConfig;
-    use provider_routing::{ProviderProfile, RoutingConfig};
+    use provider_routing::{ProviderProfile, RouteController, RoutingConfig};
     use rcgen::generate_simple_self_signed;
     use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
     use sip_auth::{DigestAlgorithm, DigestAuthorization, DigestChallenge};
@@ -2020,6 +2063,81 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn route_controller_rollback_blocks_runtime_resolution_without_mutation() {
+        let peer = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 2_048).unwrap();
+        let runtime_transport = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 2_048).unwrap();
+        let mut runtime = CallRuntime::udp(
+            CallEngine::new(EngineConfig::default()).unwrap(),
+            runtime_transport,
+        );
+        let mut routes = RouteController::new(routed_digest_routes());
+        let resolver_calls = std::cell::Cell::new(0);
+        let mut resolver = |host: &str, port: u16| {
+            resolver_calls.set(resolver_calls.get() + 1);
+            assert_eq!(host, "sip.provider.invalid");
+            assert_eq!(port, 5060);
+            Some(peer.local_addr().unwrap())
+        };
+
+        let blocked = runtime
+            .originate_with_route_controller(
+                &routes,
+                "routed-digest-provider",
+                invite(),
+                &mut resolver,
+                Duration::ZERO,
+            )
+            .unwrap_err();
+        assert!(matches!(
+            blocked,
+            RuntimeError::ProviderRouteFallback {
+                matched_by: RouteMatch::OutboundProvider
+            }
+        ));
+        assert_eq!(resolver_calls.get(), 0);
+        assert!(runtime.engine().list(10).unwrap().is_empty());
+
+        routes.activate_rust(routes.state().generation()).unwrap();
+        let (call_id, output) = runtime
+            .originate_with_route_controller(
+                &routes,
+                "routed-digest-provider",
+                invite(),
+                &mut resolver,
+                Duration::ZERO,
+            )
+            .unwrap();
+        assert_eq!(resolver_calls.get(), 1);
+        assert_eq!(output.actions().len(), 1);
+        assert_eq!(
+            runtime.engine().snapshot(&call_id).unwrap().state,
+            CallState::Inviting
+        );
+        let _ = peer.recv().unwrap();
+
+        routes
+            .rollback_to_asterisk(routes.state().generation())
+            .unwrap();
+        let blocked_again = runtime
+            .originate_with_route_controller(
+                &routes,
+                "routed-digest-provider",
+                invite(),
+                &mut resolver,
+                Duration::ZERO,
+            )
+            .unwrap_err();
+        assert!(matches!(
+            blocked_again,
+            RuntimeError::ProviderRouteFallback {
+                matched_by: RouteMatch::OutboundProvider
+            }
+        ));
+        assert_eq!(resolver_calls.get(), 1);
+        assert_eq!(runtime.engine().list(10).unwrap().len(), 1);
     }
 
     #[test]
