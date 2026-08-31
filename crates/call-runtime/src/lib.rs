@@ -24,7 +24,7 @@ use std::{
 use call_api::{AuthenticatedPrincipal, CallCommand};
 use call_bridge::{BridgeError, BridgeEvent, BridgeRegistry, BridgeState};
 use call_core::{BridgeId, CallEventKind, CallId, CommandId, LegId, LifecycleEvent};
-use call_engine::{CallEngine, EngineError, EngineMetrics, EngineOutput, SendAction};
+use call_engine::{CallEngine, EngineError, EngineHealth, EngineMetrics, EngineOutput, SendAction};
 use provider_routing::{
     AuthenticationPolicy, EngineTarget, ProviderRouteTable, RouteMatch, SignalingTransport,
 };
@@ -428,6 +428,12 @@ impl CallRuntime {
     #[must_use]
     pub fn metrics(&self) -> EngineMetrics {
         self.engine.metrics()
+    }
+
+    /// Returns liveness and capacity-aware admission readiness for the runtime.
+    #[must_use]
+    pub fn health(&self) -> EngineHealth {
+        self.engine.health()
     }
 
     /// Borrows the current transport endpoint.
@@ -1338,6 +1344,52 @@ mod tests {
         assert_eq!(metrics.active_transactions, 1);
         assert_eq!(metrics.active_dialogs, 1);
         assert!(!metrics.prometheus().contains(call_id.as_str()));
+    }
+
+    #[test]
+    fn runtime_health_delegates_capacity_aware_readiness() {
+        let runtime_transport = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 2_048).unwrap();
+        let peer = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 2_048).unwrap();
+        let mut runtime = CallRuntime::udp(
+            CallEngine::new(EngineConfig {
+                call_registry: call_api::CallRegistryConfig {
+                    max_calls: 1,
+                    ..call_api::CallRegistryConfig::default()
+                },
+                max_transactions: 1,
+                ..EngineConfig::default()
+            })
+            .unwrap(),
+            runtime_transport,
+        );
+        assert!(runtime.health().live);
+        assert!(runtime.health().ready);
+
+        let (call_id, _) = runtime
+            .originate(invite(), peer.local_addr().unwrap(), Duration::ZERO)
+            .unwrap();
+        let _ = peer.recv().unwrap();
+        let saturated = runtime.health();
+        assert!(!saturated.ready);
+        assert_eq!(saturated.retained_calls, 1);
+        assert_eq!(saturated.active_transactions, 1);
+        assert!(!saturated.prometheus().contains(call_id.as_str()));
+
+        runtime
+            .apply_call_command(&call_id, CallCommand::Answer)
+            .unwrap();
+        runtime
+            .apply_call_command(&call_id, CallCommand::Hangup)
+            .unwrap();
+        runtime
+            .apply_call_command(&call_id, CallCommand::End)
+            .unwrap();
+        assert!(!runtime.health().ready);
+        runtime
+            .engine_mut()
+            .reclaim_terminal_call(&call_id)
+            .unwrap();
+        assert!(runtime.health().ready);
     }
 
     #[test]

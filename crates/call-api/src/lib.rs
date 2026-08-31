@@ -239,6 +239,9 @@ pub struct CallMetrics {
     pub calls_completed_total: u64,
     /// Number of non-terminal calls currently retained.
     pub calls_active: usize,
+    /// Number of call records currently retained, including terminal calls
+    /// awaiting explicit reclamation.
+    pub calls_retained: usize,
     /// Number of lifecycle events emitted since the registry was created.
     pub lifecycle_events_total: u64,
     /// Number of events waiting for delivery.
@@ -462,6 +465,7 @@ impl CallRegistry {
                 .values()
                 .filter(|entry| !matches!(entry.call.state, CallState::Ended | CallState::Failed))
                 .count(),
+            calls_retained: self.calls.len(),
             lifecycle_events_total: self.lifecycle_events_total,
             pending_events: self.events.len(),
             retained_event_history: self.event_history.len(),
@@ -1140,6 +1144,7 @@ mod tests {
         let created = registry.metrics();
         assert_eq!(created.calls_started_total, 1);
         assert_eq!(created.calls_active, 1);
+        assert_eq!(created.calls_retained, 1);
         assert_eq!(created.lifecycle_events_total, 1);
         assert_eq!(created.pending_events, 1);
         assert_eq!(created.retained_event_history, 1);
@@ -1168,6 +1173,7 @@ mod tests {
         registry.remove_terminal(&id).unwrap();
         assert_eq!(registry.metrics().calls_started_total, 1);
         assert_eq!(registry.metrics().calls_active, 0);
+        assert_eq!(registry.metrics().calls_retained, 0);
     }
 
     #[test]
