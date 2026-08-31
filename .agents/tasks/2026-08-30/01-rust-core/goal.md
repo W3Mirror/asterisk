@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: Proposed**  
-**Current checkpoint:** CP-006 — current Asterisk surface inventory recorded
-**Last checkpoint (UTC):** 2026-08-31T12:27:45Z
+**Current checkpoint:** CP-007 — Meta endpoint live-readiness probe recorded
+**Last checkpoint (UTC):** 2026-08-31T12:30:46Z
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
 **Active milestone:** Milestone 1 — Scope Baseline  
 **Next resume action:** Confirm the production deployment and obtain sanitized inbound/outbound provider call-flow captures
@@ -1982,7 +1982,7 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 
 | Workstream | Status | Evidence / checkpoint | PR | Next action |
 | --- | --- | --- | --- | --- |
-| Phase 0 — current Asterisk surface | in_progress | CP-006; `docs/current-asterisk-surface.md` records the repository/configuration inventory and open live-verification gaps | — | Confirm the production deployment and obtain sanitized provider call-flow captures |
+| Phase 0 — current Asterisk surface | in_progress | CP-007; repository inventory plus current DNS/TLS probe evidence recorded in `docs/current-asterisk-surface.md` | — | Obtain the effective production configuration and sanitized provider call-flow captures |
 | Phase 1 — Rust media engine | not_started | — | — | Define media-core scope from the Phase 0 inventory |
 | Phase 2 — SIP edge shadow mode | not_started | — | — | Build sanitized replay and comparison fixtures |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
@@ -2131,6 +2131,26 @@ head_sha: 49261d8a0c45d746226f9568f5b18083c43ef2eb
 evidence: Added docs/current-asterisk-surface.md from the active docker/etc-asterisk configuration, compose.yml, portal, and docs-internal references. It records the 6001 demo flow, inactive WebSocket AI bridge, inbound Meta SIP-TLS/SRTP trunk, unwired outbound path, transports/codecs/NAT, DTMF/early-media/transfer/recording unknowns, ARI/portal/observability/certificate/firewall hooks, and the inactive configs/basic-pbx sample boundary. Local checks confirmed no .env.aistack, host Asterisk CLI, or privileged firewall visibility, so live production claims remain explicitly pending.
 blockers: live production configuration, packet captures, and provider confirmation are not present in this checkout
 next_action: Confirm which deployment is production and obtain sanitized inbound/outbound provider call-flow captures
+rollback: Asterisk remains the active/fallback engine; no routing was changed
+```
+
+### CP-007 — Meta endpoint live-readiness probe recorded
+
+```yaml
+checkpoint_id: CP-007
+recorded_at_utc: 2026-08-31T12:30:46Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 1 — Scope Baseline
+scope: Record a read-only DNS/TLS probe for the configured Meta trunk
+worktree: /home/ashutosh/PROJECTS/w3mirror/asterisk
+branch: aistack/main
+base_branch: aistack/main
+pr: none
+head_sha: 4471baa2a15653294d9a6f3d6a5ed56dde64bd97
+evidence: `dig +noall +answer sip-trunk.w3.run @1.1.1.1` returned `65.1.135.111`, not the configured `195.201.246.125`; `timeout 12 openssl s_client -connect sip-trunk.w3.run:5061 -servername sip-trunk.w3.run -brief` exited 124 without a handshake. No live call or credentialed provider traffic was attempted. The inventory now records this evidence and keeps DNS, certificate, firewall, and Meta onboarding as open gates.
+blockers: the documented provider endpoint is not currently pointed at this host and no production credentials or packet captures are available in the checkout
+next_action: Obtain the effective production configuration and sanitized inbound/outbound provider call-flow captures from the operator/provider boundary
 rollback: Asterisk remains the active/fallback engine; no routing was changed
 ```
 
