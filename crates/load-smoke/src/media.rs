@@ -50,6 +50,8 @@ pub struct ProcessSample {
     pub resident_bytes: Option<u64>,
     /// Open file descriptors from `/proc/self/fd`, when available.
     pub open_file_descriptors: Option<usize>,
+    /// Process thread count from `/proc/self/status`, when available.
+    pub threads: Option<usize>,
 }
 
 impl ProcessSample {
@@ -57,6 +59,7 @@ impl ProcessSample {
         Self {
             resident_bytes: resident_bytes(),
             open_file_descriptors: fs::read_dir("/proc/self/fd").ok().map(Iterator::count),
+            threads: status_value("Threads:").and_then(|value| usize::try_from(value).ok()),
         }
     }
 
@@ -64,6 +67,7 @@ impl ProcessSample {
         self.resident_bytes = max_optional(self.resident_bytes, sample.resident_bytes);
         self.open_file_descriptors =
             max_optional(self.open_file_descriptors, sample.open_file_descriptors);
+        self.threads = max_optional(self.threads, sample.threads);
     }
 }
 
@@ -595,10 +599,14 @@ pub(crate) fn validate_config(config: MediaSmokeConfig) -> Result<(), MediaSmoke
 }
 
 fn resident_bytes() -> Option<u64> {
-    let status = fs::read_to_string("/proc/self/status").ok()?;
-    let line = status.lines().find(|line| line.starts_with("VmRSS:"))?;
-    let kibibytes = line.split_whitespace().nth(1)?.parse::<u64>().ok()?;
+    let kibibytes = status_value("VmRSS:")?;
     kibibytes.checked_mul(1_024)
+}
+
+fn status_value(prefix: &str) -> Option<u64> {
+    let status = fs::read_to_string("/proc/self/status").ok()?;
+    let line = status.lines().find(|line| line.starts_with(prefix))?;
+    line.split_whitespace().nth(1)?.parse::<u64>().ok()
 }
 
 fn max_optional<T: Ord + Copy>(left: Option<T>, right: Option<T>) -> Option<T> {
