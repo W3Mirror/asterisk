@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-150 — PR #51 documentation-head hosted validation green
-**Last checkpoint (UTC):** 2026-08-31T07:59:38Z
+**Current checkpoint:** CP-151 — goal scope expanded beyond real-time call completion
+**Last checkpoint (UTC):** 2026-08-31T08:20:29Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Reliable provisional SIP responses (PRACK/100rel) and Asterisk fallback<br>
 **Next resume action:** Continue the next bounded interoperability or transport gap while retaining provider, rollback, and Asterisk-fallback gates
-**Active PR:** [#51](https://github.com/W3Mirror/asterisk/pull/51) — `prack-runtime` targets `provider-auth-context`
+**Active PR:** pending #52 — `prack-retransmission` targets `prack-runtime`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-51`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-52`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -58,6 +58,38 @@ SIP Carrier / PSTN / PBX
 The project is **not** intended to be a complete Rust rewrite of Asterisk.
 
 It should implement only the telephony primitives required by AI voice applications and expose them through simple programmable interfaces.
+
+### Scope beyond real-time call completion
+
+A successful live call is necessary, but it is not sufficient for this goal.
+The engine must also provide the surrounding control-plane and operational
+contracts that make calls safe to automate, diagnose, replay, and recover:
+
+- **Control-plane correctness:** versioned, authenticated and authorized call
+  commands (originate, answer, hang up, transfer, bridge, and media changes)
+  with validation, idempotency, bounded retries, and clear error semantics.
+- **Lifecycle and event delivery:** stable correlation IDs, ordered lifecycle
+  events, duplicate-safe delivery, replay/backfill where supported, and an
+  explicit contract for terminal events.
+- **Offline and post-call workflows:** deterministic SIP/SDP/RTP/RTCP/DTMF
+  replay, Asterisk differential comparison, recording finalization, call
+  metadata/diagnostics export, and cleanup that remains correct after every
+  terminal outcome.
+- **Failure and recovery behavior:** bounded handling of provider/network
+  timeouts, authentication failures, malformed input, AI disconnects,
+  backpressure, cancellation races, process restart, and partial transfer or
+  bridge failure without orphaned calls or resources.
+- **Observability and security:** redacted structured logs, metrics, traces,
+  health/readiness, audit signals, configuration validation, secret references,
+  rate limits, TLS review, dependency auditing, and parser fuzz coverage.
+- **Deployment and migration safety:** graceful drain/restart, capacity and
+  resource-limit evidence, explicit Asterisk fallback, configuration-level
+  rollback, and a verified route state before and after each rollout.
+
+These are product acceptance targets, not evidence that the current stack has
+already implemented every item. Each target must enter the phase ledger with
+its own deterministic tests or replay evidence before it can be treated as
+complete; live Asterisk/provider calls remain a later interoperability gate.
 
 ---
 
@@ -1699,7 +1731,17 @@ Version 1 is considered complete when the engine can reliably:
 17. operate under configured memory/resource limits;
 18. pass the provider compatibility suite;
 19. pass defined load and soak tests;
-20. support immediate fallback to Asterisk.
+20. support immediate fallback to Asterisk;
+21. expose authenticated, authorized, idempotent control-plane commands with
+    stable lifecycle-event and terminal-state contracts;
+22. finalize recordings, metadata, diagnostics, and event delivery without
+    blocking the real-time media path;
+23. recover from provider, network, AI-service, process-restart, cancellation,
+    and partial-leg failures without orphaned calls or resources;
+24. provide redacted logs, metrics, traces, health/readiness, audit signals,
+    and actionable capacity/resource-limit telemetry;
+25. support deterministic offline replay/differential evidence and a
+    configuration-level, verified rollback to Asterisk.
 
 ---
 
@@ -5331,6 +5373,27 @@ blockers: This remains provider-neutral offline protocol evidence. It does not p
 next_action: Continue the next bounded interoperability or transport gap while retaining provider, rollback, and Asterisk-fallback gates
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #51 or revert the PRACK/100rel integration if its contract is superseded
 notes: Relevant PRACK/100rel tests ship with the behavior they cover. Every pull request and push to aistack/main runs the complete ordinary hosted suite rather than affected-module-only selection. Focused module tests are included in that full suite; scheduled/manual jobs add deeper capacity and soak tiers. All workflow runners remain hosted ubuntu-latest, and Docker remains limited to pinned SIPp inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-151 — Goal scope expanded beyond real-time call completion
+
+~~~yaml
+checkpoint_id: CP-151
+recorded_at_utc: 2026-08-31T08:20:29Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Reliable provisional SIP responses (PRACK/100rel) and Asterisk fallback
+scope: Expand the durable goal and acceptance criteria to include control-plane correctness, lifecycle/event delivery, deterministic offline and post-call workflows, failure/recovery behavior, observability/security, and deployment/rollback safety in addition to real-time calls
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-52
+branch: prack-retransmission
+base_branch: prack-runtime
+pr: pending #52 publication
+head_sha: 1628540b3 plus uncommitted PRACK retransmission implementation, focused tests, and this goal-scope update
+evidence: The goal now makes non-real-time acceptance targets explicit and extends v1 completion criteria with authenticated/idempotent control commands, terminal event and post-call artifact guarantees, failure/restart cleanup, redacted operational telemetry, deterministic replay/differential evidence, and verified Asterisk rollback. The existing CI contract remains unchanged: every pull request and push to aistack/main runs the complete hosted suite; focused tests ship with each behavior and are included in the full workspace run; scheduled/manual jobs add larger capacity and soak tiers.
+blockers: PRACK retransmission implementation and final validation are still in progress. Real Asterisk/provider interoperability, production credentials, live traffic, rollout execution, and rollback proof remain future evidence gates.
+next_action: Finish the remaining media/WebSocket/combined/soak and fuzz validation, run final formatting/diff/workspace checks, commit and push the implementation, focused tests, and CP-151 normally, then open PR #52 against prack-runtime and verify local/origin/GitHub parity plus hosted checks.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; discard or supersede this documentation expansion only through a later checkpoint that preserves the explicit non-real-time acceptance gates.
+notes: This checkpoint changes the goal contract only; it does not claim that the newly listed control-plane, post-call, recovery, observability, or rollout capabilities have been implemented. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
