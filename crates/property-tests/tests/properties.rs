@@ -426,6 +426,7 @@ proptest! {
         let mut registry = CallRegistry::new(CallRegistryConfig {
             max_calls: 1,
             max_pending_events: 512,
+            max_command_keys: 512,
         }).unwrap();
         for _ in 0..cycles {
             let id = registry.create().unwrap();

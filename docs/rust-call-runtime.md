@@ -23,6 +23,12 @@ in `call-engine`.
   CIDRs. Denied peers fail before `CallEngine` dispatch, and deny rules retain
   precedence over allows.
 
+Application retries can use `apply_idempotent_call_command` with a stable
+`CommandId`. The runtime delivers the original lifecycle event again without
+reapplying the transition; a conflicting reuse is rejected atomically by the
+engine. The bounded key store is configured through the engine's
+`CallRegistryConfig`.
+
 The adapter has no async-runtime or provider-specific dependency. An
 application can call it from its own event loop, wrap it in an async worker, or
 keep Asterisk as the configured route while interoperability evidence is
