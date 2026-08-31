@@ -7,8 +7,8 @@ mod session;
 pub use jitter::{JitterBufferConfig, JitterBufferStats, JitterPushOutcome};
 pub use recording::{AudioRecorder, RecorderConfig, RecordingError, RecordingMetadata};
 pub use session::{
-    MediaReclamation, MediaSession, MediaSessionConfig, MediaSessionError, MediaSessionStats,
-    ReceivedMedia,
+    MediaReclamation, MediaRecordingConfig, MediaSession, MediaSessionConfig, MediaSessionError,
+    MediaSessionStats, ReceivedMedia, RecordingChannel,
 };
 
 use std::{

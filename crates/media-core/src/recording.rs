@@ -1,5 +1,6 @@
 //! Bounded PCM recording for decoded media frames.
 
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 
@@ -238,6 +239,17 @@ impl AudioRecorder {
         self.frames.is_empty()
     }
 
+    /// Releases all retained PCM frames while preserving cumulative drop
+    /// counters. The recorder can be reused after cleanup with the same
+    /// bounded configuration.
+    pub fn clear(&mut self) -> usize {
+        let released = self.frames.clear();
+        self.first_timestamp = None;
+        self.last_timestamp = None;
+        self.samples = 0;
+        released
+    }
+
     /// Serializes the retained decoded samples as a bounded PCM16 WAV file.
     ///
     /// # Errors
@@ -245,47 +257,104 @@ impl AudioRecorder {
     /// Returns [`RecordingError::WaveTooLarge`] if the retained samples cannot
     /// be represented by the 32-bit RIFF length fields.
     pub fn wav(&self) -> Result<Vec<u8>, RecordingError> {
-        let data_bytes = self
-            .samples
-            .checked_mul(2)
-            .ok_or(RecordingError::WaveTooLarge)?;
-        let data_len = usize::try_from(data_bytes).map_err(|_| RecordingError::WaveTooLarge)?;
-        let riff_len = data_bytes
-            .checked_add(36)
-            .ok_or(RecordingError::WaveTooLarge)?;
-        let data_len_u32 = u32::try_from(data_bytes).map_err(|_| RecordingError::WaveTooLarge)?;
-        let riff_len_u32 = u32::try_from(riff_len).map_err(|_| RecordingError::WaveTooLarge)?;
-        let byte_rate = self
-            .config
-            .sample_rate
-            .checked_mul(u32::from(self.config.channels))
-            .and_then(|rate| rate.checked_mul(2))
-            .ok_or(RecordingError::WaveTooLarge)?;
-        let block_align = self
-            .config
-            .channels
-            .checked_mul(2)
-            .ok_or(RecordingError::WaveTooLarge)?;
-        let mut output = Vec::with_capacity(44usize.saturating_add(data_len));
-        output.extend_from_slice(b"RIFF");
-        output.extend_from_slice(&riff_len_u32.to_le_bytes());
-        output.extend_from_slice(b"WAVEfmt ");
-        output.extend_from_slice(&16u32.to_le_bytes());
-        output.extend_from_slice(&1u16.to_le_bytes());
-        output.extend_from_slice(&self.config.channels.to_le_bytes());
-        output.extend_from_slice(&self.config.sample_rate.to_le_bytes());
-        output.extend_from_slice(&byte_rate.to_le_bytes());
-        output.extend_from_slice(&block_align.to_le_bytes());
-        output.extend_from_slice(&16u16.to_le_bytes());
-        output.extend_from_slice(b"data");
-        output.extend_from_slice(&data_len_u32.to_le_bytes());
+        let samples = self
+            .frames
+            .iter()
+            .flat_map(|frame| frame.samples.iter().copied())
+            .collect::<Vec<_>>();
+        wav_bytes(self.config, &samples)
+    }
+
+    /// Mixes two bounded mono recordings into a timestamp-ordered PCM16 WAV.
+    ///
+    /// Frames with the same RTP timestamp are summed with saturation. When a
+    /// frame exists on only one side, the other side contributes silence. The
+    /// operation is performed when a recording is consumed, so it never
+    /// blocks the real-time media path.
+    pub fn mixed_wav(&self, other: &Self) -> Result<Vec<u8>, RecordingError> {
+        if self.config.sample_rate != other.config.sample_rate {
+            return Err(RecordingError::SampleRateMismatch {
+                expected: self.config.sample_rate,
+                actual: other.config.sample_rate,
+            });
+        }
+        if self.config.channels != other.config.channels {
+            return Err(RecordingError::UnsupportedChannels(other.config.channels));
+        }
+
+        let mut timeline = BTreeMap::<u32, (Vec<i16>, Vec<i16>)>::new();
         for frame in self.frames.iter() {
-            for sample in &frame.samples {
-                output.extend_from_slice(&sample.to_le_bytes());
+            timeline
+                .entry(frame.timestamp)
+                .or_default()
+                .0
+                .extend_from_slice(&frame.samples);
+        }
+        for frame in other.frames.iter() {
+            timeline
+                .entry(frame.timestamp)
+                .or_default()
+                .1
+                .extend_from_slice(&frame.samples);
+        }
+
+        let mut mixed = Vec::with_capacity(
+            timeline
+                .values()
+                .map(|(left, right)| left.len().max(right.len()))
+                .sum(),
+        );
+        for (left, right) in timeline.values() {
+            for index in 0..left.len().max(right.len()) {
+                let left = left.get(index).copied().unwrap_or_default();
+                let right = right.get(index).copied().unwrap_or_default();
+                mixed.push(
+                    i32::from(left)
+                        .saturating_add(i32::from(right))
+                        .clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16,
+                );
             }
         }
-        Ok(output)
+        wav_bytes(self.config, &mixed)
     }
+}
+
+fn wav_bytes(config: RecorderConfig, samples: &[i16]) -> Result<Vec<u8>, RecordingError> {
+    let data_bytes = (samples.len() as u64)
+        .checked_mul(2)
+        .ok_or(RecordingError::WaveTooLarge)?;
+    let data_len = usize::try_from(data_bytes).map_err(|_| RecordingError::WaveTooLarge)?;
+    let riff_len = data_bytes
+        .checked_add(36)
+        .ok_or(RecordingError::WaveTooLarge)?;
+    let data_len_u32 = u32::try_from(data_bytes).map_err(|_| RecordingError::WaveTooLarge)?;
+    let riff_len_u32 = u32::try_from(riff_len).map_err(|_| RecordingError::WaveTooLarge)?;
+    let byte_rate = config
+        .sample_rate
+        .checked_mul(u32::from(config.channels))
+        .and_then(|rate| rate.checked_mul(2))
+        .ok_or(RecordingError::WaveTooLarge)?;
+    let block_align = config
+        .channels
+        .checked_mul(2)
+        .ok_or(RecordingError::WaveTooLarge)?;
+    let mut output = Vec::with_capacity(44usize.saturating_add(data_len));
+    output.extend_from_slice(b"RIFF");
+    output.extend_from_slice(&riff_len_u32.to_le_bytes());
+    output.extend_from_slice(b"WAVEfmt ");
+    output.extend_from_slice(&16u32.to_le_bytes());
+    output.extend_from_slice(&1u16.to_le_bytes());
+    output.extend_from_slice(&config.channels.to_le_bytes());
+    output.extend_from_slice(&config.sample_rate.to_le_bytes());
+    output.extend_from_slice(&byte_rate.to_le_bytes());
+    output.extend_from_slice(&block_align.to_le_bytes());
+    output.extend_from_slice(&16u16.to_le_bytes());
+    output.extend_from_slice(b"data");
+    output.extend_from_slice(&data_len_u32.to_le_bytes());
+    for sample in samples {
+        output.extend_from_slice(&sample.to_le_bytes());
+    }
+    Ok(output)
 }
 
 #[cfg(test)]
@@ -352,5 +421,33 @@ mod tests {
             Err(RecordingError::FrameTooLarge { .. })
         ));
         assert!(recorder.is_empty());
+    }
+
+    #[test]
+    fn mixed_recording_aligns_timestamps_and_saturates() {
+        let config = RecorderConfig {
+            max_frames: 4,
+            max_samples_per_frame: 4,
+            ..RecorderConfig::default()
+        };
+        let mut caller = AudioRecorder::new(config).unwrap();
+        let mut agent = AudioRecorder::new(config).unwrap();
+        caller.push(frame(200, &[30_000, 1])).unwrap();
+        caller.push(frame(100, &[10])).unwrap();
+        agent.push(frame(200, &[10_000, -2])).unwrap();
+        agent.push(frame(300, &[7])).unwrap();
+
+        let wav = caller.mixed_wav(&agent).unwrap();
+        assert_eq!(u32::from_le_bytes(wav[40..44].try_into().unwrap()), 8);
+        let samples = wav[44..]
+            .chunks_exact(2)
+            .map(|bytes| i16::from_le_bytes(bytes.try_into().unwrap()))
+            .collect::<Vec<_>>();
+        assert_eq!(samples, vec![10, i16::MAX, -1, 7]);
+
+        assert_eq!(caller.clear(), 2);
+        assert!(caller.is_empty());
+        assert_eq!(caller.metadata().samples, 0);
+        assert_eq!(caller.metadata().dropped_frames, 0);
     }
 }
