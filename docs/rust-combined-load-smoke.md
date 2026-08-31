@@ -42,7 +42,9 @@ because allocator and host scheduling behavior are environment-dependent.
 This is deterministic in-memory composition evidence. The harness pairs the
 call engine and media sessions explicitly; it does not claim a provider-driven
 SDP/media attachment path, kernel-socket throughput, end-to-end audio quality,
-CPU per call, the same 1,000/5,000/10,000 media concurrency levels, multi-hour
-soak stability, or a stable allocator-memory baseline. Provider/Asterisk
+CPU per call or the same 1,000/5,000/10,000 media concurrency levels. The
+separate [mixed-lifecycle soak](rust-lifecycle-soak.md) adds repeated lifecycle
+and bounded process-resource evidence, but not a stable allocator-memory
+baseline. Provider/Asterisk
 interoperability and production evidence remain mandatory before enabling Rust
 traffic, and Asterisk remains the fallback.

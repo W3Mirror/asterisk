@@ -8,15 +8,34 @@ on:
   schedule:
     - cron: "30 2 * * 1"
   workflow_dispatch:
+    inputs:
+      lifecycle_soak:
+        description: Run the dedicated two-hour mixed-lifecycle soak
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: rust-quality-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: rust-quality-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  lifecycle-soak:
+    name: Two-hour lifecycle soak
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.lifecycle_soak)
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Run two-hour mixed-lifecycle soak
+        run: tests/rust-lifecycle-soak/run.sh
+
   signaling-capacity:
     name: Signaling capacity matrix
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -73,6 +92,9 @@ jobs:
       - name: Run deterministic combined signaling and media reclamation smoke
         if: steps.rust-workspace.outputs.available == 'true'
         run: cargo run -p load-smoke --locked -- combined 64 8 32 4
+      - name: Run short mixed-lifecycle reclamation soak
+        if: steps.rust-workspace.outputs.available == 'true'
+        run: cargo run -p load-smoke --locked -- soak 8 0 12 8 4 2 16777216
       - name: Run extended signaling reclamation load
         if: steps.rust-workspace.outputs.available == 'true' && github.event_name == 'schedule'
         run: cargo run -p load-smoke --locked -- 16384 256

@@ -7,6 +7,7 @@
 
 mod combined;
 mod media;
+mod soak;
 mod websocket;
 
 pub use combined::{
@@ -16,6 +17,10 @@ pub use combined::{
 pub use media::{
     MediaSmokeConfig, MediaSmokeError, MediaSmokePhase, MediaSmokeReport, ProcessSample,
     run_media_reclamation_smoke,
+};
+pub use soak::{
+    LifecycleSoakConfig, LifecycleSoakError, LifecycleSoakPhase, LifecycleSoakReport,
+    run_lifecycle_soak,
 };
 pub use websocket::{
     WebSocketSmokeConfig, WebSocketSmokeError, WebSocketSmokePhase, WebSocketSmokeReport,

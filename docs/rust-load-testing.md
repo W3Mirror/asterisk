@@ -45,6 +45,7 @@ evidence. The separate [combined signaling/media smoke](rust-combined-load-smoke
 holds synthetic calls and real bounded media sessions at the same time, but
 neither harness establishes real simultaneous network traffic, calls per second
 at a provider boundary, setup/teardown latency percentiles, CPU per call,
-same-level media or WebSocket capacity, multi-hour soak stability, or a
-production SLO. Those require separate harnesses and provider/Asterisk evidence
+same-level media or WebSocket capacity, or a production SLO. The separate
+[mixed-lifecycle soak](rust-lifecycle-soak.md) adds repeated lifecycle and
+bounded process-resource evidence. Provider/Asterisk evidence remains required
 before Rust traffic can be enabled.
