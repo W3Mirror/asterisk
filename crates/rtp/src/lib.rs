@@ -293,6 +293,11 @@ pub struct RtpSenderSnapshot {
     /// Synchronization source used by locally generated RTP packets.
     pub source_ssrc: u32,
     /// RTP timestamp that will be used by the next regular-media packet.
+    ///
+    /// RFC 3550 correlates the Sender Report with the timestamp of the last
+    /// packet actually sent; this snapshot reports the current clock position
+    /// instead, which stays valid between packets but may run slightly ahead
+    /// of the last serialized media.
     pub rtp_timestamp: u32,
     /// Total RTP packets serialized by this session.
     pub packets_sent: u64,

@@ -17,6 +17,11 @@ Rust SIP/RTP edge. It evaluates the observed socket peer (`IpAddr` or
 - `clear_allowlist` removes the explicit boundary and restores the default
   allow behavior (subject to deny rules).
 
+Matching is family-exact: an IPv4-mapped IPv6 address such as
+`::ffff:192.0.2.1` is treated as IPv6 and never matches an IPv4 rule. Runners
+that deliver v4-mapped peers should normalize addresses to plain IPv4 before
+evaluation, or configure explicit IPv6 rules.
+
 Both lists have independent, non-zero entry bounds. Duplicate canonical
 networks are rejected, including equivalent inputs such as `192.0.2.1/24`
 and `192.0.2.0/24`. The bounded vectors prevent a configuration reload from

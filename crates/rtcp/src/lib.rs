@@ -215,6 +215,10 @@ pub struct RtcpSessionStats {
     /// Most recently reported interarrival jitter, in RTP timestamp units.
     pub jitter: u32,
     /// Latest RTT estimate from a matching Sender Report and reception report.
+    ///
+    /// The estimate uses the local arrival time of the Sender Report rather
+    /// than the sender's NTP wall clock in the elapsed term, so it is robust
+    /// to unsynchronized clocks but includes sender/reader queueing delay.
     pub round_trip: Option<Duration>,
     /// Number of datagrams rejected after source authorization.
     pub invalid_packets: u64,
