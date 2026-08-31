@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: Proposed**  
-**Current checkpoint:** CP-002 — implementation test coverage contract recorded
-**Last checkpoint (UTC):** 2026-08-31T12:18:10Z
+**Current checkpoint:** CP-003 — hosted ordinary suite green on aistack/main
+**Last checkpoint (UTC):** 2026-08-31T12:20:14Z
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
 **Active milestone:** Milestone 1 — Scope Baseline  
 **Next resume action:** Inventory production call flows, providers, and the current Asterisk surface  
@@ -2052,6 +2052,26 @@ evidence: goal.md now requires applicable unit, state-machine, contract, integra
 blockers: none
 next_action: Inventory production call flows, providers, and the current Asterisk surface
 rollback: not_applicable; this checkpoint changes documentation only
+```
+
+### CP-003 — Hosted ordinary suite green on aistack/main
+
+```yaml
+checkpoint_id: CP-003
+recorded_at_utc: 2026-08-31T12:20:14Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 1 — Scope Baseline
+scope: Verify the implementation test contract on the integrated branch
+worktree: /home/ashutosh/PROJECTS/w3mirror/asterisk
+branch: aistack/main
+base_branch: aistack/main
+pr: none
+head_sha: 3cf2f13739fbd41f59819e5e5fd99aae15163240
+evidence: GitHub Actions Rust quality run 33391217409 (https://github.com/W3Mirror/asterisk/actions/runs/33391217409) completed success for the exact aistack/main head. Local git status is clean and HEAD equals origin/aistack/main. The workflow contract is confirmed: pull_request and aistack/main push events run the complete ordinary hosted workspace suite; focused affected-module tests remain required PR content, not a module-only CI shortcut.
+blockers: none
+next_action: Inventory production call flows, providers, and the current Asterisk surface
+rollback: not_applicable; this checkpoint records documentation and CI evidence only
 ```
 
 ### Checkpoint template
