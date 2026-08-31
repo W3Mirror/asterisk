@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: Proposed**  
-**Current checkpoint:** CP-001 — non-real-time acceptance and CI test contract recorded
-**Last checkpoint (UTC):** 2026-08-31
+**Current checkpoint:** CP-002 — implementation test coverage contract recorded
+**Last checkpoint (UTC):** 2026-08-31T12:18:10Z
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
 **Active milestone:** Milestone 1 — Scope Baseline  
 **Next resume action:** Inventory production call flows, providers, and the current Asterisk surface  
@@ -2029,6 +2029,26 @@ base_branch: aistack/main
 pr: none
 head_sha: c7b04990b6cc6dcb3b0fd071f0e6fb568736a3fc
 evidence: goal.md now covers post-call finalization, failure/recovery, security and authorization, redacted observability, health/readiness, audit signals, bounded capacity and reclamation, replay/differential fixtures, deployment/configuration validation, and tested Asterisk rollback. It records that each PR must ship focused affected-module tests, while the current hosted workflow runs the complete ordinary workspace suite (when a Rust workspace exists) on every pull_request event and every push to aistack/main; extended capacity, property, soak, and credentialed live-provider tiers remain scheduled/manual or explicitly gated.
+blockers: none
+next_action: Inventory production call flows, providers, and the current Asterisk surface
+rollback: not_applicable; this checkpoint changes documentation only
+```
+
+### CP-002 — Implementation test coverage contract
+
+```yaml
+checkpoint_id: CP-002
+recorded_at_utc: 2026-08-31T12:18:10Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 1 — Scope Baseline
+scope: Make non-real-time test layers required alongside implementation code
+worktree: /home/ashutosh/PROJECTS/w3mirror/asterisk
+branch: aistack/main
+base_branch: aistack/main
+pr: none
+head_sha: e941002fc72ffeed74ca31712c151ae4e6cb3320
+evidence: goal.md now requires applicable unit, state-machine, contract, integration, protocol-fixture, negative/security, property/fuzz, resilience, resource, differential, deployment/configuration, and Asterisk-rollback tests to ship with implementation PRs. It explicitly distinguishes required focused affected-module coverage from the hosted workflow's complete ordinary workspace suite on pull_request and aistack/main push events; extended and credentialed live-provider tiers remain scheduled/manual or approval-gated.
 blockers: none
 next_action: Inventory production call flows, providers, and the current Asterisk surface
 rollback: not_applicable; this checkpoint changes documentation only
