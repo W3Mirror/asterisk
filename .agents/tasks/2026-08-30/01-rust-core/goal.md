@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-142 — PR #48 hosted provider-route validation green
-**Last checkpoint (UTC):** 2026-08-31T06:48:53Z
+**Current checkpoint:** CP-143 — provider-auth-context locally green
+**Last checkpoint (UTC):** 2026-08-31T07:05:34Z
 **Active phase:** Phase 1 — Rust media engine
-**Active milestone:** Provider-route-gated outbound origination and Asterisk fallback<br>
-**Next resume action:** Connect validated provider route targets to runtime origination with lazy address resolution, transport compatibility, and atomic fallback/error tests
-**Active PR:** pending #48 — `provider-route-runtime` targets `provider-digest-runtime`
+**Active milestone:** Provider-route-scoped Digest authentication context and Asterisk fallback<br>
+**Next resume action:** Commit and publish the routed provider-authentication context with its focused regressions, then verify hosted checks on stacked PR #49
+**Active PR:** pending #49 — `provider-auth-context` targets `provider-route-runtime`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-48`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-49`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -2015,8 +2015,8 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 | Workstream | Status | Evidence / checkpoint | PR | Next action |
 | --- | --- | --- | --- | --- |
 | Phase 0 — current Asterisk surface | in_progress | CP-004/CP-010/CP-045/CP-051; `docs/current-asterisk-surface.md` (commit `edba8386c` plus 2026-08-30 rechecks); no Asterisk runtime, target SIP/RTP/8088 listeners, `.env.aistack`, or sanitized capture corpus; DNS/config/host address drift remains | #1 | Obtain provider/runtime access and sanitized successful/failed fixtures |
-| Phase 1 — Rust media engine | in_progress | CP-005/CP-008/CP-019/CP-042/CP-047–CP-067; PR #2 safe protocol/media foundation, PR #8 bounded RTP↔AI media session/DTMF/PCM recorder, PR #18 WebSocket adapter, PR #19 stream driver, PR #20 UDP RTP/RTCP runtime, PR #21 parser fuzz harnesses, PR #25 deterministic replay foundation, and PR #26 signaling/media fault corpus; repository-native hosted Rust CI is present on `aistack/main`, with PR #26 fully green | [#26](https://github.com/W3Mirror/asterisk/pull/26) OPEN/CLEAN | Publish transfer/reclamation coverage; keep provider evidence as the later traffic-enablement gate |
-| Offline deterministic verification | in_progress | CP-060–CP-067 add a bounded atomic replay runner plus answered calls, retransmission/CANCEL cleanup, RTP loss/reordering, DTMF deduplication, RTCP, transfer lifecycle, rejected-reclamation atomicity, and terminal capacity reuse; 139 workspace tests pass locally | [#26](https://github.com/W3Mirror/asterisk/pull/26) OPEN/CLEAN and hosted green; next slice pre-publication | Publish transfer/reclamation, then design the missing multi-leg bridge state model before claiming bridge tests |
+| Phase 1 — Rust media engine | in_progress | CP-005/CP-008/CP-019/CP-042/CP-047–CP-067, CP-138, CP-142–CP-143; PR #2 safe protocol/media foundation, PR #8 bounded RTP↔AI media session/DTMF/PCM recorder, PR #18 WebSocket adapter, PR #19 stream driver, PR #20 UDP RTP/RTCP runtime, PR #21 parser fuzz harnesses, PR #25 deterministic replay foundation, PR #26 signaling/media fault corpus, PR #47 lazy provider Digest resolution, and PR #48 provider-route gating; repository-native hosted Rust CI runs the complete ordinary suite on every PR and push to `aistack/main` | [#48](https://github.com/W3Mirror/asterisk/pull/48) OPEN/CLEAN; #49 pending | Publish provider-auth context with focused regressions; keep provider evidence as the later traffic-enablement gate |
+| Offline deterministic verification | in_progress | CP-060–CP-067 plus CP-143 cover bounded replay, signaling/media faults, provider routing, lazy Digest resolution, duplicate-challenge replay, atomic error paths, secret redaction, terminal context reclamation, and 235 locked workspace tests locally | [#48](https://github.com/W3Mirror/asterisk/pull/48) OPEN/CLEAN and hosted green; #49 pending | Publish provider-auth context, then continue the next bounded interoperability or transport gap |
 | Phase 2 — SIP edge shadow mode | not_started | — | — | Extend offline differential tooling with sanitized Asterisk/provider captures when available |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
 | Phase 4 — expanded provider coverage | not_started | — | — | Add one provider compatibility suite per rollout target |
@@ -5143,6 +5143,27 @@ blockers: This remains offline route-policy and local-UDP evidence. It does not 
 next_action: Push this CP-142 evidence reconciliation and verify the complete ordinary hosted suite on the resulting documentation-only final head; then continue the next bounded offline goal gap while retaining all provider and production gates
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #48 or revert the route-gated origination integration if its contract is superseded
 notes: Relevant implementation and two directly affected tests ship together. Every pull request and push to aistack/main runs the complete ordinary hosted suite. All workflow runners remain hosted ubuntu-latest, and Docker remains limited to pinned SIPp inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-143 — provider-auth-context locally green
+
+~~~yaml
+checkpoint_id: CP-143
+recorded_at_utc: 2026-08-31T07:05:34Z
+status: local_green
+phase: Phase 1 — Rust media engine
+milestone: Provider-route-scoped Digest authentication context and Asterisk fallback
+scope: Bind provider authentication policy to an explicitly Rust-routed call, resolve credentials lazily by opaque reference, preserve duplicate-challenge replay, and reclaim context on terminal lifecycle events
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-49
+branch: provider-auth-context
+base_branch: provider-route-runtime
+pr: pending #49 publication
+head_sha: 21314ae83f5b5724c62483377b48547940821c9c plus uncommitted implementation and tests
+evidence: CallRuntime captures only the routed SIP Call-ID, application CallId, and redacted AuthenticationPolicy; a dedicated routed Digest receive path resolves current credentials only for a new 401/407 retry, never for duplicate ACK replay or missing context, and removes context on Failed or Hangup events. Four directly relevant regressions cover policy capture and authenticated retry, duplicate resolver bypass, missing-context atomicity, secret/reference redaction, and Failed/Hangup cleanup. The focused call-runtime suite passes all 36 tests; the locked workspace suite passes all 235 tests; strict call-runtime Clippy with denied warnings passes; workspace Clippy passes with established documentation/pedantic baseline warnings; formatting and diff checks pass; all three pinned Docker-backed SIPp scenarios pass; all six address-sanitizer fuzz-target checks pass; ordinary 512-call signaling, 64-stream RTP/media, 64-stream WebSocket-media, 64-call combined, and short lifecycle-soak smokes pass with zero final logical resources
+blockers: This remains provider-neutral offline authentication-context evidence. It does not implement a real secret store, DNS/service discovery, TLS/WebSocket provider transport, carrier/Asterisk interoperability, route failover, rollback execution, or production traffic enablement. Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Commit and push the implementation, focused tests, and CP-143 normally; open stacked PR #49 against provider-route-runtime; then verify local, origin, and GitHub parity plus the complete ordinary hosted suite
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #49 or revert the routed provider-authentication context if its contract is superseded
+notes: Relevant tests ship with the behavior they cover. Every pull request and push to aistack/main runs the complete ordinary hosted suite rather than affected-module-only selection. Focused module tests are included in that full suite; schedule/manual jobs add deeper capacity and soak tiers. All workflow runners remain hosted ubuntu-latest, and Docker remains limited to pinned SIPp inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
