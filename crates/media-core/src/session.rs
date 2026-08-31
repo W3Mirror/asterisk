@@ -254,6 +254,23 @@ pub struct MediaSessionStats {
     pub jitter_buffer: Option<JitterBufferStats>,
 }
 
+/// Counts of bounded media state released by terminal cleanup.
+///
+/// The counters describe only retained items, not historical packets or
+/// frames already delivered. Historical media statistics remain available
+/// through [`MediaSession::stats`] after cleanup.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct MediaReclamation {
+    /// Decoded frames waiting for the AI application.
+    pub to_ai_frames: usize,
+    /// Decoded frames waiting for RTP delivery.
+    pub from_ai_frames: usize,
+    /// Validated audio packets waiting in the jitter buffer.
+    pub jitter_packets: usize,
+    /// Pending application DTMF notifications.
+    pub dtmf_notifications: usize,
+}
+
 /// A bounded bridge between RTP packets, AI audio frames, and DTMF events.
 #[derive(Clone, Debug)]
 pub struct MediaSession {
@@ -657,6 +674,35 @@ impl MediaSession {
         self.pending_dtmf.pop_front()
     }
 
+    /// Reclaims all media items retained at a terminal transport boundary.
+    ///
+    /// This operation is idempotent and preserves historical packet, quality,
+    /// queue, and DTMF counters. It clears both AI bridge directions, pending
+    /// DTMF notifications and deduplication state, the receiver-report
+    /// interval, and any fixed-delay jitter packets so an AI or media
+    /// transport disconnect cannot leave payloads retained indefinitely or
+    /// leak state into a replacement stream.
+    /// The jitter timeline is reset for safe construction of a replacement
+    /// media session around the same object; callers should still treat the
+    /// failed stream as terminal and create a fresh negotiated stream.
+    pub fn reclaim_pending(&mut self) -> MediaReclamation {
+        let (to_ai_frames, from_ai_frames) = self.bridge.clear();
+        let jitter_packets = self
+            .jitter_buffer
+            .as_mut()
+            .map_or(0, AudioJitterBuffer::clear);
+        let dtmf_notifications = self.pending_dtmf.len();
+        self.pending_dtmf.clear();
+        self.dtmf = Deduplicator::default();
+        self.last_receiver_report = None;
+        MediaReclamation {
+            to_ai_frames,
+            from_ai_frames,
+            jitter_packets,
+            dtmf_notifications,
+        }
+    }
+
     /// Serializes one queued AI frame as an RTP audio packet.
     ///
     /// # Errors
@@ -784,7 +830,7 @@ impl MediaSession {
 mod tests {
     use super::*;
     use crate::{AudioCodec, AudioFrame};
-    use dtmf::{DtmfDigit, DtmfEvent};
+    use dtmf::{DtmfDigit, DtmfEvent, Notification};
     use rtcp::{ReceiverReport, ReceptionReport, RtcpPacket, SenderReport};
     use rtp::{RtpPacket, RtpSession, RtpSessionConfig, serialize};
     use sip_security::SourceIpPolicy;
@@ -1177,6 +1223,114 @@ mod tests {
             .unwrap();
         assert_eq!(rtp::parse(&output).unwrap().payload_type, 101);
         assert_eq!(media.stats().rtp.packets_sent, 1);
+    }
+
+    #[test]
+    fn terminal_reclamation_clears_queues_jitter_and_dtmf_idempotently() {
+        let mut sender = rtp_sender();
+        let mut media = MediaSession::new(
+            MediaSessionConfig {
+                rtp: RtpSessionConfig {
+                    payload_type: 0,
+                    remote_ssrc: Some(77),
+                    ..RtpSessionConfig::default()
+                },
+                bridge: MediaBridgeConfig {
+                    to_ai_capacity: 4,
+                    from_ai_capacity: 4,
+                    ..MediaBridgeConfig::default()
+                },
+                jitter_buffer: Some(JitterBufferConfig {
+                    max_packets: 4,
+                    playout_delay: Duration::from_millis(60),
+                }),
+                ..MediaSessionConfig::default()
+            },
+            20,
+            2_000,
+        )
+        .unwrap();
+
+        let first = sender.send(&[0xff; 4], 4, false).unwrap();
+        let second = sender.send(&[0x7f; 4], 4, false).unwrap();
+        assert!(matches!(
+            media.receive_rtp(&first, Duration::ZERO).unwrap(),
+            ReceivedMedia::AudioBuffered { .. }
+        ));
+        assert!(matches!(
+            media.receive_rtp(&second, Duration::ZERO).unwrap(),
+            ReceivedMedia::AudioBuffered { .. }
+        ));
+        assert!(matches!(
+            media.playout_audio(Duration::from_millis(60)),
+            Some(ReceivedMedia::Audio { .. })
+        ));
+        media.push_from_ai(AudioFrame {
+            timestamp: 2_000,
+            codec: AudioCodec::Pcmu,
+            sample_rate: 8_000,
+            samples: vec![1, 2, 3],
+        });
+
+        let event = DtmfEvent {
+            digit: DtmfDigit::Five,
+            end: false,
+            reserved: false,
+            volume: 10,
+            duration: 80,
+        };
+        let dtmf_packet = RtpPacket {
+            padding: false,
+            marker: true,
+            payload_type: 101,
+            sequence_number: 12,
+            timestamp: 1_000,
+            ssrc: 77,
+            csrcs: Vec::new(),
+            extension: None,
+            payload: dtmf::encode(event).unwrap().to_vec(),
+        };
+        media
+            .receive_rtp(&serialize(&dtmf_packet).unwrap(), Duration::ZERO)
+            .unwrap();
+
+        assert_eq!(media.stats().bridge.to_ai.depth, 1);
+        assert_eq!(media.stats().bridge.from_ai.depth, 1);
+        assert_eq!(media.stats().jitter_buffer.unwrap().depth, 1);
+        assert_eq!(media.stats().pending_dtmf, 1);
+
+        assert_eq!(
+            media.reclaim_pending(),
+            MediaReclamation {
+                to_ai_frames: 1,
+                from_ai_frames: 1,
+                jitter_packets: 1,
+                dtmf_notifications: 1,
+            }
+        );
+        let stats = media.stats();
+        assert_eq!(stats.bridge.to_ai.depth, 0);
+        assert_eq!(stats.bridge.from_ai.depth, 0);
+        assert_eq!(stats.jitter_buffer.unwrap().depth, 0);
+        assert_eq!(stats.pending_dtmf, 0);
+        assert_eq!(media.next_playout_deadline(), None);
+        assert_eq!(media.pop_dtmf(), None);
+        assert_eq!(media.reclaim_pending(), MediaReclamation::default());
+        let replacement_dtmf = RtpPacket {
+            sequence_number: 13,
+            ..dtmf_packet
+        };
+        assert!(matches!(
+            media
+                .receive_rtp(&serialize(&replacement_dtmf).unwrap(), Duration::ZERO)
+                .unwrap(),
+            ReceivedMedia::Dtmf {
+                notification: Some(Notification::Started(DtmfDigit::Five)),
+                queued: true,
+                ..
+            }
+        ));
+        assert!(media.stats().rtp.received.packets_received >= 3);
     }
 
     #[test]

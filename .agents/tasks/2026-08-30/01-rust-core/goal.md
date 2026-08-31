@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-184 — PR #61 ledger-head hosted validation green
-**Last checkpoint (UTC):** 2026-08-31T13:54:25Z
+**Current checkpoint:** CP-185 — AI/WebSocket disconnect cleanup locally green
+**Last checkpoint (UTC):** 2026-08-31T14:23:24Z
 **Active phase:** Phase 1 — Rust media engine
-**Active milestone:** Transport failure cleanup and Asterisk fallback<br>
-**Next resume action:** Continue the next bounded offline acceptance slice from the green `transport-failure-cleanup` head while retaining the provider/Asterisk evidence gate
-**Active PR:** #61 — `transport-failure-cleanup` targets `graceful-drain` (hosted green)
+**Active milestone:** AI/WebSocket disconnect cleanup and Asterisk fallback<br>
+**Next resume action:** Commit and publish the AI/WebSocket disconnect cleanup slice, then verify hosted PR #62 checks and exact SHA parity
+**Active PR:** #62 — `media-ai-disconnect-cleanup` targets `transport-failure-cleanup` (local validation green; publication pending)
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-61-transport-failure`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-62-media-ai-disconnect`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -6113,6 +6113,27 @@ blockers: This remains provider-neutral offline failure/recovery evidence. It do
 next_action: Continue the next bounded offline acceptance slice from the green `transport-failure-cleanup` head while preserving the provider/Asterisk evidence gate.
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #61 or revert `8c3a2fb75` if the transport-failure contract is superseded.
 notes: Focused tests ship with the implementation and are included in the full workspace run. Every pull request event (opened, reopened, or synchronized) runs the complete ordinary hosted suite, not affected-module-only selection; a push to `aistack/main` runs the same complete ordinary suite. Scheduled/manual jobs add larger capacity, property, and soak tiers. All workflow runners remain hosted `ubuntu-latest`, and Docker remains limited to pinned SIPp inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-185 — AI/WebSocket disconnect cleanup locally green
+
+~~~yaml
+checkpoint_id: CP-185
+recorded_at_utc: 2026-08-31T14:23:24Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: AI/WebSocket disconnect cleanup and Asterisk fallback
+scope: Reclaim bounded AI/WebSocket media state after downstream disconnects or terminal transport failures
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-62-media-ai-disconnect
+branch: media-ai-disconnect-cleanup
+base_branch: transport-failure-cleanup
+pr: pending #62
+head_sha: ba4bdde6d5162656f77ab365b0d4c789f5d2513a plus uncommitted AI/WebSocket disconnect cleanup implementation, tests, documentation, and CP-185
+evidence: Added bounded queue clearing and `MediaSession::reclaim_pending` with jitter, DTMF, and receiver-report reset; added WebSocket adapter reset and idempotent `MediaWebSocketTransport::cleanup_after_failure`; added deterministic AI-disconnect reclamation coverage in `media-core`, `media-websocket`, and `load-smoke`; documented the failure/disconnect contract. `cargo fmt --all -- --check`, `cargo test --workspace --locked` (all workspace tests pass, including the new media and transport regressions), `cargo clippy --workspace --all-targets --locked`, `tests/rust-sipp/run.sh`, deterministic signaling/media/WebSocket/combined/short-soak smokes, nightly ASAN fuzz-target check, six 100-run fuzz smokes, and `git diff --check` pass locally. Focused tests ship with the implementation and are included in the complete ordinary hosted PR workspace run.
+blockers: Commit/push, PR #62 publication, hosted Workspace/fuzz/dependency-audit validation, and final ledger reconciliation remain pending. This remains provider-neutral offline disconnect/reclamation evidence; it does not prove real Asterisk/provider interoperability, provider credentials, live traffic, production rollout/rollback execution, or safe Rust traffic enablement. Rust traffic stays disabled and Asterisk remains the fallback.
+next_action: Commit the AI/WebSocket disconnect cleanup implementation/tests/docs/ledger normally, push `media-ai-disconnect-cleanup`, open PR #62 against `transport-failure-cleanup`, and verify exact local/origin/GitHub parity plus the complete ordinary hosted suite.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #62 or revert the AI/WebSocket disconnect cleanup implementation if its contract is superseded.
+notes: Every pull request event (opened, reopened, or synchronized) runs the complete ordinary hosted suite, not an affected-module-only subset; a push to `aistack/main` runs that same complete suite. Scheduled/manual jobs add larger capacity, extended property, multi-hour soak, and credentialed provider/live-call evidence. All workflow runners remain hosted `ubuntu-latest`; Docker is limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints

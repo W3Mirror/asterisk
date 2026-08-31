@@ -36,6 +36,22 @@ guarantees:
   frame, with `OsRandomMaskKeySource` available for the Linux deployment
   target, rather than falling back to predictable keys.
 
+## Failure and disconnect cleanup
+
+`read_once` reports EOF as `TransportError::ConnectionClosed` and propagates
+read/write failures instead of silently continuing. After handling an
+unrecoverable WebSocket or downstream AI disconnect, the owner must call
+`MediaWebSocketTransport::cleanup_after_failure`. That idempotent operation
+marks the stream failed, discards partial input and pending output frames,
+resets negotiated/fragmented adapter state, and calls
+`MediaSession::reclaim_pending` for both bounded AI queues, fixed-delay jitter,
+and pending DTMF notifications. It returns counts and the prior
+`MEDIA_START` metadata for post-call diagnostics. No close frame is attempted
+on this path because the stream has already been declared unusable; the call
+orchestration layer should separately transition the associated call to its
+terminal failure state and retain/reclaim its call record according to the
+call-engine contract.
+
 ## Deliberate boundaries
 
 This slice does not perform the HTTP upgrade or TLS, and it does not enable
