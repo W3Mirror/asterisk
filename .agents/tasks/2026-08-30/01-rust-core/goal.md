@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-201 — PR #66 hosted head parity reconciled
-**Last checkpoint (UTC):** 2026-08-31T16:46:00Z
+**Current checkpoint:** CP-202 — PR #66 final hosted head validated
+**Last checkpoint (UTC):** 2026-08-31T16:50:00Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Redaction-safe call diagnostics and Asterisk fallback<br>
 **Next resume action:** Continue the next bounded offline acceptance slice without enabling Rust traffic
@@ -6487,6 +6487,27 @@ blockers: This remains provider-neutral offline evidence. Production configurati
 next_action: Continue the next bounded offline acceptance slice without enabling Rust traffic; retain Asterisk as the fallback until external interoperability and rollout gates are approved.
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #66 or revert `eca812c` if the ledger reconciliation is superseded.
 notes: This checkpoint changes only the goal ledger after the diagnostics implementation; the hosted run confirms the synchronized documentation head without changing behavior or CI configuration. Focused tests remain part of the complete ordinary hosted suite; larger capacity, property, soak, and credentialed provider/live-call evidence remain scheduled/manual or approval-gated.
+~~~
+
+### CP-202 — PR #66 final hosted head validated
+
+~~~yaml
+checkpoint_id: CP-202
+recorded_at_utc: 2026-08-31T16:50:00Z
+status: hosted_green
+phase: Phase 1 — Rust media engine
+milestone: Redaction-safe call diagnostics and Asterisk fallback
+scope: Record final hosted validation and parity for the PR #66 ledger head
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-66-call-diagnostics
+branch: call-diagnostics
+base_branch: media-recording-errors
+pr: https://github.com/W3Mirror/asterisk/pull/66
+head_sha: 3b1169e2b4c8312b659b16d24110a559d54f1fa9
+evidence: Before this ledger-only checkpoint, local HEAD, `origin/call-diagnostics`, and `gh pr view 66 --json headRefOid` all report `3b1169e2b4c8312b659b16d24110a559d54f1fa9`. PR #66 is OPEN, non-draft, CLEAN, and MERGEABLE against `media-recording-errors`. Final hosted Rust quality run `33415962718` passed Workspace checks `99566541663` (formatting, complete locked workspace tests, pinned SIPp scenarios, deterministic signaling/media/WebSocket/combined/short-soak reclamation smokes, and workspace Clippy), Protocol fuzz checks `99566541379` (all address-sanitizer targets), and Dependency audit `99566541648`; schedule/manual-only Signaling capacity matrix `99566542758` and Two-hour lifecycle soak `99566542402` correctly skipped for the pull-request event.
+blockers: This remains provider-neutral offline evidence. Production configuration, sanitized provider captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated.
+next_action: Continue the next bounded offline acceptance slice without enabling Rust traffic; retain Asterisk as the fallback until external interoperability and rollout gates are approved.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #66 or revert `3b1169e` if the ledger checkpoint is superseded.
+notes: The final hosted run covers the diagnostics implementation and its focused call-engine/runtime tests through the complete ordinary hosted suite. This checkpoint itself is documentation-only; no behavior or CI configuration changed. Larger capacity, extended property, multi-hour soak, and credentialed provider/live-call evidence remain scheduled/manual or approval-gated.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
