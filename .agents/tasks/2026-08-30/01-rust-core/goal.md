@@ -1,12 +1,12 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-104 — per-leg RTCP Receiver Reports locally green
-**Last checkpoint (UTC):** 2026-08-31T00:46:54Z
+**Current checkpoint:** CP-105 — PR #38 published with hosted validation running
+**Last checkpoint (UTC):** 2026-08-31T00:47:59Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Per-leg RTCP termination and Receiver Reports<br>
-**Next resume action:** Commit and publish stacked PR #38 against `runtime-dtmf-timeline`, then verify Workspace, Protocol fuzz, and Dependency audit on its final head
-**Active PR:** pending publication — `runtime-rtcp-leg-reports` targets `runtime-dtmf-timeline`
+**Next resume action:** Push the PR #38 publication checkpoint and verify Workspace, Protocol fuzz, and Dependency audit on its final head
+**Active PR:** [#38](https://github.com/W3Mirror/asterisk/pull/38) — `runtime-rtcp-leg-reports` targets `runtime-dtmf-timeline`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-38`
 **Primary language:** Rust  
@@ -4323,6 +4323,27 @@ blockers: Sender Report scheduling, jitter playout, media/WebSocket load, long-d
 next_action: Commit and publish stacked PR #38 against `runtime-dtmf-timeline`, record its exact implementation head, and verify every hosted Rust quality job on the final PR head
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the RTCP Receiver Report PR or remove the per-leg reporting layer if its contract is superseded
 notes: Relevant implementation, directly affected-module tests, and documentation ship together. Every PR and push to `aistack/main` runs the complete repository suite rather than affected-module selection; the scheduled workflow additionally deepens property and reclamation coverage. Real provider/Asterisk calls remain an evidence gate for traffic enablement, not a substitute for offline unit, state-machine, fault, integration, property, fuzz, load, soak, and reclamation tests.
+~~~
+
+### CP-105 — PR #38 published with hosted validation running
+
+~~~yaml
+checkpoint_id: CP-105
+recorded_at_utc: 2026-08-31T00:47:59Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Per-leg RTCP termination and Receiver Reports
+scope: Publish the locally green per-leg RTCP reporting slice as a stacked PR and reconcile its worktree, branch, base, implementation head, and hosted-check state
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-38
+branch: runtime-rtcp-leg-reports
+base_branch: runtime-dtmf-timeline
+pr: https://github.com/W3Mirror/asterisk/pull/38
+head_sha: df680c13c88ae700f788dc163c3896dfa826c843 before this publication checkpoint commit
+evidence: Implementation commit `df680c13c` was pushed normally with local and `origin/runtime-rtcp-leg-reports` parity; PR #38 is OPEN/non-draft against exact base `runtime-dtmf-timeline`; GitHub assigned predicted #38, so the required worktree path already matches; hosted run `33345638420` started Workspace checks, Protocol fuzz checks, and Dependency audit
+blockers: Hosted validation is pending on the publication checkpoint's final head; Sender Report scheduling, jitter playout, media/WebSocket load, long-duration soak/memory, sanitized captures, provider/Asterisk interoperability, rollback proof, and production evidence remain active goal work; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Push this publication checkpoint and verify all three hosted Rust quality gates on the final PR #38 head
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #38 if the per-leg RTCP reporting contract is superseded
+notes: PR #38 contains the relevant RTP/RTCP/media/bridge implementation, affected-module tests, documentation, manifest, lockfile, and goal checkpoint. GitHub runs the complete repository suite on the PR, not an affected-module-only subset. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
