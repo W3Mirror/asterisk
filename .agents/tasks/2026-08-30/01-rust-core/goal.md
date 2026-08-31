@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-197 — PR #65 final ledger-head hosted validation green
-**Last checkpoint (UTC):** 2026-08-31T16:11:00Z
+**Current checkpoint:** CP-198 — PR #65 final head parity reconciled
+**Last checkpoint (UTC):** 2026-08-31T16:16:00Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Media recorder error propagation and Asterisk fallback<br>
 **Next resume action:** Continue the next bounded offline acceptance slice without enabling Rust traffic
@@ -2104,6 +2104,7 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 | Transport failure cleanup | hosted_green | CP-182–CP-184; `fail_active_calls` and runtime transport-loss handling transition non-terminal calls to terminal state, release signaling/retry resources, synchronize bridge/provider context, and retain bounded terminal records; focused call-core/engine/runtime tests, 282 locked workspace tests, format, Clippy, three pinned Docker-backed SIPp scenarios, deterministic signaling/media/WebSocket/combined/short-soak smokes, and six-target nightly ASAN fuzz checks pass locally; hosted PR #61 ordinary suite passed on the ledger head | [#61](https://github.com/W3Mirror/asterisk/pull/61) OPEN/CLEAN/MERGEABLE at `8c3a2fb75` | Continue the next bounded offline acceptance slice |
 | AI/WebSocket disconnect cleanup | hosted_green | CP-185–CP-187; bounded AI queues, jitter packets, DTMF notifications, partial WebSocket buffers, pending writes, negotiated/fragmented adapter state, and receiver-report state are reclaimed idempotently after terminal disconnect; focused media-core/media-websocket/load-smoke regressions, complete workspace tests, format, Clippy, three pinned Docker-backed SIPp scenarios, deterministic reclamation smokes, and six-target ASAN fuzz checks pass locally; hosted PR #62 ordinary suite passed on runs `33402518906`, `33402962744`, and `33403369740` | [#62](https://github.com/W3Mirror/asterisk/pull/62) OPEN/CLEAN/MERGEABLE at `5a3ce3bcf` | Continue the next bounded offline acceptance slice |
 | Media recording | hosted_green | CP-188–CP-197; optional bounded caller/agent recording sinks, timestamp-aligned saturating mixed WAV export, metadata, configuration validation, idempotent post-call snapshot finalization, terminal queue reclamation, and recorder rejection errors propagated through media/runtime playout without panic; focused `media-core` (26 tests), complete locked workspace tests, format, workspace Clippy, and `git diff --check` pass locally; PR #64 hosted checks remain green at its reconciled head `14abe4a`; PR #65 ledger-head run `33412310260` passed Workspace, Protocol fuzz, and Dependency audit jobs; scheduled/manual-only capacity and two-hour soak jobs skipped as intended | [#65](https://github.com/W3Mirror/asterisk/pull/65) OPEN/CLEAN/MERGEABLE at `a2ed61e`; [#64](https://github.com/W3Mirror/asterisk/pull/64) OPEN/CLEAN/MERGEABLE at `14abe4a` | Continue the next bounded offline acceptance slice |
+| PR #65 final head reconciliation | hosted_green | CP-198; final ledger head `c298e81eb` has hosted run `33412750305` green for Workspace, Protocol fuzz, and Dependency audit; PR remains OPEN/CLEAN/MERGEABLE | [#65](https://github.com/W3Mirror/asterisk/pull/65) | Continue the next bounded offline acceptance slice |
 | Phase 2 — SIP edge shadow mode | not_started | — | — | Extend offline differential tooling with sanitized Asterisk/provider captures when available |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
 | Phase 4 — expanded provider coverage | not_started | — | — | Add one provider compatibility suite per rollout target |
@@ -6402,6 +6403,27 @@ blockers: This remains provider-neutral offline evidence. Production configurati
 next_action: Continue the next bounded offline acceptance slice without enabling Rust traffic.
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #65 or revert `a2ed61e` if the ledger update is superseded.
 notes: The final ledger head includes only checkpoint/documentation updates after the implementation commit `ebf0061d3`; no implementation behavior changed after the first hosted-green run.
+~~~
+
+### CP-198 — PR #65 final head parity reconciled
+
+~~~yaml
+checkpoint_id: CP-198
+recorded_at_utc: 2026-08-31T16:16:00Z
+status: hosted_green
+phase: Phase 1 — Rust media engine
+milestone: Media recorder error propagation and Asterisk fallback
+scope: Reconcile the goal ledger with the final hosted PR #65 head
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-65-media-recording-errors
+branch: media-recording-errors
+base_branch: media-recording-finalize
+pr: https://github.com/W3Mirror/asterisk/pull/65
+head_sha: c298e81ebeeeb0cef1a3767f874c6366e8024234
+evidence: Local HEAD, `origin/media-recording-errors`, and `gh pr view 65 --json headRefOid` all report `c298e81ebeeeb0cef1a3767f874c6366e8024234`. PR #65 remains OPEN, non-draft, CLEAN, and MERGEABLE. Hosted Rust quality run `33412750305` passed Workspace checks `99556003742`, Protocol fuzz checks `99556004046`, and Dependency audit `99556003864`; schedule/manual-only Signaling capacity matrix `99556005236` and Two-hour lifecycle soak `99556005321` correctly skipped for the pull-request event.
+blockers: This remains provider-neutral offline evidence. Production configuration, sanitized provider captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated.
+next_action: Continue the next bounded offline acceptance slice without enabling Rust traffic.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #65 or revert `c298e81` if the ledger reconciliation is superseded.
+notes: This reconciliation changes only the goal ledger after the hosted-green implementation; no implementation behavior or CI configuration changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
