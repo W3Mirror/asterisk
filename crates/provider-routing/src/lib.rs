@@ -498,6 +498,215 @@ impl RouteDecision {
     pub const fn matched_by(&self) -> RouteMatch {
         self.matched_by
     }
+
+    fn with_target(mut self, target: EngineTarget) -> Self {
+        self.target = target;
+        self
+    }
+}
+
+/// The currently active deployment target for provider routes.
+///
+/// A controller always starts on [`EngineTarget::Asterisk`] and only enables
+/// Rust after an explicit, generation-checked activation. Keeping this state
+/// separate from the static provider profile makes a configuration rollback
+/// observable and prevents a route-table reload from silently changing live
+/// traffic.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RouteActivationState {
+    target: EngineTarget,
+    generation: u64,
+}
+
+impl RouteActivationState {
+    /// Returns the target currently allowed to receive matching traffic.
+    #[must_use]
+    pub const fn target(self) -> EngineTarget {
+        self.target
+    }
+
+    /// Returns the monotonically increasing configuration generation.
+    ///
+    /// The generation changes only when the active target changes. Repeating
+    /// an activation or rollback with the current generation is idempotent.
+    #[must_use]
+    pub const fn generation(self) -> u64 {
+        self.generation
+    }
+}
+
+/// The result of one route-target transition.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RouteTransition {
+    previous: EngineTarget,
+    current: EngineTarget,
+    generation: u64,
+}
+
+impl RouteTransition {
+    /// Returns the target active before the transition.
+    #[must_use]
+    pub const fn previous(self) -> EngineTarget {
+        self.previous
+    }
+
+    /// Returns the target active after the transition.
+    #[must_use]
+    pub const fn current(self) -> EngineTarget {
+        self.current
+    }
+
+    /// Returns the generation assigned to the resulting state.
+    #[must_use]
+    pub const fn generation(self) -> u64 {
+        self.generation
+    }
+}
+
+/// A transactional deployment switch layered over a static provider table.
+///
+/// This is the configuration-level safety boundary for migration. It starts
+/// fail-closed on Asterisk even when profiles are configured for Rust. A Rust
+/// activation requires a current generation and at least one explicit Rust
+/// profile whose fallback is Asterisk. Rollback is equally generation-checked
+/// and idempotent. Callers should persist the returned state/transition before
+/// accepting traffic and verify it again after a deployment operation.
+#[derive(Clone, Debug)]
+pub struct RouteController {
+    table: ProviderRouteTable,
+    state: RouteActivationState,
+}
+
+impl RouteController {
+    /// Creates a controller in the mandatory Asterisk-first state.
+    #[must_use]
+    pub fn new(table: ProviderRouteTable) -> Self {
+        Self {
+            table,
+            state: RouteActivationState {
+                target: EngineTarget::Asterisk,
+                generation: 0,
+            },
+        }
+    }
+
+    /// Returns the immutable provider table used for route decisions.
+    #[must_use]
+    pub const fn table(&self) -> &ProviderRouteTable {
+        &self.table
+    }
+
+    /// Returns the current target and configuration generation.
+    #[must_use]
+    pub const fn state(&self) -> RouteActivationState {
+        self.state
+    }
+
+    /// Resolves an inbound route through the active deployment target.
+    #[must_use]
+    pub fn route_inbound(&self, from_domain: &str) -> RouteDecision {
+        self.apply_activation(self.table.route_inbound(from_domain))
+    }
+
+    /// Resolves an outbound route through the active deployment target.
+    #[must_use]
+    pub fn route_outbound(&self, provider_id: &str) -> RouteDecision {
+        self.apply_activation(self.table.route_outbound(provider_id))
+    }
+
+    /// Resolves either kind of route through the active deployment target.
+    #[must_use]
+    pub fn route(&self, request: RouteRequest<'_>) -> RouteDecision {
+        self.apply_activation(self.table.route(request))
+    }
+
+    /// Activates explicitly Rust-targeted profiles using compare-and-swap
+    /// semantics on the configuration generation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RoutingError::StaleGeneration`] when the caller observed an
+    /// old state, [`RoutingError::NoRustRoutes`] when no profile explicitly
+    /// targets Rust, or [`RoutingError::GenerationExhausted`] at the `u64`
+    /// generation boundary. The controller is unchanged on every error.
+    pub fn activate_rust(
+        &mut self,
+        expected_generation: u64,
+    ) -> Result<RouteTransition, RoutingError> {
+        if !self.has_rust_route() {
+            return Err(RoutingError::NoRustRoutes);
+        }
+        self.transition(EngineTarget::Rust, expected_generation)
+    }
+
+    /// Rolls all routes back to Asterisk using compare-and-swap semantics.
+    ///
+    /// A rollback never removes the provider table, credentials, or retained
+    /// call state; it only changes which target may receive newly resolved
+    /// routes. Repeating it with the current generation is safe and produces no
+    /// generation churn.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RoutingError::StaleGeneration`] when the caller observed an
+    /// old state or [`RoutingError::GenerationExhausted`] at the `u64`
+    /// generation boundary. The controller is unchanged on every error.
+    pub fn rollback_to_asterisk(
+        &mut self,
+        expected_generation: u64,
+    ) -> Result<RouteTransition, RoutingError> {
+        self.transition(EngineTarget::Asterisk, expected_generation)
+    }
+
+    fn has_rust_route(&self) -> bool {
+        self.table
+            .profiles
+            .iter()
+            .any(|profile| profile.primary_target == EngineTarget::Rust)
+    }
+
+    fn apply_activation(&self, decision: RouteDecision) -> RouteDecision {
+        // Asterisk remains the fail-closed target during rollback. Even after
+        // Rust activation, an unmatched/default route cannot become Rust just
+        // because a caller configured `default_target = Rust`.
+        if self.state.target == EngineTarget::Asterisk || decision.profile_id.is_none() {
+            decision.with_target(EngineTarget::Asterisk)
+        } else {
+            decision
+        }
+    }
+
+    fn transition(
+        &mut self,
+        target: EngineTarget,
+        expected_generation: u64,
+    ) -> Result<RouteTransition, RoutingError> {
+        if expected_generation != self.state.generation {
+            return Err(RoutingError::StaleGeneration {
+                expected: expected_generation,
+                actual: self.state.generation,
+            });
+        }
+        if target == self.state.target {
+            return Ok(RouteTransition {
+                previous: target,
+                current: target,
+                generation: self.state.generation,
+            });
+        }
+        let generation = self
+            .state
+            .generation
+            .checked_add(1)
+            .ok_or(RoutingError::GenerationExhausted)?;
+        let previous = self.state.target;
+        self.state = RouteActivationState { target, generation };
+        Ok(RouteTransition {
+            previous,
+            current: target,
+            generation,
+        })
+    }
 }
 
 /// A bounded provider-profile route table.
@@ -683,6 +892,17 @@ pub enum RoutingError {
     MediaEncryptionRequired,
     /// Every route must retain Asterisk as a rollback target.
     FallbackMustBeAsterisk,
+    /// No configured provider profile explicitly targets the Rust engine.
+    NoRustRoutes,
+    /// A route transition was based on an older configuration generation.
+    StaleGeneration {
+        /// Generation observed by the caller.
+        expected: u64,
+        /// Generation currently held by the controller.
+        actual: u64,
+    },
+    /// The controller cannot advance beyond the maximum generation value.
+    GenerationExhausted,
     /// The profile table has reached its configured bound.
     TooManyProfiles {
         /// Configured maximum profile count.
@@ -743,6 +963,16 @@ impl Display for RoutingError {
             }
             Self::FallbackMustBeAsterisk => {
                 formatter.write_str("provider profile fallback must remain Asterisk")
+            }
+            Self::NoRustRoutes => {
+                formatter.write_str("no provider route explicitly targets the Rust engine")
+            }
+            Self::StaleGeneration { expected, actual } => write!(
+                formatter,
+                "route generation {expected} is stale; current generation is {actual}"
+            ),
+            Self::GenerationExhausted => {
+                formatter.write_str("provider route generation cannot advance")
             }
             Self::TooManyProfiles { maximum } => {
                 write!(
@@ -836,6 +1066,21 @@ fn is_token_byte(byte: u8) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn rust_route_table() -> ProviderRouteTable {
+        let profile = ProviderProfile::new(
+            "rust-provider",
+            "sip.provider.invalid",
+            5060,
+            SignalingTransport::Udp,
+        )
+        .unwrap()
+        .with_match_domain("provider.invalid")
+        .with_targets(EngineTarget::Rust, EngineTarget::Asterisk);
+        let mut table = ProviderRouteTable::new(RoutingConfig::default()).unwrap();
+        table.insert(profile).unwrap();
+        table
+    }
 
     #[test]
     fn profile_captures_provider_policy_without_secrets() {
@@ -984,5 +1229,100 @@ mod tests {
             }),
             Err(RoutingError::InvalidConfig)
         ));
+    }
+
+    #[test]
+    fn route_controller_starts_fail_closed_and_preserves_match_metadata() {
+        let controller = RouteController::new(rust_route_table());
+        assert_eq!(controller.state().target(), EngineTarget::Asterisk);
+        assert_eq!(controller.state().generation(), 0);
+
+        let matched = controller.route_outbound("RUST-PROVIDER");
+        assert_eq!(matched.profile_id(), Some("rust-provider"));
+        assert_eq!(matched.target(), EngineTarget::Asterisk);
+        assert_eq!(matched.fallback(), EngineTarget::Asterisk);
+        assert_eq!(matched.matched_by(), RouteMatch::OutboundProvider);
+
+        let unknown = controller.route_inbound("unknown.invalid");
+        assert_eq!(unknown.profile_id(), None);
+        assert_eq!(unknown.target(), EngineTarget::Asterisk);
+        assert_eq!(unknown.fallback(), EngineTarget::Asterisk);
+    }
+
+    #[test]
+    fn route_controller_activation_and_rollback_are_generation_checked_and_idempotent() {
+        let mut controller = RouteController::new(rust_route_table());
+
+        let activated = controller.activate_rust(0).unwrap();
+        assert_eq!(activated.previous(), EngineTarget::Asterisk);
+        assert_eq!(activated.current(), EngineTarget::Rust);
+        assert_eq!(activated.generation(), 1);
+        assert_eq!(
+            controller.route_outbound("rust-provider").target(),
+            EngineTarget::Rust
+        );
+
+        let repeated_activation = controller.activate_rust(1).unwrap();
+        assert_eq!(repeated_activation.previous(), EngineTarget::Rust);
+        assert_eq!(repeated_activation.current(), EngineTarget::Rust);
+        assert_eq!(repeated_activation.generation(), 1);
+
+        let stale = controller.rollback_to_asterisk(0).unwrap_err();
+        assert_eq!(
+            stale,
+            RoutingError::StaleGeneration {
+                expected: 0,
+                actual: 1
+            }
+        );
+        assert_eq!(controller.state().target(), EngineTarget::Rust);
+
+        let rolled_back = controller.rollback_to_asterisk(1).unwrap();
+        assert_eq!(rolled_back.previous(), EngineTarget::Rust);
+        assert_eq!(rolled_back.current(), EngineTarget::Asterisk);
+        assert_eq!(rolled_back.generation(), 2);
+        assert_eq!(
+            controller.route_outbound("rust-provider").target(),
+            EngineTarget::Asterisk
+        );
+
+        let repeated_rollback = controller.rollback_to_asterisk(2).unwrap();
+        assert_eq!(repeated_rollback.previous(), EngineTarget::Asterisk);
+        assert_eq!(repeated_rollback.current(), EngineTarget::Asterisk);
+        assert_eq!(repeated_rollback.generation(), 2);
+    }
+
+    #[test]
+    fn route_controller_requires_an_explicit_rust_profile() {
+        let table = ProviderRouteTable::new(RoutingConfig::default()).unwrap();
+        let mut controller = RouteController::new(table);
+
+        assert_eq!(controller.activate_rust(0), Err(RoutingError::NoRustRoutes));
+        assert_eq!(controller.state().target(), EngineTarget::Asterisk);
+        assert_eq!(controller.state().generation(), 0);
+    }
+
+    #[test]
+    fn route_controller_keeps_unmatched_routes_on_asterisk_after_activation() {
+        let table = ProviderRouteTable::new(RoutingConfig {
+            default_target: EngineTarget::Rust,
+            ..RoutingConfig::default()
+        })
+        .unwrap();
+        let mut controller = RouteController::new(table);
+        assert_eq!(controller.activate_rust(0), Err(RoutingError::NoRustRoutes));
+
+        let mut table = rust_route_table();
+        table.config.default_target = EngineTarget::Rust;
+        let mut controller = RouteController::new(table);
+        controller.activate_rust(0).unwrap();
+        assert_eq!(
+            controller.route_outbound("missing-provider").target(),
+            EngineTarget::Asterisk
+        );
+        assert_eq!(
+            controller.route_outbound("rust-provider").target(),
+            EngineTarget::Rust
+        );
     }
 }
