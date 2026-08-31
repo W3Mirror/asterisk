@@ -17,6 +17,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  signaling-capacity:
+    name: Signaling capacity matrix
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Run 1,000/5,000/10,000 concurrent-call signaling matrix
+        run: tests/rust-signaling-capacity/run.sh
+
   workspace:
     name: Workspace checks
     runs-on: ubuntu-latest
