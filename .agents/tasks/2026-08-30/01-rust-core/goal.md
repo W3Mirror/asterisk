@@ -3,7 +3,7 @@
 **Status: In Progress**
 **Current checkpoint:** CP-024 — PR #6 base reconciliation in progress
 **Last checkpoint (UTC):** 2026-08-30T12:52:50Z
-**Active phase:** Phase 2 — SIP edge shadow mode  
+**Active phase:** Phase 2 — SIP edge shadow mode
 **Active milestone:** Milestone 4 — Dialog + SDP + Basic Calls<br>
 **Next resume action:** Finish the PR #6 base merge, run focused SDP/media tests and hosted checks, then record its final head and mergeability
 **Active PR:** [#6](https://github.com/W3Mirror/asterisk/pull/6); branch `sdp-media-core` targets `call-api-core`
