@@ -32,6 +32,17 @@ failure/cleanup. The operation runs against a cloned engine state and commits
 only on success, so event-queue and state-transition errors do not leave a
 partially applied call operation.
 
+## Retry-safe application commands
+
+Use `CommandId` with `apply_idempotent_call_command` when a control-plane
+caller may retry a command. A matching retry returns the original lifecycle
+event without changing call state or adding a duplicate pending event. Reusing
+an active key for another call or command returns `IdempotencyConflict` and
+leaves the engine unchanged. The registry bounds retained keys with
+`CallRegistryConfig::max_command_keys`; once a key is evicted, it may be reused
+as a new operation. Authentication and authorization remain an outer
+control-plane responsibility and are not implied by this in-memory boundary.
+
 ## Safety boundary
 
 Engine and registry bounds reject zero-sized configurations and cap calls,

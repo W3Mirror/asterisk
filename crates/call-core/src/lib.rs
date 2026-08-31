@@ -45,6 +45,7 @@ identifier!(BridgeId, "bridge_");
 identifier!(LegId, "leg_");
 identifier!(StreamId, "stream_");
 identifier!(EventId, "evt_");
+identifier!(CommandId, "cmd_");
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct IdentifierError;

@@ -23,7 +23,7 @@ use std::{
 
 use call_api::CallCommand;
 use call_bridge::{BridgeError, BridgeEvent, BridgeRegistry, BridgeState};
-use call_core::{BridgeId, CallEventKind, CallId, LegId, LifecycleEvent};
+use call_core::{BridgeId, CallEventKind, CallId, CommandId, LegId, LifecycleEvent};
 use call_engine::{CallEngine, EngineError, EngineOutput, SendAction};
 use provider_routing::{
     AuthenticationPolicy, EngineTarget, ProviderRouteTable, RouteMatch, SignalingTransport,
@@ -580,6 +580,22 @@ impl CallRuntime {
         self.commit_engine_output(working_engine, output)
     }
 
+    /// Applies an application command with a bounded idempotency key and
+    /// delivers its lifecycle result to the transport boundary.
+    ///
+    /// Retried keys replay the original event without mutating call state or
+    /// producing duplicate events in the engine's pending queue.
+    pub fn apply_idempotent_call_command(
+        &mut self,
+        call_id: &CallId,
+        command: CallCommand,
+        command_id: CommandId,
+    ) -> Result<RuntimeOutput, RuntimeError> {
+        let mut working_engine = self.engine.clone();
+        let output = working_engine.apply_idempotent_call_command(call_id, command, command_id)?;
+        self.commit_engine_output(working_engine, output)
+    }
+
     /// Sends an application-controlled response to an inbound INVITE.
     ///
     /// # Errors
@@ -900,7 +916,7 @@ fn provider_transport_matches(
 mod tests {
     use super::*;
     use call_bridge::{BridgeEventKind, BridgeRegistryConfig};
-    use call_core::{CallState, StreamId};
+    use call_core::{CallState, CommandId, StreamId};
     use call_engine::EngineConfig;
     use provider_routing::{ProviderProfile, RoutingConfig};
     use rcgen::generate_simple_self_signed;
@@ -1216,6 +1232,44 @@ mod tests {
             )
             .unwrap();
         (runtime, bridge_id, caller_id)
+    }
+
+    #[test]
+    fn udp_runtime_replays_idempotent_command_events_without_duplicate_state_changes() {
+        let runtime_transport = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 2_048).unwrap();
+        let peer = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 2_048).unwrap();
+        let mut runtime = CallRuntime::udp(
+            CallEngine::new(EngineConfig::default()).unwrap(),
+            runtime_transport,
+        );
+        let (call_id, _) = runtime
+            .originate(invite(), peer.local_addr().unwrap(), Duration::ZERO)
+            .unwrap();
+        let _ = peer.recv().unwrap();
+        let command_id = CommandId::from_sequence(1);
+
+        let first = runtime
+            .apply_idempotent_call_command(&call_id, CallCommand::Hangup, command_id.clone())
+            .unwrap();
+        let retry = runtime
+            .apply_idempotent_call_command(&call_id, CallCommand::Hangup, command_id.clone())
+            .unwrap();
+        assert_eq!(retry.events(), first.events());
+        assert_eq!(
+            runtime.engine().snapshot(&call_id).unwrap().state,
+            CallState::Ending
+        );
+
+        assert!(matches!(
+            runtime.apply_idempotent_call_command(&call_id, CallCommand::End, command_id),
+            Err(RuntimeError::Engine(EngineError::CallApi(
+                call_api::ApiError::IdempotencyConflict,
+            )))
+        ));
+        assert_eq!(
+            runtime.engine().snapshot(&call_id).unwrap().state,
+            CallState::Ending
+        );
     }
 
     #[test]

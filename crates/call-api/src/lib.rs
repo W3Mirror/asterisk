@@ -6,12 +6,13 @@ use std::{
     fmt::{Display, Formatter},
 };
 
-use call_core::{Call, CallEventKind, CallId, CallState, EventId, LifecycleEvent};
+use call_core::{Call, CallEventKind, CallId, CallState, CommandId, EventId, LifecycleEvent};
 use sdp::{Codec, Direction, SessionDescription};
 use sip_dialog::DialogId;
 
 const DEFAULT_MAX_CALLS: usize = 4_096;
 const DEFAULT_MAX_PENDING_EVENTS: usize = 16_384;
+const DEFAULT_MAX_COMMAND_KEYS: usize = 4_096;
 
 /// Limits for the in-memory call-control registry.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -20,6 +21,8 @@ pub struct CallRegistryConfig {
     pub max_calls: usize,
     /// Maximum number of lifecycle events retained until drained.
     pub max_pending_events: usize,
+    /// Maximum number of idempotency keys retained for command retries.
+    pub max_command_keys: usize,
 }
 
 impl Default for CallRegistryConfig {
@@ -27,13 +30,14 @@ impl Default for CallRegistryConfig {
         Self {
             max_calls: DEFAULT_MAX_CALLS,
             max_pending_events: DEFAULT_MAX_PENDING_EVENTS,
+            max_command_keys: DEFAULT_MAX_COMMAND_KEYS,
         }
     }
 }
 
 impl CallRegistryConfig {
     fn validate(self) -> Result<Self, ApiError> {
-        if self.max_calls == 0 || self.max_pending_events == 0 {
+        if self.max_calls == 0 || self.max_pending_events == 0 || self.max_command_keys == 0 {
             return Err(ApiError::InvalidConfig);
         }
         Ok(self)
@@ -78,6 +82,15 @@ pub struct CallSnapshot {
     pub media: Option<NegotiatedAudio>,
 }
 
+/// Result of applying a call command with an idempotency key.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CommandResult {
+    /// Lifecycle event produced by the command, if any.
+    pub event: Option<LifecycleEvent>,
+    /// Whether the result was replayed from the bounded idempotency store.
+    pub replayed: bool,
+}
+
 /// The bounded audio offer/answer result retained for a call.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NegotiatedAudio {
@@ -108,6 +121,8 @@ pub enum ApiError {
     EventQueueFull,
     /// The requested replay cursor is no longer retained in the bounded history.
     EventHistoryUnavailable,
+    /// An idempotency key was reused for a different call or command.
+    IdempotencyConflict,
     /// A caller supplied a zero event/list limit.
     InvalidLimit,
     /// The requested command is not valid in the current state.
@@ -140,6 +155,7 @@ impl ApiError {
             Self::UnknownCall => "unknown_call",
             Self::EventQueueFull => "event_queue_full",
             Self::EventHistoryUnavailable => "event_history_unavailable",
+            Self::IdempotencyConflict => "idempotency_conflict",
             Self::InvalidLimit => "invalid_limit",
             Self::InvalidCommand { .. } => "invalid_command",
             Self::IdentifierExhausted => "identifier_exhausted",
@@ -161,6 +177,9 @@ impl Display for ApiError {
             Self::EventQueueFull => formatter.write_str("call lifecycle event queue is full"),
             Self::EventHistoryUnavailable => {
                 formatter.write_str("call lifecycle event cursor is outside the retained history")
+            }
+            Self::IdempotencyConflict => {
+                formatter.write_str("idempotency key was already used for a different command")
             }
             Self::InvalidLimit => formatter.write_str("call API limit must be non-zero"),
             Self::InvalidCommand { state, command } => {
@@ -191,6 +210,13 @@ struct CallEntry {
     media: Option<NegotiatedAudio>,
 }
 
+#[derive(Clone, Debug)]
+struct AppliedCommand {
+    call_id: CallId,
+    command: CallCommand,
+    event: Option<LifecycleEvent>,
+}
+
 /// A bounded registry that composes call state, SIP dialogs, and lifecycle
 /// events without owning sockets, transactions, or an async runtime.
 #[derive(Clone, Debug)]
@@ -199,6 +225,8 @@ pub struct CallRegistry {
     calls: HashMap<CallId, CallEntry>,
     events: VecDeque<LifecycleEvent>,
     event_history: VecDeque<LifecycleEvent>,
+    applied_commands: HashMap<CommandId, AppliedCommand>,
+    command_order: VecDeque<CommandId>,
     next_call_sequence: u64,
     next_event_sequence: u64,
 }
@@ -211,6 +239,8 @@ impl CallRegistry {
             calls: HashMap::new(),
             events: VecDeque::new(),
             event_history: VecDeque::new(),
+            applied_commands: HashMap::new(),
+            command_order: VecDeque::new(),
             next_call_sequence: 1,
             next_event_sequence: 1,
         })
@@ -287,6 +317,48 @@ impl CallRegistry {
                 kind,
             )),
             None => None,
+        })
+    }
+
+    /// Applies a command exactly once for a bounded idempotency key.
+    ///
+    /// A retry with the same key and identical call/command returns the
+    /// original result without mutating state or emitting a duplicate event.
+    /// Reusing a retained key for a different call or command is rejected.
+    pub fn apply_idempotent(
+        &mut self,
+        id: &CallId,
+        command: CallCommand,
+        command_id: CommandId,
+    ) -> Result<CommandResult, ApiError> {
+        if let Some(applied) = self.applied_commands.get(&command_id) {
+            if applied.call_id != *id || applied.command != command {
+                return Err(ApiError::IdempotencyConflict);
+            }
+            return Ok(CommandResult {
+                event: applied.event.clone(),
+                replayed: true,
+            });
+        }
+
+        let event = self.apply(id, command)?;
+        if self.applied_commands.len() >= self.config.max_command_keys {
+            if let Some(evicted) = self.command_order.pop_front() {
+                self.applied_commands.remove(&evicted);
+            }
+        }
+        self.command_order.push_back(command_id.clone());
+        self.applied_commands.insert(
+            command_id,
+            AppliedCommand {
+                call_id: id.clone(),
+                command,
+                event: event.clone(),
+            },
+        );
+        Ok(CommandResult {
+            event,
+            replayed: false,
         })
     }
 
@@ -575,6 +647,7 @@ mod tests {
         let mut registry = CallRegistry::new(CallRegistryConfig {
             max_calls: 1,
             max_pending_events: 8,
+            max_command_keys: 8,
         })
         .unwrap();
         let id = registry.create().unwrap();
@@ -630,6 +703,7 @@ mod tests {
         let mut registry = CallRegistry::new(CallRegistryConfig {
             max_calls: 2,
             max_pending_events: 1,
+            max_command_keys: 1,
         })
         .unwrap();
         let first = registry.create().unwrap();
@@ -648,6 +722,7 @@ mod tests {
         let mut registry = CallRegistry::new(CallRegistryConfig {
             max_calls: 1,
             max_pending_events: 8,
+            max_command_keys: 8,
         })
         .unwrap();
         let id = registry.create().unwrap();
@@ -686,6 +761,7 @@ mod tests {
         let mut registry = CallRegistry::new(CallRegistryConfig {
             max_calls: 1,
             max_pending_events: 2,
+            max_command_keys: 2,
         })
         .unwrap();
         let id = registry.create().unwrap();
@@ -704,6 +780,70 @@ mod tests {
             registry.replay_events_after(None, 0),
             Err(ApiError::InvalidLimit)
         );
+    }
+
+    #[test]
+    fn idempotent_command_retries_replay_once_without_duplicate_events() {
+        let mut registry = CallRegistry::new(CallRegistryConfig {
+            max_calls: 1,
+            max_pending_events: 8,
+            max_command_keys: 4,
+        })
+        .unwrap();
+        let id = registry.create().unwrap();
+        registry.drain_events(8).unwrap();
+        let command_id = CommandId::from_sequence(1);
+
+        let first = registry
+            .apply_idempotent(&id, CallCommand::InviteReceived, command_id.clone())
+            .unwrap();
+        assert!(!first.replayed);
+        let first_event = first.event.clone().unwrap();
+        assert_eq!(registry.drain_events(8).unwrap(), vec![first_event.clone()]);
+
+        let retry = registry
+            .apply_idempotent(&id, CallCommand::InviteReceived, command_id.clone())
+            .unwrap();
+        assert!(retry.replayed);
+        assert_eq!(retry.event, Some(first_event));
+        assert_eq!(registry.pending_events(), 0);
+        assert_eq!(registry.snapshot(&id).unwrap().state, CallState::Inviting);
+
+        assert_eq!(
+            registry.apply_idempotent(&id, CallCommand::Ringing, command_id),
+            Err(ApiError::IdempotencyConflict)
+        );
+        assert_eq!(registry.pending_events(), 0);
+        assert_eq!(registry.snapshot(&id).unwrap().state, CallState::Inviting);
+    }
+
+    #[test]
+    fn idempotency_keys_are_bounded_and_evicted_in_emission_order() {
+        let mut registry = CallRegistry::new(CallRegistryConfig {
+            max_calls: 1,
+            max_pending_events: 8,
+            max_command_keys: 1,
+        })
+        .unwrap();
+        let id = registry.create().unwrap();
+        registry.drain_events(8).unwrap();
+        let first_key = CommandId::from_sequence(1);
+        let second_key = CommandId::from_sequence(2);
+        registry
+            .apply_idempotent(&id, CallCommand::InviteReceived, first_key.clone())
+            .unwrap();
+        registry.drain_events(8).unwrap();
+        registry
+            .apply_idempotent(&id, CallCommand::Ringing, second_key)
+            .unwrap();
+        registry.drain_events(8).unwrap();
+
+        let reused = registry
+            .apply_idempotent(&id, CallCommand::Answer, first_key)
+            .unwrap();
+        assert!(!reused.replayed);
+        assert_eq!(reused.event.unwrap().kind, CallEventKind::Answered);
+        assert_eq!(registry.snapshot(&id).unwrap().state, CallState::Answered);
     }
 
     #[test]

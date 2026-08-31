@@ -18,7 +18,7 @@ use std::{
 use call_api::{
     ApiError, CallCommand, CallRegistry, CallRegistryConfig, CallSnapshot, NegotiatedAudio,
 };
-use call_core::{CallId, CallState, LifecycleEvent};
+use call_core::{CallId, CallState, CommandId, LifecycleEvent};
 use sip_auth::{DigestAuthorization, DigestChallenge, DigestCredentials, DigestError};
 use sip_dialog::{Dialog, DialogConfig, DialogError, DialogState};
 use sip_transaction::{
@@ -364,6 +364,33 @@ impl CallEngine {
         command: CallCommand,
     ) -> Result<EngineOutput, EngineError> {
         self.registry.apply(id, command)?;
+        self.cleanup_terminal_call_resources(id)?;
+        self.finish(Vec::new())
+    }
+
+    /// Applies an application command with a bounded idempotency key.
+    ///
+    /// A retry with the same key returns the original lifecycle event without
+    /// changing state or emitting a duplicate event. Reusing a retained key
+    /// for another command is rejected atomically.
+    pub fn apply_idempotent_call_command(
+        &mut self,
+        id: &CallId,
+        command: CallCommand,
+        command_id: CommandId,
+    ) -> Result<EngineOutput, EngineError> {
+        let result = self.registry.apply_idempotent(id, command, command_id)?;
+        if result.replayed {
+            return Ok(EngineOutput {
+                actions: Vec::new(),
+                events: result.event.into_iter().collect(),
+            });
+        }
+        self.cleanup_terminal_call_resources(id)?;
+        self.finish(Vec::new())
+    }
+
+    fn cleanup_terminal_call_resources(&mut self, id: &CallId) -> Result<(), EngineError> {
         if matches!(
             self.registry.snapshot(id)?.state,
             CallState::Ended | CallState::Failed
@@ -372,7 +399,7 @@ impl CallEngine {
             self.remove_final_server_invites_for_call(id);
             self.remove_reliable_provisional_state(id);
         }
-        self.finish(Vec::new())
+        Ok(())
     }
 
     /// Removes a terminal call and every retained signaling resource owned by it.
@@ -2065,7 +2092,7 @@ fn header_has_token(headers: &Headers, name: &str, expected: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use call_core::CallEventKind;
+    use call_core::{CallEventKind, CommandId};
     use std::net::{IpAddr, Ipv4Addr};
 
     fn address(port: u16) -> SocketAddr {
@@ -2265,6 +2292,44 @@ mod tests {
             .unwrap();
         engine.reclaim_terminal_call(call_id).unwrap();
         assert!(!engine.digest_retries.contains_key(call_id));
+    }
+
+    #[test]
+    fn idempotent_call_commands_replay_events_without_mutating_twice() {
+        let mut engine = CallEngine::new(EngineConfig::default()).unwrap();
+        let (call_id, _) = engine
+            .originate(
+                invite(
+                    "idempotent",
+                    "idempotent-call",
+                    "Bob <sip:bob@example.com>",
+                    "1 INVITE",
+                ),
+                address(5060),
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        let command_id = CommandId::from_sequence(1);
+
+        let first = engine
+            .apply_idempotent_call_command(&call_id, CallCommand::Hangup, command_id.clone())
+            .unwrap();
+        assert_eq!(first.events().len(), 1);
+        assert_eq!(first.events()[0].kind, CallEventKind::Hangup);
+        assert_eq!(engine.snapshot(&call_id).unwrap().state, CallState::Ending);
+
+        let retry = engine
+            .apply_idempotent_call_command(&call_id, CallCommand::Hangup, command_id.clone())
+            .unwrap();
+        assert_eq!(retry.events(), first.events());
+        assert_eq!(engine.snapshot(&call_id).unwrap().state, CallState::Ending);
+
+        assert_eq!(
+            engine.apply_idempotent_call_command(&call_id, CallCommand::End, command_id),
+            Err(EngineError::CallApi(ApiError::IdempotencyConflict))
+        );
+        assert_eq!(engine.snapshot(&call_id).unwrap().state, CallState::Ending);
     }
 
     #[test]
