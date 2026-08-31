@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-152 — PRACK retransmission locally green with expanded goal scope
-**Last checkpoint (UTC):** 2026-08-31T08:24:04Z
+**Current checkpoint:** CP-153 — PR #52 hosted validation green
+**Last checkpoint (UTC):** 2026-08-31T08:28:37Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Reliable provisional SIP responses (PRACK/100rel) and Asterisk fallback<br>
 **Next resume action:** Continue the next bounded interoperability or transport gap while retaining provider, rollback, and Asterisk-fallback gates
@@ -5415,6 +5415,27 @@ blockers: Hosted validation and PR publication remain pending. Real Asterisk/pro
 next_action: Push prack-retransmission explicitly as its own remote branch, open PR #52 targeting prack-runtime, then verify exact local/origin/GitHub SHA parity and the complete ordinary hosted suite on the final head.
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #52 or revert f7e7f2f83 if the reliable-provisional retransmission contract is superseded.
 notes: Relevant timer, PRACK-stop, timeout, reliable-transport, stale-final-response, and lifecycle-cleanup tests ship with the behavior. Every pull request and push to aistack/main runs the same complete hosted suite rather than affected-module-only selection; scheduled/manual jobs add larger capacity and soak tiers. All workflow runners remain hosted ubuntu-latest, and Docker remains limited to pinned SIPp inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-153 — PR #52 hosted validation green
+
+~~~yaml
+checkpoint_id: CP-153
+recorded_at_utc: 2026-08-31T08:28:37Z
+status: hosted_green
+phase: Phase 1 — Rust media engine
+milestone: Reliable provisional SIP responses (PRACK/100rel) and Asterisk fallback
+scope: Verify the complete ordinary hosted suite on PR #52's final publication head, including reliable-provisional retransmission/backoff/timeout behavior, PRACK cancellation, call cleanup, focused regressions, and expanded goal acceptance scope
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-52
+branch: prack-retransmission
+base_branch: prack-runtime
+pr: https://github.com/W3Mirror/asterisk/pull/52
+head_sha: 95e2c2185b41b9c7995b9b6a4944358a0c2e10e2
+evidence: PR #52 is OPEN, non-draft, CLEAN, and MERGEABLE against exact base prack-runtime with local, origin, and GitHub head parity at 95e2c2185. Hosted Rust quality run 33372794654 passed Workspace checks in 43 seconds, including formatting, all 244 locked workspace tests, all three pinned Docker-backed SIPp scenarios, ordinary signaling/RTP-media/WebSocket-media/combined/short-soak reclamation smokes, and workspace Clippy across all targets. Protocol fuzz checks passed in 56 seconds across all six address-sanitizer targets; Dependency audit passed in 3 minutes 26 seconds. The schedule/manual-only Signaling capacity matrix and Two-hour lifecycle soak correctly skipped for the pull-request event.
+blockers: This remains provider-neutral offline protocol evidence. It does not prove real Asterisk/provider interoperability, provider credentials, TLS/WebSocket carrier transport, route failover, production rollout/rollback execution, or safe Rust traffic enablement. Rust traffic stays disabled and Asterisk remains the fallback. The newly added non-real-time control-plane, post-call, recovery, observability, and rollout acceptance targets remain future bounded implementation/evidence slices.
+next_action: Continue the next bounded interoperability or transport gap while preserving the expanded non-real-time acceptance targets, provider evidence gate, rollback proof, and Asterisk fallback.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #52 or revert the reliable-provisional retransmission if its contract is superseded.
+notes: Relevant timer, PRACK-stop, timeout, reliable-transport, stale-final-response, and lifecycle-cleanup tests ship with the behavior. Every pull request and push to aistack/main runs the complete ordinary hosted suite rather than affected-module-only selection. Focused module tests are included in the full workspace run; scheduled/manual jobs add deeper capacity and soak tiers. All workflow runners remain hosted ubuntu-latest, and Docker remains limited to pinned SIPp inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
