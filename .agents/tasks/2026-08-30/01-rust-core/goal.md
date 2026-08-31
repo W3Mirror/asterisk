@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-158 — PR #53 hosted EOF race found and repaired locally
-**Last checkpoint (UTC):** 2026-08-31T09:12:11Z
+**Current checkpoint:** CP-159 — PR #53 fresh hosted validation green after EOF-test repair
+**Last checkpoint (UTC):** 2026-08-31T09:17:47Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** SIP-over-TLS transport and Asterisk fallback<br>
-**Next resume action:** Commit the deterministic TLS EOF-test repair and CP-158 normally, push it to PR #53, then verify a fresh hosted Workspace run before continuing
+**Next resume action:** Continue the next bounded interoperability or transport gap while preserving the non-real-time acceptance targets, provider evidence gate, and verified Asterisk rollback
 **Active PR:** #53 — `sip-tls-transport` targets `prack-retransmission`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-53-tls-transport`
@@ -1804,8 +1804,10 @@ Additionally:
 - protocol fixture tests.
 
 Tests added for the affected module must run on its PR. Cross-cutting changes
-must also run tests for dependent modules and shared API/event contracts. CI may
-later optimize the fast PR tier by selecting the affected package plus its
+must also run tests for dependent modules and shared API/event contracts. The
+workflow is triggered for every `pull_request` event (including opened,
+reopened, and synchronized updates), not only when a PR is first created. CI
+may later optimize the fast PR tier by selecting the affected package plus its
 dependency/dependent closure, but it must fail safe to the complete workspace
 suite whenever impact cannot be determined confidently.
 
@@ -1825,7 +1827,9 @@ Every implementation slice carries its relevant tests in the same change:
 The PR check therefore includes the focused tests for the affected module because
 they are part of the full locked workspace run. It does not currently run an
 affected-module-only subset. A push to `aistack/main` repeats that same full
-hosted suite; scheduled/manual jobs add the larger capacity and soak tiers.
+hosted ordinary suite; it is not a separate "all tests" tier that includes the
+schedule/manual-only capacity matrix, 4,096-case property tier, or multi-hour
+soak. Scheduled/manual jobs add those deeper tiers.
 
 Current repository behavior is intentionally stronger than affected-module-only
 selection: every pull request runs formatting, the full locked Rust workspace
@@ -2075,8 +2079,8 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 | Workstream | Status | Evidence / checkpoint | PR | Next action |
 | --- | --- | --- | --- | --- |
 | Phase 0 — current Asterisk surface | in_progress | CP-004/CP-010/CP-045/CP-051; `docs/current-asterisk-surface.md` (commit `edba8386c` plus 2026-08-30 rechecks); no Asterisk runtime, target SIP/RTP/8088 listeners, `.env.aistack`, or sanitized capture corpus; DNS/config/host address drift remains | #1 | Obtain provider/runtime access and sanitized successful/failed fixtures |
-| Phase 1 — Rust media engine | in_progress | CP-005/CP-008/CP-019/CP-042/CP-047–CP-067, CP-138, CP-142–CP-158; PR #2 safe protocol/media foundation, PR #8 bounded RTP↔AI media session/DTMF/PCM recorder, PR #18 WebSocket adapter, PR #19 stream driver, PR #20 UDP RTP/RTCP runtime, PR #21 parser fuzz harnesses, PR #25 deterministic replay foundation, PR #26 signaling/media fault corpus, PR #47 lazy provider Digest resolution, PR #48 provider-route gating, PR #50 routed provider-auth context, PR #51 PRACK/100rel support, PR #52 reliable provisional retransmission, and PR #53 SIP-over-TLS transport; repository-native hosted Rust CI runs the complete ordinary suite on every PR and push to `aistack/main` | [#53](https://github.com/W3Mirror/asterisk/pull/53) OPEN/CLEAN/MERGEABLE at its last green implementation head; #52 OPEN/CLEAN/MERGEABLE; #51 OPEN/CLEAN/MERGEABLE | Republish the deterministic EOF-test repair and obtain fresh hosted green evidence before continuing the next bounded interoperability gap |
-| Offline deterministic verification | in_progress | CP-060–CP-067 plus CP-143–CP-158 cover bounded replay, signaling/media faults, provider routing, lazy Digest resolution, duplicate-challenge replay, PRACK/100rel sequencing and RAck validation, atomic error paths, secret redaction, terminal context reclamation, TLS handshake/certificate validation, bounded SIP-over-TLS framing, and 250 locked workspace tests locally; PR #52 hosted run 33373854146 and PR #53 implementation-head run 33375807977 passed, while documentation-head run 33376175976 exposed a TLS EOF-test connection-reset race now repaired locally | [#53](https://github.com/W3Mirror/asterisk/pull/53) OPEN with follow-up pending; #52 OPEN/CLEAN/MERGEABLE; #51 OPEN/CLEAN/MERGEABLE | Commit and push the EOF-test repair, then verify the fresh complete hosted suite while retaining provider, rollback, and Asterisk-fallback gates |
+| Phase 1 — Rust media engine | in_progress | CP-005/CP-008/CP-019/CP-042/CP-047–CP-067, CP-138, CP-142–CP-159; PR #2 safe protocol/media foundation, PR #8 bounded RTP↔AI media session/DTMF/PCM recorder, PR #18 WebSocket adapter, PR #19 stream driver, PR #20 UDP RTP/RTCP runtime, PR #21 parser fuzz harnesses, PR #25 deterministic replay foundation, PR #26 signaling/media fault corpus, PR #47 lazy provider Digest resolution, PR #48 provider-route gating, PR #50 routed provider-auth context, PR #51 PRACK/100rel support, PR #52 reliable provisional retransmission, and PR #53 SIP-over-TLS transport; repository-native hosted Rust CI runs the complete ordinary suite on every PR and push to `aistack/main` | [#53](https://github.com/W3Mirror/asterisk/pull/53) OPEN/CLEAN/MERGEABLE at `057313acb`; #52 OPEN/CLEAN/MERGEABLE; #51 OPEN/CLEAN/MERGEABLE | Continue the next bounded interoperability or transport gap while retaining the provider, rollback, and Asterisk-fallback gates |
+| Offline deterministic verification | in_progress | CP-060–CP-067 plus CP-143–CP-159 cover bounded replay, signaling/media faults, provider routing, lazy Digest resolution, duplicate-challenge replay, PRACK/100rel sequencing and RAck validation, atomic error paths, secret redaction, terminal context reclamation, TLS handshake/certificate validation, bounded SIP-over-TLS framing, and 250 locked workspace tests locally; PR #52 hosted run 33373854146 and PR #53 fresh run 33376608087 passed Workspace, Protocol fuzz, and Dependency audit after the documentation-head EOF-test race was repaired | [#53](https://github.com/W3Mirror/asterisk/pull/53) OPEN/CLEAN/MERGEABLE; #52 OPEN/CLEAN/MERGEABLE; #51 OPEN/CLEAN/MERGEABLE | Continue the next bounded interoperability or transport gap while retaining provider, rollback, and Asterisk-fallback gates |
 | Phase 2 — SIP edge shadow mode | not_started | — | — | Extend offline differential tooling with sanitized Asterisk/provider captures when available |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
 | Phase 4 — expanded provider coverage | not_started | — | — | Add one provider compatibility suite per rollout target |
@@ -2750,7 +2754,7 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 50 | [#50](https://github.com/W3Mirror/asterisk/pull/50) | `provider-auth-context` | `provider-route-runtime` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-49` | Bind routed provider Digest-auth context to calls, resolve credentials lazily by opaque reference, preserve duplicate-challenge replay, redact secrets, and reclaim context on terminal lifecycle events without enabling Rust traffic | hosted green | `935408a15` | CP-143–CP-146; four directly relevant regressions, all 235 locked workspace tests, the complete local matrix, and final documentation-head run 33367701868 pass; PR #50 is OPEN/non-draft/CLEAN/MERGEABLE against exact base provider-route-runtime with local/origin/GitHub parity | Continue the next bounded interoperability or transport gap; retain Asterisk fallback and every provider/rollback traffic gate |
 | 51 | [#51](https://github.com/W3Mirror/asterisk/pull/51) | `prack-runtime` | `provider-auth-context` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-51` | Bounded SIP PRACK/100rel support: early-dialog PRACK sequencing, reliable provisional headers, RAck validation, duplicate handling, and terminal cleanup | hosted green | `1b4ac01bb` | CP-147–CP-150; focused sip-dialog/call-engine tests, 239 locked workspace tests, formatting, workspace Clippy, pinned Docker SIPp scenarios, six sanitizer fuzz checks, and ordinary reclamation smokes pass locally; PR #51 is OPEN/non-draft/CLEAN/MERGEABLE against exact base provider-auth-context with local/origin/GitHub parity; final documentation-head run 33370571438 passed Workspace checks, Protocol fuzz checks, and Dependency audit; schedule/manual-only capacity and two-hour jobs skipped | Continue the next bounded interoperability or transport gap while retaining Asterisk fallback and every provider/rollback traffic gate |
 | 52 | [#52](https://github.com/W3Mirror/asterisk/pull/52) | `prack-retransmission` | `prack-runtime` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-52` | Reliable provisional SIP retransmission: T1/T2 backoff, 64×T1 timeout, PRACK cancellation, reliable-transport waiting, call cleanup, and focused regressions | hosted green | `e8bf4b91b` | CP-151–CP-155; focused transaction/call-engine tests, 244 locked workspace tests, formatting, workspace Clippy, pinned Docker SIPp scenarios, six sanitizer fuzz checks, and ordinary reclamation smokes pass locally; PR #52 is OPEN/non-draft/CLEAN/MERGEABLE against exact base prack-runtime with local/origin/GitHub parity; final hosted run 33373854146 passed Workspace, Protocol fuzz, and Dependency audit; schedule/manual-only capacity and two-hour jobs skipped | Commit and publish the next bounded TLS transport slice against this exact tip; retain Asterisk fallback and provider/rollback traffic gates |
-| 53 | in_progress | `sip-tls-transport` | `prack-retransmission` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-53-tls-transport` | Bounded blocking Rustls SIP-over-TLS transport with SIP-over-TCP framing, certificate validation, runtime dispatch, and TLS provider-route matching | `17236c491` plus uncommitted EOF-test repair | CP-156–CP-158; focused TLS handshake, trust/mismatch, clean EOF, frame-limit, runtime dispatch, and TLS route tests pass locally; 250 locked workspace tests, format, workspace Clippy, six sanitizer fuzz checks, SIPp, and deterministic load/reclamation smokes pass locally; implementation head `4b0a472b1` hosted run `33375807977` passed, but documentation-head run `33376175976` failed Workspace on a `ConnectionReset` in the EOF test; repair is local and fresh hosted validation is pending | Commit and push the deterministic EOF-test repair, then verify local/origin/GitHub parity and fresh hosted checks before continuing |
+| 53 | hosted green | `sip-tls-transport` | `prack-retransmission` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-53-tls-transport` | Bounded blocking Rustls SIP-over-TLS transport with SIP-over-TCP framing, certificate validation, runtime dispatch, and TLS provider-route matching | `057313acb` | CP-156–CP-159; focused TLS handshake, trust/mismatch, clean EOF, frame-limit, runtime dispatch, and TLS route tests pass locally; 250 locked workspace tests, format, workspace Clippy, six sanitizer fuzz checks, SIPp, and deterministic load/reclamation smokes pass locally; fresh hosted run `33376608087` passed Workspace (`99439408190`), Protocol fuzz (`99439407837`), and Dependency audit (`99439408130`); schedule/manual-only capacity and two-hour jobs skipped as designed | Continue the next bounded interoperability or transport gap while retaining Asterisk fallback and all provider/rollback traffic gates |
 
 ### CP-026 — PR10 published and stacked remote parity verified
 
@@ -5543,6 +5547,27 @@ blockers: Fresh publication and hosted verification of the repair remain pending
 next_action: Commit the deterministic EOF-test repair and CP-158 normally, push PR #53, then verify a fresh hosted Workspace, Protocol fuzz, and Dependency audit result on the exact new head
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; revert the test-only repair or close PR #53 if the TLS transport contract is superseded
 notes: This checkpoint records a real hosted regression rather than treating the prior local pass as sufficient. The TLS transport and runtime implementation remain unchanged; only test synchronization was repaired.
+~~~
+
+### CP-159 — PR #53 fresh hosted validation green after EOF-test repair
+
+~~~yaml
+checkpoint_id: CP-159
+recorded_at_utc: 2026-08-31T09:17:47Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: SIP-over-TLS transport and Asterisk fallback
+scope: Reconcile the fresh hosted Rust quality suite on PR #53 after making the TLS clean-EOF regression deterministic
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-53-tls-transport
+branch: sip-tls-transport
+base_branch: prack-retransmission
+pr: https://github.com/W3Mirror/asterisk/pull/53
+head_sha: 057313acb1830a703067db1b23fe1a2ce66ad3db
+evidence: The deterministic EOF-test repair and CP-159 are now recorded after hosted run 33376608087 passed on the exact head: Workspace checks 99439408190 passed formatting, all 250 locked workspace tests, all three pinned Docker-backed SIPp scenarios, ordinary signaling/RTP-media/WebSocket-media/combined/short-soak reclamation smokes, and workspace Clippy; Protocol fuzz checks 99439407837 passed all six address-sanitizer targets; Dependency audit 99439408130 passed. The schedule/manual-only Signaling capacity matrix and Two-hour lifecycle soak correctly skipped for the pull-request event. Local, origin, and GitHub head parity remains at 057313acb.
+blockers: This remains provider-neutral offline TLS evidence. It does not prove real Asterisk/provider interoperability, provider credentials, live traffic, route failover, production rollout/rollback execution, or safe Rust traffic enablement. Rust traffic stays disabled and Asterisk remains the fallback. The broader control-plane, lifecycle/event, post-call, failure/recovery, observability/security, and deployment/rollback acceptance targets remain future bounded implementation/evidence slices.
+next_action: Continue the next bounded interoperability or transport gap while preserving the expanded non-real-time acceptance targets, provider evidence gate, and verified Asterisk rollback
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #53 or revert the SIP-over-TLS transport and EOF-test repair if their contracts are superseded
+notes: Relevant TLS handshake, trust, hostname, framing, EOF, runtime, and route-matching tests ship with the transport behavior. Every pull request event and push to `aistack/main` runs the complete ordinary hosted suite rather than affected-module-only selection; focused tests are included in the full locked workspace run. Schedule/manual jobs add the larger capacity, property, and soak tiers. All workflow runners remain hosted `ubuntu-latest`, and Docker remains limited to pinned SIPp inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
