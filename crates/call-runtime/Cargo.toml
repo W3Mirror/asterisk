@@ -19,6 +19,7 @@ sip-types = { path = "../sip-types" }
 sip-security = { path = "../sip-security" }
 
 [dev-dependencies]
+rtcp = { path = "../rtcp" }
 rtp = { path = "../rtp" }
 sip-parser = { path = "../sip-parser" }
 

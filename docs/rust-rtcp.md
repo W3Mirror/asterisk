@@ -12,6 +12,13 @@ LSR produces an RTT estimate by subtracting DLSR from the elapsed local time.
 The estimate is exposed only when a matching report exists; it does not claim
 wall-clock synchronization or provider interoperability.
 
+`reception_report_timing` exposes the latest accepted Sender Report identifier
+and its monotonic delay in RTCP 16.16-second units. `MediaSession` combines that
+timing with the current RTP source SSRC, extended sequence, observed loss, and
+jitter to generate a Receiver Report. Report fractions are interval-scoped and
+reset when the RTP source SSRC changes; cumulative loss and sequence/jitter
+values remain scoped to the current RTP source.
+
 Use `new_with_source_policy` or `with_source_policy` to apply the shared
 `sip-security::SourceIpPolicy`. `receive_from` evaluates the observed
 `SocketAddr` before size checks or parsing. A denied peer therefore cannot
