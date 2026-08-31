@@ -1,12 +1,12 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-097 — runtime RFC 4733 DTMF relay locally green
-**Last checkpoint (UTC):** 2026-08-31T00:06:04Z
+**Current checkpoint:** CP-098 — PR #36 published with hosted validation running
+**Last checkpoint (UTC):** 2026-08-31T00:07:14Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Runtime caller/human RFC 4733 DTMF relay<br>
-**Next resume action:** Commit and publish stacked PR #36 against `runtime-rtp-leg-bridge`, record its exact implementation head, then verify all three hosted jobs on its final head
-**Active PR:** Pending #36 — `runtime-dtmf-leg-bridge` targets `runtime-rtp-leg-bridge`
+**Next resume action:** Push the PR #36 publication checkpoint, then verify Workspace, Protocol fuzz, and Dependency audit on the documentation-only final head
+**Active PR:** [#36](https://github.com/W3Mirror/asterisk/pull/36) — `runtime-dtmf-leg-bridge` targets `runtime-rtp-leg-bridge`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-36`
 **Primary language:** Rust  
@@ -4176,6 +4176,27 @@ blockers: Destination RTP time is not yet advanced from a DTMF event into subseq
 next_action: Commit and publish stacked PR #36 against `runtime-rtp-leg-bridge`, record its exact implementation head, and verify hosted CI on its final head
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the DTMF relay PR or remove the relay branch if its timestamp contract is superseded
 notes: Relevant tests and documentation ship with the implementation. Every PR and push to `aistack/main` runs the complete repository suite rather than affected-module selection; the scheduled workflow adds 4,096 property cases and the 16,384-call reclamation run. The stricter `media-core -D warnings` probe remains blocked by pre-existing crate-wide documentation/pedantic warnings and is not treated as a regression. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-098 — PR #36 published with hosted validation running
+
+~~~yaml
+checkpoint_id: CP-098
+recorded_at_utc: 2026-08-31T00:07:14Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Runtime caller/human RFC 4733 DTMF relay
+scope: Publish the locally green DTMF relay as a stacked PR and reconcile its exact worktree, branch, base, implementation head, and hosted-check state
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-36
+branch: runtime-dtmf-leg-bridge
+base_branch: runtime-rtp-leg-bridge
+pr: https://github.com/W3Mirror/asterisk/pull/36
+head_sha: bba94ca0a3beb4f43b07a420632d3f96a980915b before this publication checkpoint commit
+evidence: Implementation commit `bba94ca0a` was pushed normally with local and `origin/runtime-dtmf-leg-bridge` parity; PR #36 is OPEN/non-draft against exact base `runtime-rtp-leg-bridge`; GitHub assigned predicted #36, so the required worktree path already matches; hosted run `33343607184` started Workspace checks, Protocol fuzz checks, and Dependency audit
+blockers: Hosted validation is pending on the publication checkpoint's final head; DTMF-to-subsequent-audio timestamp advancement, RTCP relay, jitter playout, media/WebSocket load, long-duration soak/memory, provider/Asterisk interoperability, rollback proof, and production evidence remain active goal work; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Push this publication checkpoint and verify all three hosted Rust quality gates on the final PR #36 head
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #36 if the DTMF relay contract is superseded
+notes: PR #36 contains the relevant relay implementation, three DTMF-specific bridge tests including failback and retransmission coverage, media-session assertions, documentation, manifest, lockfile, and CI-contract goal update. Every PR and push to `aistack/main` runs the complete repository suite. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
