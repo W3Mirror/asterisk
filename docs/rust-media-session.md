@@ -3,7 +3,8 @@
 `media-core::MediaSession` is the provider-neutral boundary between a
 negotiated G.711 RTP/RTCP stream and an AI application. It owns one bounded
 `RtpSession`, one bounded `RtcpSession`, a bidirectional `AudioBridge`, and a
-bounded DTMF notification queue. Socket ownership, WebSocket framing,
+bounded DTMF notification queue. Optional caller/agent recording sinks retain
+bounded decoded PCM for post-call export. Socket ownership, WebSocket framing,
 persistence, and call routing stay outside the crate.
 
 The bounded plain-text Asterisk `chan_websocket` adapter is documented in
@@ -62,11 +63,21 @@ ownership remains explicit and deterministic.
 
 ## Recording
 
-`AudioRecorder` is a separate non-blocking sink for decoded frames. It bounds
-both retained frame count and samples per frame, records first/last RTP
-timestamps and drop counts, and can serialize the retained mono PCM as a WAV
-file. Persistence or object-storage upload should consume `wav()` outside the
-RTP processing loop.
+Set `MediaSessionConfig::recording` to a `MediaRecordingConfig` when a call
+needs recording. The `caller` sink captures validated decoded RTP audio and the
+`agent` sink captures AI frames only after they are serialized successfully as
+outbound RTP. Each `AudioRecorder` bounds retained frame count and samples per
+frame, records first/last RTP timestamps and drop counts, and can serialize the
+retained mono PCM with `recording_wav(RecordingChannel::Caller|Agent)`. When
+both sinks are enabled, `mixed_recording_wav()` timestamp-aligns frames and
+sums samples with saturation. These snapshots are in-memory only; persistence
+or object-storage upload must run outside the RTP processing loop.
+
+Terminal `reclaim_pending()` also clears both recording queues and reports the
+released frame counts. Historical packet and queue counters remain available,
+while recording metadata resets to an empty retained snapshot. A configured
+recorder must use the negotiated RTP clock and have a per-frame bound at least
+as large as `max_audio_samples`; invalid configurations fail construction.
 
 This slice remains offline and provider-neutral. It does not enable Rust media
 traffic, alter Asterisk configuration, or claim live-provider interoperability.

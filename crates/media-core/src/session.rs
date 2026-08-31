@@ -19,9 +19,33 @@ use sip_security::SourceIpPolicy;
 
 use crate::jitter::AudioJitterBuffer;
 use crate::{
-    AudioBridge, AudioCodec, AudioFrame, JitterBufferConfig, JitterBufferStats, JitterPushOutcome,
-    MediaBridgeConfig, MediaBridgeStats, PushOutcome, QueueError, decode, encode as encode_audio,
+    AudioBridge, AudioCodec, AudioFrame, AudioRecorder, JitterBufferConfig, JitterBufferStats,
+    JitterPushOutcome, MediaBridgeConfig, MediaBridgeStats, PushOutcome, QueueError,
+    RecorderConfig, RecordingError, RecordingMetadata, decode, encode as encode_audio,
 };
+
+/// Selects one logical channel from a media session's optional recordings.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RecordingChannel {
+    /// Audio received from the caller/RTP peer.
+    Caller,
+    /// Audio emitted toward the caller/RTP peer after AI serialization.
+    Agent,
+}
+
+/// Optional bounded recording sinks attached to a media session.
+///
+/// Each configured sink retains decoded PCM frames in memory and can later be
+/// serialized as a WAV snapshot. A `None` sink has no recording overhead. When
+/// both sinks are configured, [`MediaSession::mixed_recording_wav`] provides a
+/// timestamp-aligned mixed recording without blocking RTP processing.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct MediaRecordingConfig {
+    /// Optional caller-channel recorder configuration.
+    pub caller: Option<RecorderConfig>,
+    /// Optional agent-channel recorder configuration.
+    pub agent: Option<RecorderConfig>,
+}
 
 /// Bounds and negotiated payload settings for a [`MediaSession`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -44,6 +68,8 @@ pub struct MediaSessionConfig {
     /// [`MediaSession::playout_audio`] is polled at their monotonic deadline.
     /// Telephone events remain immediate.
     pub jitter_buffer: Option<JitterBufferConfig>,
+    /// Optional non-blocking caller/agent recording sinks.
+    pub recording: Option<MediaRecordingConfig>,
 }
 
 impl Default for MediaSessionConfig {
@@ -56,6 +82,7 @@ impl Default for MediaSessionConfig {
             max_audio_samples: 1_600,
             max_pending_dtmf: 64,
             jitter_buffer: None,
+            recording: None,
         }
     }
 }
@@ -81,6 +108,30 @@ impl MediaSessionConfig {
     }
 }
 
+fn build_recorder(
+    recorder_config: Option<RecorderConfig>,
+    media_config: &MediaSessionConfig,
+) -> Result<Option<AudioRecorder>, MediaSessionError> {
+    let Some(recorder_config) = recorder_config else {
+        return Ok(None);
+    };
+    if recorder_config.sample_rate != media_config.rtp.clock_rate {
+        return Err(RecordingError::SampleRateMismatch {
+            expected: media_config.rtp.clock_rate,
+            actual: recorder_config.sample_rate,
+        }
+        .into());
+    }
+    if recorder_config.max_samples_per_frame < media_config.max_audio_samples {
+        return Err(RecordingError::FrameTooLarge {
+            actual: media_config.max_audio_samples,
+            maximum: recorder_config.max_samples_per_frame,
+        }
+        .into());
+    }
+    Ok(Some(AudioRecorder::new(recorder_config)?))
+}
+
 /// Errors raised while driving a bounded media session.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MediaSessionError {
@@ -96,6 +147,8 @@ pub enum MediaSessionError {
     Dtmf(ParseError),
     /// A telephone-event payload could not be encoded.
     DtmfEncode(EncodeError),
+    /// A configured recording sink rejected a media frame or WAV operation.
+    Recording(RecordingError),
     /// A decoded frame exceeded the configured sample bound.
     AudioFrameTooLarge {
         /// Number of decoded samples received.
@@ -134,6 +187,7 @@ impl Display for MediaSessionError {
             Self::Queue(error) => Display::fmt(error, formatter),
             Self::Dtmf(error) => Display::fmt(error, formatter),
             Self::DtmfEncode(error) => Display::fmt(error, formatter),
+            Self::Recording(error) => Display::fmt(error, formatter),
             Self::AudioFrameTooLarge { actual, maximum } => {
                 write!(
                     formatter,
@@ -197,6 +251,12 @@ impl From<EncodeError> for MediaSessionError {
     }
 }
 
+impl From<RecordingError> for MediaSessionError {
+    fn from(error: RecordingError) -> Self {
+        Self::Recording(error)
+    }
+}
+
 /// Result of accepting one RTP packet into a media session.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReceivedMedia {
@@ -252,6 +312,10 @@ pub struct MediaSessionStats {
     pub dtmf_notifications: u64,
     /// Audio jitter-buffer state when fixed-delay playout is configured.
     pub jitter_buffer: Option<JitterBufferStats>,
+    /// Retained caller-channel recording metadata, when enabled.
+    pub caller_recording: Option<RecordingMetadata>,
+    /// Retained agent-channel recording metadata, when enabled.
+    pub agent_recording: Option<RecordingMetadata>,
 }
 
 /// Counts of bounded media state released by terminal cleanup.
@@ -269,6 +333,10 @@ pub struct MediaReclamation {
     pub jitter_packets: usize,
     /// Pending application DTMF notifications.
     pub dtmf_notifications: usize,
+    /// Caller-channel recording frames released by cleanup.
+    pub caller_recording_frames: usize,
+    /// Agent-channel recording frames released by cleanup.
+    pub agent_recording_frames: usize,
 }
 
 /// A bounded bridge between RTP packets, AI audio frames, and DTMF events.
@@ -286,6 +354,8 @@ pub struct MediaSession {
     audio_frames_sent: u64,
     dtmf_notifications: u64,
     last_receiver_report: Option<ReceiverReportInterval>,
+    caller_recording: Option<AudioRecorder>,
+    agent_recording: Option<AudioRecorder>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -327,6 +397,14 @@ impl MediaSession {
         source_policy: SourceIpPolicy,
     ) -> Result<Self, MediaSessionError> {
         let config = config.validate()?;
+        let (caller_recording, agent_recording) = if let Some(recording) = config.recording {
+            (
+                build_recorder(recording.caller, &config)?,
+                build_recorder(recording.agent, &config)?,
+            )
+        } else {
+            (None, None)
+        };
         let rtp = RtpSession::new_with_source_policy(
             config.rtp,
             initial_sequence,
@@ -353,6 +431,8 @@ impl MediaSession {
             audio_frames_sent: 0,
             dtmf_notifications: 0,
             last_receiver_report: None,
+            caller_recording,
+            agent_recording,
         })
     }
 
@@ -580,17 +660,35 @@ impl MediaSession {
     fn decode_and_queue_audio(&mut self, packet: &RtpPacket) -> ReceivedMedia {
         let samples = decode(self.config.audio_codec, &packet.payload);
         let sample_count = samples.len();
-        self.audio_frames_received = self.audio_frames_received.saturating_add(1);
-        let queued = self.bridge.push_to_ai(AudioFrame {
+        let frame = AudioFrame {
             timestamp: packet.timestamp,
             codec: self.config.audio_codec,
             sample_rate: self.config.rtp.clock_rate,
             samples,
-        });
+        };
+        self.record_caller_frame(&frame);
+        self.audio_frames_received = self.audio_frames_received.saturating_add(1);
+        let queued = self.bridge.push_to_ai(frame);
         ReceivedMedia::Audio {
             queued,
             timestamp: packet.timestamp,
             samples: sample_count,
+        }
+    }
+
+    fn record_caller_frame(&mut self, frame: &AudioFrame) {
+        if let Some(recorder) = &mut self.caller_recording {
+            if let Err(error) = recorder.push(frame.clone()) {
+                panic!("validated caller recording rejected a media frame: {error}");
+            }
+        }
+    }
+
+    fn record_agent_frame(&mut self, frame: &AudioFrame) {
+        if let Some(recorder) = &mut self.agent_recording {
+            if let Err(error) = recorder.push(frame.clone()) {
+                panic!("validated agent recording rejected a media frame: {error}");
+            }
         }
     }
 
@@ -632,6 +730,50 @@ impl MediaSession {
     /// Removes the oldest decoded frame waiting for the AI application.
     pub fn pop_for_ai(&mut self) -> Option<AudioFrame> {
         self.bridge.pop_for_ai()
+    }
+
+    /// Returns metadata for one optional caller or agent recording sink.
+    #[must_use]
+    pub fn recording_metadata(&self, channel: RecordingChannel) -> Option<RecordingMetadata> {
+        match channel {
+            RecordingChannel::Caller => self.caller_recording.as_ref().map(AudioRecorder::metadata),
+            RecordingChannel::Agent => self.agent_recording.as_ref().map(AudioRecorder::metadata),
+        }
+    }
+
+    /// Serializes one optional caller or agent recording sink as a WAV snapshot.
+    ///
+    /// The snapshot is built from retained bounded PCM frames and does not
+    /// perform storage or network I/O.
+    pub fn recording_wav(
+        &self,
+        channel: RecordingChannel,
+    ) -> Result<Option<Vec<u8>>, MediaSessionError> {
+        match channel {
+            RecordingChannel::Caller => self
+                .caller_recording
+                .as_ref()
+                .map(AudioRecorder::wav)
+                .transpose()
+                .map_err(MediaSessionError::from),
+            RecordingChannel::Agent => self
+                .agent_recording
+                .as_ref()
+                .map(AudioRecorder::wav)
+                .transpose()
+                .map_err(MediaSessionError::from),
+        }
+    }
+
+    /// Serializes caller and agent recordings as one timestamp-aligned mixed
+    /// WAV snapshot when both sinks are enabled.
+    pub fn mixed_recording_wav(&self) -> Result<Option<Vec<u8>>, MediaSessionError> {
+        self.caller_recording
+            .as_ref()
+            .zip(self.agent_recording.as_ref())
+            .map(|(caller, agent)| caller.mixed_wav(agent))
+            .transpose()
+            .map_err(MediaSessionError::from)
     }
 
     /// Releases the next fixed-delay audio packet whose monotonic deadline is due.
@@ -695,11 +837,21 @@ impl MediaSession {
         self.pending_dtmf.clear();
         self.dtmf = Deduplicator::default();
         self.last_receiver_report = None;
+        let caller_recording_frames = self
+            .caller_recording
+            .as_mut()
+            .map_or(0, AudioRecorder::clear);
+        let agent_recording_frames = self
+            .agent_recording
+            .as_mut()
+            .map_or(0, AudioRecorder::clear);
         MediaReclamation {
             to_ai_frames,
             from_ai_frames,
             jitter_packets,
             dtmf_notifications,
+            caller_recording_frames,
+            agent_recording_frames,
         }
     }
 
@@ -710,7 +862,7 @@ impl MediaSession {
     /// Returns an error when the queued frame does not match the negotiated
     /// codec/rate or cannot fit in the configured RTP packet bound.
     pub fn next_audio_rtp(&mut self, marker: bool) -> Result<Option<Vec<u8>>, MediaSessionError> {
-        let Some(frame) = self.bridge.peek_for_rtp() else {
+        let Some(frame) = self.bridge.peek_for_rtp().cloned() else {
             return Ok(None);
         };
         if frame.codec != self.config.audio_codec {
@@ -736,6 +888,7 @@ impl MediaSession {
         let encoded = encode_audio(self.config.audio_codec, &frame.samples);
         let packet = self.rtp.send(&encoded, timestamp_increment, marker)?;
         let _ = self.bridge.pop_for_rtp();
+        self.record_agent_frame(&frame);
         self.audio_frames_sent = self.audio_frames_sent.saturating_add(1);
         Ok(Some(packet))
     }
@@ -816,6 +969,8 @@ impl MediaSession {
             audio_frames_sent: self.audio_frames_sent,
             dtmf_notifications: self.dtmf_notifications,
             jitter_buffer: self.jitter_buffer.as_ref().map(AudioJitterBuffer::stats),
+            caller_recording: self.caller_recording.as_ref().map(AudioRecorder::metadata),
+            agent_recording: self.agent_recording.as_ref().map(AudioRecorder::metadata),
         }
     }
 
@@ -900,6 +1055,146 @@ mod tests {
         assert_eq!(packet.payload_type, 0);
         assert_eq!(packet.timestamp, 2_000);
         assert_eq!(media.stats().audio_frames_sent, 1);
+    }
+
+    #[test]
+    fn session_recordings_capture_caller_agent_and_mixed_audio() {
+        let recording_config = RecorderConfig {
+            max_frames: 2,
+            max_samples_per_frame: 160,
+            ..RecorderConfig::default()
+        };
+        let mut sender = rtp_sender();
+        let mut media = MediaSession::new(
+            MediaSessionConfig {
+                rtp: RtpSessionConfig {
+                    payload_type: 0,
+                    remote_ssrc: Some(77),
+                    ..RtpSessionConfig::default()
+                },
+                recording: Some(MediaRecordingConfig {
+                    caller: Some(recording_config),
+                    agent: Some(recording_config),
+                }),
+                max_audio_samples: 160,
+                ..MediaSessionConfig::default()
+            },
+            20,
+            1_000,
+        )
+        .unwrap();
+
+        let input = sender.send(&[0xff; 2], 2, true).unwrap();
+        media.receive_rtp(&input, Duration::ZERO).unwrap();
+        media.push_from_ai(AudioFrame {
+            timestamp: 1_000,
+            codec: AudioCodec::Pcmu,
+            sample_rate: 8_000,
+            samples: vec![1, 2],
+        });
+        media.next_audio_rtp(false).unwrap().unwrap();
+
+        assert_eq!(
+            media.recording_metadata(RecordingChannel::Caller),
+            Some(RecordingMetadata {
+                sample_rate: 8_000,
+                channels: 1,
+                first_timestamp: Some(1_000),
+                last_timestamp: Some(1_000),
+                frames: 1,
+                samples: 2,
+                dropped_frames: 0,
+            })
+        );
+        assert_eq!(
+            media.recording_metadata(RecordingChannel::Agent),
+            Some(RecordingMetadata {
+                sample_rate: 8_000,
+                channels: 1,
+                first_timestamp: Some(1_000),
+                last_timestamp: Some(1_000),
+                frames: 1,
+                samples: 2,
+                dropped_frames: 0,
+            })
+        );
+        assert!(
+            media
+                .recording_wav(RecordingChannel::Caller)
+                .unwrap()
+                .is_some()
+        );
+        assert!(media.mixed_recording_wav().unwrap().is_some());
+
+        let stats = media.stats();
+        assert_eq!(stats.caller_recording.unwrap().frames, 1);
+        assert_eq!(stats.agent_recording.unwrap().frames, 1);
+        let reclaimed = media.reclaim_pending();
+        assert_eq!(reclaimed.caller_recording_frames, 1);
+        assert_eq!(reclaimed.agent_recording_frames, 1);
+        assert_eq!(
+            media
+                .recording_metadata(RecordingChannel::Caller)
+                .unwrap()
+                .frames,
+            0
+        );
+        assert_eq!(
+            media
+                .recording_metadata(RecordingChannel::Agent)
+                .unwrap()
+                .frames,
+            0
+        );
+    }
+
+    #[test]
+    fn recording_configuration_must_match_negotiated_clock_and_frame_bound() {
+        let result = MediaSession::new(
+            MediaSessionConfig {
+                recording: Some(MediaRecordingConfig {
+                    caller: Some(RecorderConfig {
+                        sample_rate: 16_000,
+                        ..RecorderConfig::default()
+                    }),
+                    agent: None,
+                }),
+                ..MediaSessionConfig::default()
+            },
+            1,
+            1,
+        );
+        assert!(matches!(
+            result,
+            Err(MediaSessionError::Recording(
+                RecordingError::SampleRateMismatch { .. }
+            ))
+        ));
+
+        let result = MediaSession::new(
+            MediaSessionConfig {
+                max_audio_samples: 160,
+                recording: Some(MediaRecordingConfig {
+                    caller: Some(RecorderConfig {
+                        max_samples_per_frame: 80,
+                        ..RecorderConfig::default()
+                    }),
+                    agent: None,
+                }),
+                ..MediaSessionConfig::default()
+            },
+            1,
+            1,
+        );
+        assert!(matches!(
+            result,
+            Err(MediaSessionError::Recording(
+                RecordingError::FrameTooLarge {
+                    actual: 160,
+                    maximum: 80,
+                }
+            ))
+        ));
     }
 
     #[test]
@@ -1306,6 +1601,8 @@ mod tests {
                 from_ai_frames: 1,
                 jitter_packets: 1,
                 dtmf_notifications: 1,
+                caller_recording_frames: 0,
+                agent_recording_frames: 0,
             }
         );
         let stats = media.stats();
