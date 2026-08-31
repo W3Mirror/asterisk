@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-095 — PR #35 hosted RTP-bridge validation green
-**Last checkpoint (UTC):** 2026-08-30T23:56:33Z
+**Current checkpoint:** CP-097 — runtime RFC 4733 DTMF relay locally green
+**Last checkpoint (UTC):** 2026-08-31T00:06:04Z
 **Active phase:** Phase 1 — Rust media engine
-**Active milestone:** Runtime caller/human RTP audio composition<br>
-**Next resume action:** Push the PR #35 green-check reconciliation, verify all three hosted jobs on that documentation-only final head, then implement the next bounded state-gated media reliability slice
-**Active PR:** [#35](https://github.com/W3Mirror/asterisk/pull/35) — `runtime-rtp-leg-bridge` targets `runtime-human-leg-bridge`
+**Active milestone:** Runtime caller/human RFC 4733 DTMF relay<br>
+**Next resume action:** Commit and publish stacked PR #36 against `runtime-rtp-leg-bridge`, record its exact implementation head, then verify all three hosted jobs on its final head
+**Active PR:** Pending #36 — `runtime-dtmf-leg-bridge` targets `runtime-rtp-leg-bridge`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-35`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-36`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -1758,20 +1758,23 @@ later optimize the fast PR tier by selecting the affected package plus its
 dependency/dependent closure, but it must fail safe to the complete workspace
 suite whenever impact cannot be determined confidently.
 
-Current repository behavior as of CP-060 is intentionally stronger than
-affected-module-only selection: every pull request runs formatting, the full
-locked Rust workspace test suite, workspace Clippy across all targets, the
-dependency audit, and compile/sanitizer checks for all six protocol fuzz targets.
-A push to `aistack/main` runs the same complete set. There are currently no path
-filters or affected-module test selection.
+Current repository behavior is intentionally stronger than affected-module-only
+selection: every pull request runs formatting, the full locked Rust workspace
+test suite, all three local SIPp scenarios, the deterministic 512-call
+reclamation smoke, workspace Clippy across all targets, the dependency audit,
+and compile/address-sanitizer checks for all six protocol fuzz targets. A push
+to `aistack/main` runs the same complete set. There are no path filters or
+affected-module test selection. Relevant focused tests must still ship with the
+code that changes their behavior; the full suite supplements those tests rather
+than replacing them.
 
 The intended CI tiers are:
 
 | Tier | Trigger | Required coverage |
 | --- | --- | --- |
-| Fast PR | Every pull request | Tests introduced by the change; affected module and dependent-module tests; API/event contracts; deterministic fixtures; short fault/reclamation smoke tests; format and Clippy |
-| Full branch | Every push to `aistack/main` | Complete locked workspace tests, all deterministic integration/fixture tests, all fuzz-target checks, and dependency/security audit |
-| Scheduled | Nightly or weekly | Extended fuzzing, broader SIPp/load matrices, differential replay, larger load tests, and long-duration soak/memory tests |
+| Pull request | Every pull request | Complete locked workspace tests (including tests introduced by the change), three local SIPp scenarios, 512-call reclamation smoke, all fuzz-target checks, dependency audit, format, and workspace Clippy |
+| Full branch | Every push to `aistack/main` | The same complete hosted suite as pull requests |
+| Scheduled | Monday 02:30 UTC, with dedicated jobs added as harnesses mature | The complete hosted suite plus the current 16,384-call reclamation run and 4,096 cases per property; later extended fuzzing, broader SIPp/media load, differential replay, and long-duration soak/memory tests |
 | Evidence gate | Before enabling or expanding Rust traffic | Sanitized Asterisk/provider replay plus real provider interoperability and rollback proof |
 
 Until affected-module selection is implemented and proven safe, PR CI must keep
@@ -4131,6 +4134,48 @@ blockers: The bridge forwards negotiated G.711 audio only; telephone-event packe
 next_action: Push this reconciliation checkpoint, verify all three hosted jobs on that documentation-only final head, then implement the next smallest state-gated media reliability slice without enabling Rust traffic
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #35 if the RTP bridge contract is superseded
 notes: Relevant tests shipped with the implementation. Hosted PR CI and pushes to `aistack/main` continue to run the complete repository suite rather than affected-module selection. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-096 — PR #35 final reconciliation head hosted green
+
+~~~yaml
+checkpoint_id: CP-096
+recorded_at_utc: 2026-08-31T00:03:45Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Runtime caller/human RTP audio composition
+scope: Reconcile PR #35's documentation-only final head before beginning state-gated RFC 4733 relay
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-35
+branch: runtime-rtp-leg-bridge
+base_branch: runtime-human-leg-bridge
+pr: https://github.com/W3Mirror/asterisk/pull/35
+head_sha: 436d571ef771f94b16ad8818ca14d0151dd7afc5
+evidence: PR #35 remains OPEN/non-draft/CLEAN against exact base `runtime-human-leg-bridge` at `3b29122b0`, with local, origin, and GitHub final-head parity; hosted run `33343144886` passed Workspace checks in 1 minute 4 seconds, including formatting, all 182 tests, local SIPp, the 512-call reclamation smoke, and workspace Clippy; Protocol fuzz checks passed in 54 seconds across all six address-sanitizer targets; Dependency audit passed in 2 minutes 24 seconds
+blockers: DTMF/RTCP relay, jitter playout, media/WebSocket load, soak/memory, sanitized captures, provider compatibility, rollback proof, and production evidence remain active goal work; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Implement state-gated bidirectional RFC 4733 relay in tracked PR #36 worktree without enabling Rust traffic
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #35 if the RTP bridge contract is superseded
+notes: Relevant tests shipped with the implementation. Every PR and push to `aistack/main` runs the complete repository suite. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-097 — runtime RFC 4733 DTMF relay locally green
+
+~~~yaml
+checkpoint_id: CP-097
+recorded_at_utc: 2026-08-31T00:06:04Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Runtime caller/human RFC 4733 DTMF relay
+scope: Relay every validated telephone-event RTP packet bidirectionally through the exact active caller/human bridge while retaining deduplicated application notifications
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-36
+branch: runtime-dtmf-leg-bridge
+base_branch: runtime-rtp-leg-bridge
+pr: pending publication
+head_sha: 436d571ef771f94b16ad8818ca14d0151dd7afc5 before the implementation commit
+evidence: `MediaSession` now returns the exact validated DTMF event plus RTP marker and timestamp while preserving its existing bounded deduplicated notification behavior; `HumanMediaBridgeRuntime` re-encodes every accepted start, continuation, end, and retransmission packet with the destination leg's payload type, SSRC, sequence, and a stable per-event timestamp; focused tests prove destination RTP identity, marker/event preservation, notification deduplication, end retransmission relay, bidirectional relay, and rejection before DTMF datagram consumption after AI failback; 20 call-runtime, 10 media-core, and 15 scenario-replay tests pass; all 184 locked workspace tests pass; strict call-runtime Clippy with `--no-deps -- -D warnings`, workspace Clippy/all targets, formatting, workflow YAML parsing, and `git diff --check` pass
+blockers: Destination RTP time is not yet advanced from a DTMF event into subsequent audio; RTCP relay, jitter playout, media/WebSocket load, long-duration soak/memory, sanitized captures, provider/Asterisk interoperability, rollback proof, and production evidence remain active goal work; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Commit and publish stacked PR #36 against `runtime-rtp-leg-bridge`, record its exact implementation head, and verify hosted CI on its final head
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the DTMF relay PR or remove the relay branch if its timestamp contract is superseded
+notes: Relevant tests and documentation ship with the implementation. Every PR and push to `aistack/main` runs the complete repository suite rather than affected-module selection; the scheduled workflow adds 4,096 property cases and the 16,384-call reclamation run. The stricter `media-core -D warnings` probe remains blocked by pre-existing crate-wide documentation/pedantic warnings and is not treated as a regression. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints

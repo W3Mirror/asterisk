@@ -192,6 +192,12 @@ pub enum ReceivedMedia {
     },
     /// A telephone-event payload was deduplicated and optionally queued.
     Dtmf {
+        /// Exact validated telephone event carried by this RTP packet.
+        event: DtmfEvent,
+        /// RTP marker bit carried by this packet.
+        marker: bool,
+        /// RTP timestamp carried by this packet.
+        timestamp: u32,
         /// Application notification, if this packet changed DTMF state.
         notification: Option<Notification>,
         /// Whether the notification was retained in the bounded queue.
@@ -439,9 +445,13 @@ impl MediaSession {
     }
 
     fn receive_dtmf(&mut self, packet: &RtpPacket) -> Result<ReceivedMedia, MediaSessionError> {
-        let notification = self.dtmf.observe(parse(&packet.payload)?);
+        let event = parse(&packet.payload)?;
+        let notification = self.dtmf.observe(event);
         let Some(notification) = notification else {
             return Ok(ReceivedMedia::Dtmf {
+                event,
+                marker: packet.marker,
+                timestamp: packet.timestamp,
                 notification: None,
                 queued: false,
             });
@@ -456,6 +466,9 @@ impl MediaSession {
             self.pending_dtmf.push_back(notification);
         }
         Ok(ReceivedMedia::Dtmf {
+            event,
+            marker: packet.marker,
+            timestamp: packet.timestamp,
             notification: Some(notification),
             queued,
         })
@@ -719,6 +732,9 @@ mod tests {
         assert_eq!(
             media.receive_rtp(&input, Duration::from_millis(1)).unwrap(),
             ReceivedMedia::Dtmf {
+                event,
+                marker: true,
+                timestamp: 1_000,
                 notification: Some(Notification::Started(DtmfDigit::Five)),
                 queued: true,
             }
@@ -726,6 +742,9 @@ mod tests {
         assert_eq!(
             media.receive_rtp(&input, Duration::from_millis(2)).unwrap(),
             ReceivedMedia::Dtmf {
+                event,
+                marker: true,
+                timestamp: 1_000,
                 notification: None,
                 queued: false,
             }

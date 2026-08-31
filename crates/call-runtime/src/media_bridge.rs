@@ -8,6 +8,7 @@ use std::{
 
 use call_bridge::{BridgeError, BridgeRegistry, BridgeSnapshot, BridgeState, HumanLeg};
 use call_core::{BridgeId, CallId, LegId};
+use dtmf::{DtmfEvent, Notification};
 use media_core::{PushOutcome, ReceivedMedia};
 use media_runtime::{MediaChannel, MediaRuntimeError, MediaUdpRuntime};
 
@@ -36,12 +37,18 @@ pub enum HumanMediaForward {
         /// Backpressure result from the outbound leg's RTP queue.
         outbound_queue: PushOutcome,
     },
-    /// A telephone-event packet was retained on the source session for control handling.
+    /// One validated telephone-event packet was retained and re-encoded for the opposite leg.
     Dtmf {
         /// Direction in which the packet arrived.
         direction: HumanMediaDirection,
         /// Size of the accepted inbound RTP datagram.
         received_bytes: usize,
+        /// Size of the re-encoded outbound RTP datagram.
+        sent_bytes: usize,
+        /// Exact validated RFC 4733 event that was relayed.
+        event: DtmfEvent,
+        /// Deduplicated application notification, when this packet changed event state.
+        notification: Option<Notification>,
     },
 }
 
@@ -273,27 +280,40 @@ fn forward_one(
     marker: bool,
 ) -> Result<HumanMediaForward, HumanMediaBridgeError> {
     let received = source.receive_rtp(arrival)?;
-    let ReceivedMedia::Audio { queued, .. } = received.media else {
-        return Ok(HumanMediaForward::Dtmf {
-            direction,
-            received_bytes: received.bytes,
-        });
-    };
-    let frame = source
-        .media_mut()
-        .pop_for_ai()
-        .ok_or(HumanMediaBridgeError::MissingDecodedAudio)?;
-    let outbound_queue = destination.media_mut().push_from_ai(frame);
-    let sent_bytes = destination
-        .send_audio(marker)?
-        .ok_or(HumanMediaBridgeError::MissingOutboundAudio)?;
-    Ok(HumanMediaForward::Audio {
-        direction,
-        received_bytes: received.bytes,
-        sent_bytes,
-        inbound_queue: queued,
-        outbound_queue,
-    })
+    match received.media {
+        ReceivedMedia::Audio { queued, .. } => {
+            let frame = source
+                .media_mut()
+                .pop_for_ai()
+                .ok_or(HumanMediaBridgeError::MissingDecodedAudio)?;
+            let outbound_queue = destination.media_mut().push_from_ai(frame);
+            let sent_bytes = destination
+                .send_audio(marker)?
+                .ok_or(HumanMediaBridgeError::MissingOutboundAudio)?;
+            Ok(HumanMediaForward::Audio {
+                direction,
+                received_bytes: received.bytes,
+                sent_bytes,
+                inbound_queue: queued,
+                outbound_queue,
+            })
+        }
+        ReceivedMedia::Dtmf {
+            event,
+            marker,
+            notification,
+            ..
+        } => {
+            let sent_bytes = destination.send_dtmf(event, 0, marker)?;
+            Ok(HumanMediaForward::Dtmf {
+                direction,
+                received_bytes: received.bytes,
+                sent_bytes,
+                event,
+                notification,
+            })
+        }
+    }
 }
 
 #[cfg(test)]
@@ -302,6 +322,7 @@ mod tests {
 
     use call_bridge::{BridgeRegistryConfig, BridgeState};
     use call_core::StreamId;
+    use dtmf::{DtmfDigit, parse as parse_dtmf};
     use media_core::{
         AudioCodec, AudioFrame, DropPolicy, MediaBridgeConfig, MediaSession, MediaSessionConfig,
         decode,
@@ -417,6 +438,27 @@ mod tests {
             csrcs: Vec::new(),
             extension: None,
             payload: vec![sample; 160],
+        })
+        .unwrap()
+    }
+
+    fn dtmf_packet(
+        ssrc: u32,
+        sequence: u16,
+        timestamp: u32,
+        event: DtmfEvent,
+        marker: bool,
+    ) -> Vec<u8> {
+        serialize(&RtpPacket {
+            padding: false,
+            marker,
+            payload_type: 101,
+            sequence_number: sequence,
+            timestamp,
+            ssrc,
+            csrcs: Vec::new(),
+            extension: None,
+            payload: dtmf::encode(event).unwrap().to_vec(),
         })
         .unwrap()
     }
@@ -654,12 +696,16 @@ mod tests {
     }
 
     #[test]
-    fn retains_dtmf_on_source_without_forwarding_it_as_audio() {
+    fn relays_dtmf_with_destination_rtp_identity_and_retains_notification() {
         let mut fixture = fixture(false);
-        let mut packet = audio_packet(11, 1, 100, 0xff);
-        packet[1] = 101;
-        packet.truncate(12);
-        packet.extend_from_slice(&[5, 0x8a, 0x00, 0xa0]);
+        let event = DtmfEvent {
+            digit: DtmfDigit::Five,
+            end: false,
+            reserved: false,
+            volume: 10,
+            duration: 80,
+        };
+        let packet = dtmf_packet(11, 1, 100, event, true);
         fixture
             .caller_peer
             .send_to(&packet, fixture.media.caller().local_rtp_addr().unwrap())
@@ -672,14 +718,161 @@ mod tests {
             HumanMediaForward::Dtmf {
                 direction: HumanMediaDirection::CallerToHuman,
                 received_bytes: 16,
+                sent_bytes: 16,
+                event,
+                notification: Some(Notification::Started(DtmfDigit::Five)),
             }
         );
         assert_eq!(fixture.media.caller().media().stats().pending_dtmf, 1);
-        let mut output = [0_u8; 1];
-        let error = fixture.human_peer.recv_from(&mut output).unwrap_err();
+        let outbound = receive_packet(&fixture.human_peer);
+        assert_eq!(outbound.payload_type, 101);
+        assert_eq!(outbound.ssrc, 202);
+        assert!(outbound.marker);
+        assert_eq!(parse_dtmf(&outbound.payload).unwrap(), event);
+    }
+
+    #[test]
+    fn ai_failback_rejects_before_consuming_dtmf_datagram() {
+        let mut fixture = fixture(false);
+        let event = DtmfEvent {
+            digit: DtmfDigit::Five,
+            end: false,
+            reserved: false,
+            volume: 10,
+            duration: 80,
+        };
+        fixture.bridges.fail_human(&fixture.bridge_id).unwrap();
+        fixture
+            .caller_peer
+            .send_to(
+                &dtmf_packet(11, 1, 100, event, true),
+                fixture.media.caller().local_rtp_addr().unwrap(),
+            )
+            .unwrap();
+
         assert!(matches!(
-            error.kind(),
-            std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+            fixture
+                .media
+                .forward_caller_once(&fixture.bridges, Duration::from_millis(20), false),
+            Err(HumanMediaBridgeError::NotHumanActive {
+                state: BridgeState::AiActive
+            })
         ));
+        assert_eq!(fixture.media.caller().media().stats().pending_dtmf, 0);
+        assert!(matches!(
+            fixture
+                .media
+                .caller_mut()
+                .receive_rtp(Duration::from_millis(20))
+                .unwrap()
+                .media,
+            ReceivedMedia::Dtmf {
+                event: received_event,
+                notification: Some(Notification::Started(DtmfDigit::Five)),
+                ..
+            } if received_event == event
+        ));
+    }
+
+    #[test]
+    fn relays_dtmf_retransmissions_bidirectionally_with_stable_timestamp() {
+        let mut fixture = fixture(false);
+        let events = [
+            DtmfEvent {
+                digit: DtmfDigit::Five,
+                end: false,
+                reserved: false,
+                volume: 10,
+                duration: 80,
+            },
+            DtmfEvent {
+                digit: DtmfDigit::Five,
+                end: false,
+                reserved: false,
+                volume: 10,
+                duration: 120,
+            },
+            DtmfEvent {
+                digit: DtmfDigit::Five,
+                end: true,
+                reserved: false,
+                volume: 10,
+                duration: 160,
+            },
+            DtmfEvent {
+                digit: DtmfDigit::Five,
+                end: true,
+                reserved: false,
+                volume: 10,
+                duration: 160,
+            },
+        ];
+        let expected_notifications = [
+            Some(Notification::Started(DtmfDigit::Five)),
+            None,
+            Some(Notification::Ended {
+                digit: DtmfDigit::Five,
+                duration: 160,
+            }),
+            None,
+        ];
+        for (index, (event, expected_notification)) in
+            events.into_iter().zip(expected_notifications).enumerate()
+        {
+            let sequence = u16::try_from(index + 1).unwrap();
+            fixture
+                .caller_peer
+                .send_to(
+                    &dtmf_packet(11, sequence, 500, event, index == 0),
+                    fixture.media.caller().local_rtp_addr().unwrap(),
+                )
+                .unwrap();
+            assert!(matches!(
+                fixture
+                    .media
+                    .forward_caller_once(&fixture.bridges, Duration::from_millis(20), false)
+                    .unwrap(),
+                HumanMediaForward::Dtmf {
+                    event: actual_event,
+                    notification,
+                    ..
+                } if actual_event == event && notification == expected_notification
+            ));
+            let outbound = receive_packet(&fixture.human_peer);
+            assert_eq!(outbound.sequence_number, 10 + u16::try_from(index).unwrap());
+            assert_eq!(outbound.timestamp, 1_000);
+            assert_eq!(outbound.marker, index == 0);
+            assert_eq!(parse_dtmf(&outbound.payload).unwrap(), event);
+        }
+
+        let human_event = DtmfEvent {
+            digit: DtmfDigit::Pound,
+            end: false,
+            reserved: false,
+            volume: 8,
+            duration: 80,
+        };
+        fixture
+            .human_peer
+            .send_to(
+                &dtmf_packet(22, 1, 900, human_event, true),
+                fixture.media.human().local_rtp_addr().unwrap(),
+            )
+            .unwrap();
+        assert!(matches!(
+            fixture
+                .media
+                .forward_human_once(&fixture.bridges, Duration::from_millis(40), false)
+                .unwrap(),
+            HumanMediaForward::Dtmf {
+                direction: HumanMediaDirection::HumanToCaller,
+                event,
+                ..
+            } if event == human_event
+        ));
+        let to_caller = receive_packet(&fixture.caller_peer);
+        assert_eq!(to_caller.ssrc, 101);
+        assert_eq!(to_caller.payload_type, 101);
+        assert_eq!(parse_dtmf(&to_caller.payload).unwrap(), human_event);
     }
 }

@@ -10,6 +10,7 @@ call-api = { path = "../call-api" }
 call-bridge = { path = "../call-bridge" }
 call-core = { path = "../call-core" }
 call-engine = { path = "../call-engine" }
+dtmf = { path = "../dtmf" }
 media-core = { path = "../media-core" }
 media-runtime = { path = "../media-runtime" }
 sip-transaction = { path = "../sip-transaction" }

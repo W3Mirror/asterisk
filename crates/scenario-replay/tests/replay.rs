@@ -759,6 +759,7 @@ fn replays_loss_reordering_dtmf_deduplication_and_rtcp_reports() {
         StepOutcome::MediaReceived(ReceivedMedia::Dtmf {
             notification: Some(Notification::Started(DtmfDigit::Five)),
             queued: true,
+            ..
         })
     ));
     assert!(matches!(
@@ -766,6 +767,7 @@ fn replays_loss_reordering_dtmf_deduplication_and_rtcp_reports() {
         StepOutcome::MediaReceived(ReceivedMedia::Dtmf {
             notification: None,
             queued: false,
+            ..
         })
     ));
     assert!(matches!(
