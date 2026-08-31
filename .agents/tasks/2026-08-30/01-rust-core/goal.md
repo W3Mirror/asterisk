@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-151 — goal scope expanded beyond real-time call completion
-**Last checkpoint (UTC):** 2026-08-31T08:20:29Z
+**Current checkpoint:** CP-152 — PRACK retransmission locally green with expanded goal scope
+**Last checkpoint (UTC):** 2026-08-31T08:24:04Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Reliable provisional SIP responses (PRACK/100rel) and Asterisk fallback<br>
 **Next resume action:** Continue the next bounded interoperability or transport gap while retaining provider, rollback, and Asterisk-fallback gates
@@ -5394,6 +5394,27 @@ blockers: PRACK retransmission implementation and final validation are still in 
 next_action: Finish the remaining media/WebSocket/combined/soak and fuzz validation, run final formatting/diff/workspace checks, commit and push the implementation, focused tests, and CP-151 normally, then open PR #52 against prack-runtime and verify local/origin/GitHub parity plus hosted checks.
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; discard or supersede this documentation expansion only through a later checkpoint that preserves the explicit non-real-time acceptance gates.
 notes: This checkpoint changes the goal contract only; it does not claim that the newly listed control-plane, post-call, recovery, observability, or rollout capabilities have been implemented. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-152 — PRACK retransmission locally green with expanded goal scope
+
+~~~yaml
+checkpoint_id: CP-152
+recorded_at_utc: 2026-08-31T08:24:04Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Reliable provisional SIP responses (PRACK/100rel) and Asterisk fallback
+scope: Commit reliable-provisional retransmission/backoff/timeout handling, PRACK cancellation, reliable-transport behavior, call-engine cleanup, and focused regressions under the expanded goal contract
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-52
+branch: prack-retransmission
+base_branch: prack-runtime
+pr: pending #52 publication
+head_sha: f7e7f2f83, preceded by goal-scope commit 35147fd90
+evidence: Focused call-engine tests pass (21) and sip-transaction tests pass (11); the locked workspace suite passes 244 tests. Formatting, workspace Clippy, and diff checks pass with the established documentation/pedantic warnings. All three pinned Docker-backed SIPp scenarios pass. Deterministic 64-stream RTP/media, 64-stream WebSocket-media, 64-call combined signaling/media, and mixed lifecycle-soak smokes pass with zero final logical resources; all six nightly address-sanitizer fuzz-target checks pass. The goal now also records non-real-time control-plane, lifecycle/event, replay/post-call, failure/recovery, observability/security, and rollout/rollback acceptance targets.
+blockers: Hosted validation and PR publication remain pending. Real Asterisk/provider interoperability, production credentials, live traffic, rollout execution, and rollback proof remain future evidence gates.
+next_action: Push prack-retransmission explicitly as its own remote branch, open PR #52 targeting prack-runtime, then verify exact local/origin/GitHub SHA parity and the complete ordinary hosted suite on the final head.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #52 or revert f7e7f2f83 if the reliable-provisional retransmission contract is superseded.
+notes: Relevant timer, PRACK-stop, timeout, reliable-transport, stale-final-response, and lifecycle-cleanup tests ship with the behavior. Every pull request and push to aistack/main runs the same complete hosted suite rather than affected-module-only selection; scheduled/manual jobs add larger capacity and soak tiers. All workflow runners remain hosted ubuntu-latest, and Docker remains limited to pinned SIPp inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
