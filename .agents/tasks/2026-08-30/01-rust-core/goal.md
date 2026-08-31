@@ -4997,6 +4997,27 @@ rollback: Keep all signaling, media, and call routing on Asterisk; do not enable
 notes: Relevant tests must ship in this PR and cover missing authentication policy, unavailable credentials, fresh per-challenge resolution, stale=true with a rotated credential, retry bounds, password/reference redaction, successful authenticated completion, and unchanged engine state on all rejected inputs. No credential values, provider configuration, production routing, or live traffic may be added or changed.
 ~~~
 
+### CP-136 — provider-policy Digest credential resolution locally green
+
+~~~yaml
+checkpoint_id: CP-136
+recorded_at_utc: 2026-08-31T06:19:51Z
+status: local_green
+phase: Phase 1 — Rust media engine
+milestone: Provider-policy outbound SIP Digest credential resolution and rotation
+scope: Implement and locally verify lazy per-challenge resolution of provider-routing AuthenticationPolicy::Digest references, including atomic unavailable-policy and unavailable-credential failures, stale-nonce credential rotation, duplicate replay, retry bounds, and successful authenticated completion
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-47
+branch: provider-digest-runtime
+base_branch: outbound-digest-auth
+pr: pending #47 publication
+head_sha: 7bd776b1c903770089ba117c5a8f0328a3c1bd35 plus uncommitted implementation
+evidence: CallRuntime now exposes a secret-opaque DigestCredentialResolver boundary and consumes AuthenticationPolicy::Digest only when CallEngine determines that a genuinely new authenticated INVITE retry is required. CallEngine accepts a lazy owned-credential resolver while preserving the existing borrowed-credential API without cloning secrets. Missing policy and unavailable current credentials have distinct errors and leave call, transaction, and retry state unchanged. Malformed or rejected challenges, duplicate ACK replay, and retries beyond the configured bound do not call the resolver. A synthetic stale=true challenge resolves a rotated credential for the second retry, and credentials plus credential references are not retained or exposed through runtime, engine, policy, or error debug output. Three directly relevant regressions ship with the code. Strict call-runtime Clippy passes with warnings denied; focused locked call-engine and call-runtime suites pass all 46 tests. Formatting, all 229 locked workspace tests, repository-standard workspace Clippy, diff checks, all three pinned Docker-backed SIPp scenarios, all six address-sanitizer fuzz-target compile checks, and ordinary signaling, RTP-media, WebSocket-media, combined, and short lifecycle-soak reclamation smokes pass. Established repository documentation and call-engine pedantic Clippy warnings remain non-blocking and unchanged in character
+blockers: This proves only provider-policy resolution, rotation, retry gating, and stale-nonce mechanics with synthetic local credentials. It does not integrate a real secret store, validate real provider configuration or credentials, establish carrier/Asterisk interoperability, prove a carrier stale-nonce exchange, execute rollback, or authorize Rust traffic. Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Commit and push the implementation, tests, dependency wiring, and CP-136 normally; open stacked PR #47 against outbound-digest-auth; then verify local, origin, and GitHub head parity plus the complete ordinary hosted suite
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #47 or revert the provider-policy credential resolver integration if its contract is superseded
+notes: Relevant tests ship with the behavior they cover. Every pull request and push to aistack/main runs the complete ordinary hosted suite rather than affected-module-only selection. All workflow runners remain hosted ubuntu-latest, and Docker remains limited to pinned SIPp inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
 ## 59.4 Stacked-PR Checkpoints
 
 Each PR should leave a green checkpoint before the next PR depends on it:

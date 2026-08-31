@@ -74,6 +74,7 @@ dependencies = [
  "dtmf",
  "media-core",
  "media-runtime",
+ "provider-routing",
  "rtcp",
  "rtp",
  "sip-auth",
