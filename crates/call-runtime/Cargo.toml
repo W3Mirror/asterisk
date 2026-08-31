@@ -14,6 +14,7 @@ dtmf = { path = "../dtmf" }
 media-core = { path = "../media-core" }
 media-runtime = { path = "../media-runtime" }
 rtcp = { path = "../rtcp" }
+sip-auth = { path = "../sip-auth" }
 sip-transaction = { path = "../sip-transaction" }
 sip-transport = { path = "../sip-transport" }
 sip-types = { path = "../sip-types" }

@@ -239,6 +239,12 @@ impl ClientTransaction {
         &self.request
     }
 
+    /// Returns whether this transaction uses a reliable or unreliable transport.
+    #[must_use]
+    pub fn reliability(&self) -> TransportReliability {
+        self.reliability
+    }
+
     fn transition(&mut self, next: ClientState, actions: &mut Vec<ClientAction>) {
         if self.state == next {
             return;

@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-130 — PR #45 two-hour hosted lifecycle soak green
-**Last checkpoint (UTC):** 2026-08-31T05:29:05Z
+**Current checkpoint:** CP-132 — outbound SIP Digest integration locally green
+**Last checkpoint (UTC):** 2026-08-31T05:53:04Z
 **Active phase:** Phase 1 — Rust media engine
-**Active milestone:** Repeated mixed call-lifecycle soak and stable post-cycle resource bounds<br>
-**Next resume action:** Push the CP-130 evidence reconciliation, verify the complete ordinary hosted suite on its documentation-only final head, then select the next bounded offline goal gap while keeping Rust traffic disabled and Asterisk as fallback
-**Active PR:** [#45](https://github.com/W3Mirror/asterisk/pull/45) — `lifecycle-soak` targets `combined-load-smoke`
+**Active milestone:** Provider-neutral outbound SIP Digest challenge/retry integration<br>
+**Next resume action:** Commit and push the locally green outbound Digest implementation normally, open stacked PR #46 against `lifecycle-soak`, then verify the complete hosted suite on its exact head
+**Active PR:** pending #46 — `outbound-digest-auth` targets `lifecycle-soak`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-45`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-46`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -1745,6 +1745,15 @@ cargo clippy
 cargo test
 ```
 
+Tests are part of each implementation slice, not deferred until real-time
+end-to-end calling is available. Every behavior change must add or update the
+smallest relevant unit and state-machine tests, plus module integration,
+shared API/event contract, protocol fixture, malformed/adversarial input,
+property/fuzz, and load/reclamation/soak coverage wherever that behavior
+crosses those boundaries. Real Asterisk/provider calls remain a separate
+pre-traffic evidence gate; their absence must not defer deterministic offline
+coverage that can be shipped with the code.
+
 Additionally:
 
 - parser unit tests;
@@ -2675,6 +2684,7 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 43 | [#43](https://github.com/W3Mirror/asterisk/pull/43) | `signaling-capacity-matrix` | `websocket-load-smoke` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-43` | Exact scheduled 1,000/5,000/10,000 in-memory signaling concurrency matrix with bounded logical reclamation and best-effort process observations | hosted green | `7a6938e98` | CP-119–CP-122; two directly relevant regressions, all 12 load-smoke tests, all 215 workspace tests, the complete local verification matrix, ordinary/manual hosted runs, and final-head run `33351327106` pass; PR #43 is OPEN/non-draft/CLEAN against the exact base with local/origin/GitHub parity | Review and merge in stack order; retain Asterisk fallback and all traffic-enablement gates |
 | 44 | [#44](https://github.com/W3Mirror/asterisk/pull/44) | `combined-load-smoke` | `signaling-capacity-matrix` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-44` | Bounded in-memory combined SIP call plus RTP/jitter/AI-media lifecycle, reclamation, and capacity-reuse smoke for ordinary and scheduled CI | hosted green | `2e72b96ce` | CP-122–CP-126; three directly relevant regressions, all 15 load-smoke tests, all 218 workspace tests, the complete local verification matrix, and final-head run `33352395438` pass; PR #44 is OPEN/non-draft/CLEAN against the exact base with local/origin/GitHub parity | Review and merge in stack order; retain Asterisk fallback and all traffic-enablement gates |
 | 45 | [#45](https://github.com/W3Mirror/asterisk/pull/45) | `lifecycle-soak` | `combined-load-smoke` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-45` | Repeated mixed answered, rejected, and cancelled call lifecycles with media work, exact logical reclamation, stable descriptor/thread bounds, and post-warmup resident-memory observations | hosted green | `1bcacd853` before CP-130 evidence reconciliation | CP-126–CP-130; four directly relevant soak regressions, all 19 load-smoke tests, all 222 workspace tests, local SIPp, sanitizer fuzz checks, ordinary/extended load tiers, and standalone strict-resource probes pass; final ordinary run 33353745023 passed, and manual run 33353926272 passed the full suite, exact signaling matrix, and two-hour lifecycle soak with zero final logical resources, stable descriptors/threads, and 225,280-byte post-warmup RSS range | Push CP-130, verify ordinary CI on its final documentation head, then continue the next bounded offline goal gap without enabling Rust traffic |
+| 46 | pending | `outbound-digest-auth` | `lifecycle-soak` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-46` | Provider-neutral bounded outbound INVITE handling for 401/407 Digest challenges, authenticated retry, and exact call/transaction lifecycle preservation | local green | `be6d72fa0` exact base plus uncommitted implementation | CP-131–CP-132; four directly relevant regressions and all 226 locked workspace tests pass together with the complete local ordinary/load/fuzz verification matrix | Commit and push normally, open stacked PR #46 against `lifecycle-soak`, and verify the complete hosted suite on its exact head |
 
 ### CP-026 — PR10 published and stacked remote parity verified
 
@@ -4879,6 +4889,48 @@ blockers: This is now real multi-hour hosted same-process stability evidence, bu
 next_action: Push this CP-130 evidence reconciliation and verify the complete ordinary hosted suite on the resulting documentation-only final head; then continue the next bounded offline goal gap without treating this soak as provider or production readiness
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #45 or remove the lifecycle-soak job if the deterministic soak contract is superseded
 notes: The two-hour evidence is tied to the exact executable head 1bcacd853; this CP-130 commit changes only the append-only goal ledger. Relevant tests ship with the implementation, every PR and aistack/main push runs the full ordinary hosted suite including the short soak, all runners remain hosted ubuntu-latest, and Docker is limited to pinned SIPp inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-131 — outbound SIP Digest integration slice started
+
+~~~yaml
+checkpoint_id: CP-131
+recorded_at_utc: 2026-08-31T05:35:52Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Provider-neutral outbound SIP Digest challenge/retry integration
+scope: Connect the existing bounded SIP Digest primitives to outbound INVITE lifecycle handling so a 401 or 407 challenge can be acknowledged and retried atomically with explicit caller-supplied credentials, a new transaction branch, incremented CSeq, and the correct authorization header
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-46
+branch: outbound-digest-auth
+base_branch: lifecycle-soak
+pr: pending #46 publication
+head_sha: be6d72fa0dbdd04cad764587f381b64ba6fc8ac0 before implementation
+evidence: PR #45 is OPEN/non-draft/CLEAN at exact final head be6d72fa0 with local, origin, and GitHub parity. Final-head run 33360738676 passed Workspace checks including the short soak in 1 minute, Protocol fuzz checks in 50 seconds, and Dependency audit in 2 minutes 41 seconds. Its executable-head manual run 33353926272 passed the full ordinary suite, exact signaling matrix, and two-hour lifecycle soak. Code inspection confirms sip-auth and provider-routing describe bounded Digest credentials/policy, but call-engine and call-runtime do not consume WWW-Authenticate or Proxy-Authenticate and currently terminate an outbound call on 401/407. Remote branch outbound-digest-auth and required tracked worktree /home/ashutosh/.worktrees/w3mirror/asterisk/pr-46 were created from exact verified base be6d72fa0
+blockers: This slice can prove provider-neutral challenge handling only. It cannot supply real provider credentials, establish provider-specific identity/auth policy, prove Asterisk/carrier interoperability, or authorize Rust traffic. Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Implement an explicit bounded authenticated-response operation that leaves engine state atomic on malformed/missing challenges or invalid retry inputs and preserves the outbound call across the new authenticated INVITE transaction
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; delete or close the unmerged outbound-digest-auth branch/PR if the contract is superseded
+notes: Relevant tests must ship in this PR and cover WWW and Proxy challenges, qop/non-qop construction, duplicate challenge response ACK behavior, successful authenticated completion, and error atomicity without exposing passwords. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-132 — outbound SIP Digest integration locally green
+
+~~~yaml
+checkpoint_id: CP-132
+recorded_at_utc: 2026-08-31T05:53:04Z
+status: local_green
+phase: Phase 1 — Rust media engine
+milestone: Provider-neutral outbound SIP Digest challenge/retry integration
+scope: Implement and locally verify atomic bounded 401/407 handling for outbound INVITEs, including failed-response ACKs, authenticated replacement transactions, retry accounting, runtime delivery, and terminal reclamation
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-46
+branch: outbound-digest-auth
+base_branch: lifecycle-soak
+pr: pending #46 publication
+head_sha: be6d72fa0dbdd04cad764587f381b64ba6fc8ac0 plus uncommitted implementation
+evidence: CallEngine now accepts explicit borrowed Digest credentials for matching 401/407 responses, maps WWW-Authenticate to Authorization and Proxy-Authenticate to Proxy-Authorization, ACKs each failed INVITE using the original branch, retries with the same Call-ID, From tag, request URI, body, and other headers, increments CSeq, allocates a new unique Via branch, strips prior authorization headers, preserves Via parameters, and commits no state on any error. Duplicate challenges replay only their ACK, retries are bounded per logical call, and retry accounting is reclaimed with the terminal call. CallRuntime exposes an explicit transport operation that delivers the ACK and authenticated retry without retaining credentials. Four directly relevant tests cover WWW plus qop verification and duplicate replay, Proxy without qop plus the two-retry bound, malformed and missing-qop-input atomicity/password redaction, and real UDP runtime delivery through authenticated 200 completion; configuration rejects a zero retry bound. Focused call-engine, call-runtime, and sip-transaction tests pass. All 226 locked workspace tests, formatting, repository-standard workspace Clippy across all targets, diff checks, all three pinned Docker-backed SIPp scenarios, all six address-sanitizer fuzz-target compile checks, and ordinary signaling, RTP-media, WebSocket-media, combined, and lifecycle-soak reclamation smokes pass with zero final logical resources. Established repository documentation and pedantic Clippy warnings remain non-blocking; the new Digest operation introduces no too-many-lines warning
+blockers: This proves only provider-neutral deterministic challenge handling with synthetic credentials and local UDP. It does not supply or validate real provider credentials, provider identity policy, stale-nonce behavior against a carrier, Asterisk/carrier interoperability, sanitized real-call captures, rollback execution, or production readiness. Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Commit and push the implementation, tests, dependency wiring, and CP-131–CP-132 normally; open stacked PR #46 against lifecycle-soak; then verify local, origin, and GitHub head parity plus the complete ordinary hosted suite
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #46 or revert the provider-neutral Digest integration if its API or lifecycle contract is superseded
+notes: Relevant tests ship with the behavior they cover. Every pull request and push to aistack/main runs the complete ordinary hosted suite rather than affected-module-only selection. All workflow runners remain hosted ubuntu-latest, and Docker remains limited to pinned SIPp inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints

@@ -18,6 +18,7 @@ use call_api::{
     ApiError, CallCommand, CallRegistry, CallRegistryConfig, CallSnapshot, NegotiatedAudio,
 };
 use call_core::{CallId, CallState, LifecycleEvent};
+use sip_auth::{DigestAuthorization, DigestChallenge, DigestCredentials, DigestError};
 use sip_dialog::{Dialog, DialogConfig, DialogError, DialogState};
 use sip_transaction::{
     ClientAction, ClientState, ClientTransaction, ServerAction, ServerState, ServerTransaction,
@@ -27,6 +28,7 @@ use sip_types::{Headers, SipMessage, SipMethod, SipRequest, SipResponse};
 
 const DEFAULT_MAX_TRANSACTIONS: usize = 8_192;
 const DEFAULT_MAX_BRANCH_BYTES: usize = 256;
+const DEFAULT_MAX_DIGEST_RETRIES_PER_CALL: usize = 2;
 
 /// Bounds and protocol settings for a [`CallEngine`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -39,6 +41,8 @@ pub struct EngineConfig {
     pub timers: TimerConfig,
     /// Maximum number of live client and server transactions combined.
     pub max_transactions: usize,
+    /// Maximum authenticated INVITE retries accepted for one outbound call.
+    pub max_digest_retries_per_call: usize,
 }
 
 impl Default for EngineConfig {
@@ -48,6 +52,7 @@ impl Default for EngineConfig {
             dialog: DialogConfig::default(),
             timers: TimerConfig::default(),
             max_transactions: DEFAULT_MAX_TRANSACTIONS,
+            max_digest_retries_per_call: DEFAULT_MAX_DIGEST_RETRIES_PER_CALL,
         }
     }
 }
@@ -55,6 +60,7 @@ impl Default for EngineConfig {
 impl EngineConfig {
     fn validate(self) -> Result<Self, EngineError> {
         if self.max_transactions == 0
+            || self.max_digest_retries_per_call == 0
             || self.dialog.max_field_bytes == 0
             || self.dialog.max_route_entries == 0
             || self.timers.t1.is_zero()
@@ -92,6 +98,10 @@ pub enum EngineError {
     NotInboundInvite,
     /// The supplied status code cannot be used for the requested operation.
     InvalidResponseStatus,
+    /// The outbound call reached its configured Digest retry bound.
+    DigestRetryLimitReached,
+    /// A SIP Digest challenge or authorization could not be processed.
+    Digest(DigestError),
     /// The call-control registry rejected an operation.
     CallApi(ApiError),
     /// The SIP dialog rejected a message or transition.
@@ -124,6 +134,10 @@ impl Display for EngineError {
             Self::InvalidResponseStatus => {
                 formatter.write_str("response status is invalid for this operation")
             }
+            Self::DigestRetryLimitReached => {
+                formatter.write_str("outbound call reached its SIP Digest retry limit")
+            }
+            Self::Digest(error) => Display::fmt(error, formatter),
             Self::CallApi(error) => Display::fmt(error, formatter),
             Self::Dialog(error) => Display::fmt(error, formatter),
             Self::Transaction(error) => Display::fmt(error, formatter),
@@ -137,6 +151,7 @@ impl Error for EngineError {
             Self::CallApi(error) => Some(error),
             Self::Dialog(error) => Some(error),
             Self::Transaction(error) => Some(error),
+            Self::Digest(error) => Some(error),
             _ => None,
         }
     }
@@ -157,6 +172,12 @@ impl From<DialogError> for EngineError {
 impl From<TransactionError> for EngineError {
     fn from(error: TransactionError) -> Self {
         Self::Transaction(error)
+    }
+}
+
+impl From<DigestError> for EngineError {
+    fn from(error: DigestError) -> Self {
+        Self::Digest(error)
     }
 }
 
@@ -222,6 +243,7 @@ pub struct CallEngine {
     server_calls: HashMap<String, CallId>,
     final_invites: HashMap<String, FinalInvite>,
     final_server_invites: HashMap<String, FinalServerInvite>,
+    digest_retries: HashMap<CallId, usize>,
     next_local_tag: u64,
     next_branch: u64,
 }
@@ -263,6 +285,7 @@ impl CallEngine {
             server_calls: HashMap::new(),
             final_invites: HashMap::new(),
             final_server_invites: HashMap::new(),
+            digest_retries: HashMap::new(),
             next_local_tag: 1,
             next_branch: 1,
         })
@@ -345,6 +368,7 @@ impl CallEngine {
 
         self.remove_final_invites_for_call(id);
         self.remove_final_server_invites_for_call(id);
+        self.digest_retries.remove(id);
         Ok(snapshot)
     }
 
@@ -605,6 +629,192 @@ impl CallEngine {
         }
 
         self.finish(output_actions)
+    }
+
+    /// Receives an outbound INVITE authentication challenge and starts one
+    /// bounded authenticated retry without ending the logical call.
+    ///
+    /// The caller supplies credentials and qop inputs explicitly; the engine
+    /// does not retain either. A duplicate challenge retransmission only
+    /// replays its transaction ACK and never consumes another retry.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the response is not a matching 401/407 INVITE
+    /// challenge, Digest construction fails, a resource bound is reached, or
+    /// the replacement transaction cannot be built. Every error leaves the
+    /// engine unchanged.
+    pub fn receive_digest_challenge(
+        &mut self,
+        response: SipResponse,
+        now: Duration,
+        credentials: &DigestCredentials,
+        cnonce: Option<&str>,
+        nonce_count: Option<u32>,
+    ) -> Result<EngineOutput, EngineError> {
+        let mut working = self.clone();
+        let output = working.receive_digest_challenge_inner(
+            response,
+            now,
+            credentials,
+            cnonce,
+            nonce_count,
+        )?;
+        *self = working;
+        Ok(output)
+    }
+
+    fn receive_digest_challenge_inner(
+        &mut self,
+        response: SipResponse,
+        now: Duration,
+        credentials: &DigestCredentials,
+        cnonce: Option<&str>,
+        nonce_count: Option<u32>,
+    ) -> Result<EngineOutput, EngineError> {
+        let (challenge_header, authorization_header) = digest_header_names(response.status_code)?;
+        let key = invite_response_key(&response)?;
+
+        if let Some(final_invite) = self.final_invites.get(&key).cloned() {
+            return self.replay_digest_challenge_ack(&final_invite, &response);
+        }
+
+        let mut transaction = self
+            .client_transactions
+            .get(&key)
+            .cloned()
+            .ok_or(EngineError::UnknownTransaction)?;
+        let request = transaction.request().clone();
+        if request.method != SipMethod::Invite {
+            return Err(EngineError::UnsupportedRequest);
+        }
+        let destination = self
+            .client_destinations
+            .get(&key)
+            .copied()
+            .ok_or(EngineError::UnknownTransaction)?;
+        let call_id = self
+            .client_calls
+            .get(&key)
+            .cloned()
+            .ok_or(EngineError::UnknownTransaction)?;
+        let dialog = self
+            .dialogs
+            .get(&call_id)
+            .cloned()
+            .ok_or(EngineError::UnknownDialog)?;
+        let retry_count = self.available_digest_retry_count(&call_id)?;
+
+        let challenge =
+            DigestChallenge::parse(required_header(&response.headers, challenge_header)?)?;
+        let mut validation_dialog = dialog.clone();
+        let _ = validation_dialog.receive_response(&response)?;
+        let _ = transaction.on_response(&response, now)?;
+
+        if !matches!(transaction.state(), ClientState::Terminated)
+            && self.transaction_count() >= self.config.max_transactions
+        {
+            return Err(EngineError::TransactionLimitReached);
+        }
+
+        let mut next_branch = self.next_branch;
+        let retry_branch = self.allocate_unique_client_branch(&mut next_branch)?;
+        let retry_request = build_digest_retry_request(
+            &request,
+            &retry_branch,
+            authorization_header,
+            &challenge,
+            credentials,
+            cnonce,
+            nonce_count,
+        )?;
+        let retry_key = transaction_key(&retry_branch, &SipMethod::Invite);
+        self.ensure_new_transaction(&retry_key)?;
+        let retry_dialog = Dialog::from_uac_request(&retry_request, self.config.dialog)?;
+        let retry_transaction = ClientTransaction::new(
+            retry_request.clone(),
+            now,
+            transaction.reliability(),
+            self.config.timers,
+        )?;
+        let ack = build_ack(&mut next_branch, &request, &response, &dialog, false)?;
+        let next_retry_count = retry_count
+            .checked_add(1)
+            .ok_or(EngineError::DigestRetryLimitReached)?;
+
+        if matches!(transaction.state(), ClientState::Terminated) {
+            self.remove_client_transaction(&key);
+        } else {
+            self.client_transactions.insert(key.clone(), transaction);
+        }
+        self.final_invites.insert(
+            key,
+            FinalInvite {
+                request,
+                response,
+                destination,
+                call_id: call_id.clone(),
+                dialog,
+                successful: false,
+            },
+        );
+        self.client_transactions
+            .insert(retry_key.clone(), retry_transaction);
+        self.client_destinations
+            .insert(retry_key.clone(), destination);
+        self.client_calls.insert(retry_key, call_id.clone());
+        self.dialogs.insert(call_id.clone(), retry_dialog);
+        self.digest_retries.insert(call_id, next_retry_count);
+        self.next_branch = next_branch;
+
+        self.finish(vec![
+            SendAction {
+                destination,
+                message: SipMessage::Request(ack),
+            },
+            SendAction {
+                destination,
+                message: SipMessage::Request(retry_request),
+            },
+        ])
+    }
+
+    fn replay_digest_challenge_ack(
+        &mut self,
+        final_invite: &FinalInvite,
+        response: &SipResponse,
+    ) -> Result<EngineOutput, EngineError> {
+        if final_invite.successful
+            || final_invite.response.status_code != response.status_code
+            || required_header(&response.headers, "Call-ID")?
+                != required_header(&final_invite.response.headers, "Call-ID")?
+            || required_header(&response.headers, "CSeq")?
+                != required_header(&final_invite.response.headers, "CSeq")?
+        {
+            return Err(EngineError::UnknownTransaction);
+        }
+        let mut next_branch = self.next_branch;
+        let ack = build_ack(
+            &mut next_branch,
+            &final_invite.request,
+            response,
+            &final_invite.dialog,
+            false,
+        )?;
+        self.next_branch = next_branch;
+        self.finish(vec![SendAction {
+            destination: final_invite.destination,
+            message: SipMessage::Request(ack),
+        }])
+    }
+
+    fn available_digest_retry_count(&self, call_id: &CallId) -> Result<usize, EngineError> {
+        let retry_count = self.digest_retries.get(call_id).copied().unwrap_or(0);
+        if retry_count >= self.config.max_digest_retries_per_call {
+            Err(EngineError::DigestRetryLimitReached)
+        } else {
+            Ok(retry_count)
+        }
     }
 
     /// Sends a provisional or final response to an inbound INVITE.
@@ -1119,6 +1329,18 @@ impl CallEngine {
         Ok(format!("rust-{sequence}"))
     }
 
+    fn allocate_unique_client_branch(&self, next_branch: &mut u64) -> Result<String, EngineError> {
+        loop {
+            let sequence = *next_branch;
+            *next_branch = sequence.checked_add(1).ok_or(EngineError::InvalidConfig)?;
+            let branch = format!("z9hG4bKrust-auth-{sequence}");
+            let key = transaction_key(&branch, &SipMethod::Invite);
+            if self.ensure_new_transaction(&key).is_ok() {
+                return Ok(branch);
+            }
+        }
+    }
+
     fn ensure_transaction_capacity(&self) -> Result<(), EngineError> {
         if self.transaction_count() >= self.config.max_transactions {
             Err(EngineError::TransactionLimitReached)
@@ -1225,6 +1447,154 @@ fn validate_request_cseq(headers: &Headers, method: &SipMethod) -> Result<(), En
         return Err(EngineError::InvalidCSeq);
     }
     Ok(())
+}
+
+fn digest_header_names(status_code: u16) -> Result<(&'static str, &'static str), EngineError> {
+    match status_code {
+        401 => Ok(("WWW-Authenticate", "Authorization")),
+        407 => Ok(("Proxy-Authenticate", "Proxy-Authorization")),
+        _ => Err(EngineError::InvalidResponseStatus),
+    }
+}
+
+fn invite_response_key(response: &SipResponse) -> Result<String, EngineError> {
+    let branch = transaction_branch(&response.headers)?;
+    let method = cseq_method(&response.headers)?;
+    if method != SipMethod::Invite {
+        return Err(EngineError::UnsupportedRequest);
+    }
+    Ok(transaction_key(&branch, &method))
+}
+
+fn build_digest_retry_request(
+    request: &SipRequest,
+    branch: &str,
+    authorization_header: &'static str,
+    challenge: &DigestChallenge,
+    credentials: &DigestCredentials,
+    cnonce: Option<&str>,
+    nonce_count: Option<u32>,
+) -> Result<SipRequest, EngineError> {
+    let authorization = DigestAuthorization::from_credentials(
+        credentials,
+        challenge,
+        request.method.as_str(),
+        &request.request_uri,
+        &request.body,
+        cnonce,
+        nonce_count,
+    )?;
+    build_authenticated_invite(
+        request,
+        branch,
+        authorization_header,
+        &authorization.to_header_value(),
+    )
+}
+
+fn build_authenticated_invite(
+    request: &SipRequest,
+    branch: &str,
+    authorization_header: &'static str,
+    authorization_value: &str,
+) -> Result<SipRequest, EngineError> {
+    let next_cseq = invite_cseq(&request.headers)?
+        .checked_add(1)
+        .ok_or(EngineError::InvalidCSeq)?;
+    let mut headers = Headers::new();
+    let mut replaced_via = false;
+    let mut replaced_cseq = false;
+
+    for header in request.headers.iter() {
+        if header.name.eq_ignore_ascii_case("Authorization")
+            || header.name.eq_ignore_ascii_case("Proxy-Authorization")
+        {
+            continue;
+        }
+        if header.name.eq_ignore_ascii_case("Via") || header.name.eq_ignore_ascii_case("v") {
+            if replaced_via {
+                headers.push(header.name.clone(), header.value.clone());
+            } else {
+                headers.push(
+                    header.name.clone(),
+                    replace_top_via_branch(&header.value, branch)?,
+                );
+                replaced_via = true;
+            }
+            continue;
+        }
+        if header.name.eq_ignore_ascii_case("CSeq") || header.name.eq_ignore_ascii_case("c") {
+            if !replaced_cseq {
+                headers.push(header.name.clone(), format!("{next_cseq} INVITE"));
+                replaced_cseq = true;
+            }
+            continue;
+        }
+        headers.push(header.name.clone(), header.value.clone());
+    }
+
+    if !replaced_via {
+        return Err(EngineError::MissingHeader("Via"));
+    }
+    if !replaced_cseq {
+        return Err(EngineError::MissingHeader("CSeq"));
+    }
+    headers.push(authorization_header, authorization_value);
+    Ok(SipRequest {
+        method: SipMethod::Invite,
+        request_uri: request.request_uri.clone(),
+        version: request.version.clone(),
+        headers,
+        body: request.body.clone(),
+    })
+}
+
+fn invite_cseq(headers: &Headers) -> Result<u32, EngineError> {
+    let value = required_header(headers, "CSeq")?;
+    let mut fields = value.split_whitespace();
+    let sequence = fields
+        .next()
+        .and_then(|value| value.parse::<u32>().ok())
+        .ok_or(EngineError::InvalidCSeq)?;
+    let method = fields
+        .next()
+        .and_then(SipMethod::parse)
+        .ok_or(EngineError::InvalidCSeq)?;
+    if method != SipMethod::Invite || fields.next().is_some() {
+        return Err(EngineError::InvalidCSeq);
+    }
+    Ok(sequence)
+}
+
+fn replace_top_via_branch(value: &str, branch: &str) -> Result<String, EngineError> {
+    let (top_via, remainder) = value
+        .split_once(',')
+        .map_or((value, None), |(top, rest)| (top, Some(rest)));
+    let mut parts = top_via.split(';');
+    let sent_by = parts.next().unwrap_or_default().trim();
+    if sent_by.is_empty() {
+        return Err(EngineError::InvalidBranch);
+    }
+    let mut rewritten = sent_by.to_owned();
+    for parameter in parts {
+        let parameter = parameter.trim();
+        if parameter.is_empty()
+            || parameter
+                .split_once('=')
+                .is_some_and(|(name, _)| name.trim().eq_ignore_ascii_case("branch"))
+        {
+            continue;
+        }
+        rewritten.push(';');
+        rewritten.push_str(parameter);
+    }
+    rewritten.push_str(";branch=");
+    rewritten.push_str(branch);
+    if let Some(remainder) = remainder {
+        rewritten.push(',');
+        rewritten.push_str(remainder);
+    }
+    Ok(rewritten)
 }
 
 fn transaction_key(branch: &str, method: &SipMethod) -> String {
@@ -1411,6 +1781,76 @@ mod tests {
         }
     }
 
+    fn digest_challenge(
+        request: &SipRequest,
+        status_code: u16,
+        header_name: &str,
+        header_value: &str,
+    ) -> SipResponse {
+        let mut headers = Headers::new();
+        headers.push("Via", request.headers.get("Via").unwrap());
+        headers.push("From", request.headers.get("From").unwrap());
+        headers.push("To", "Bob <sip:bob@example.com>;tag=digest-peer");
+        headers.push("Call-ID", request.headers.get("Call-ID").unwrap());
+        headers.push("CSeq", request.headers.get("CSeq").unwrap());
+        headers.push(header_name, header_value);
+        SipResponse {
+            version: "SIP/2.0".to_owned(),
+            status_code,
+            reason: if status_code == 401 {
+                "Unauthorized"
+            } else {
+                "Proxy Authentication Required"
+            }
+            .to_owned(),
+            headers,
+            body: Vec::new(),
+        }
+    }
+
+    fn successful_response(request: &SipRequest) -> SipResponse {
+        let mut headers = Headers::new();
+        headers.push("Via", request.headers.get("Via").unwrap());
+        headers.push("From", request.headers.get("From").unwrap());
+        headers.push("To", "Bob <sip:bob@example.com>;tag=authenticated-peer");
+        headers.push("Call-ID", request.headers.get("Call-ID").unwrap());
+        headers.push("CSeq", request.headers.get("CSeq").unwrap());
+        headers.push("Contact", "<sip:bob@127.0.0.1:5070>");
+        SipResponse {
+            version: "SIP/2.0".to_owned(),
+            status_code: 200,
+            reason: "OK".to_owned(),
+            headers,
+            body: Vec::new(),
+        }
+    }
+
+    fn complete_and_reclaim_authenticated_call(
+        engine: &mut CallEngine,
+        call_id: &CallId,
+        retry: &SipRequest,
+    ) {
+        let completed = engine
+            .receive_response(successful_response(retry), Duration::from_millis(20))
+            .unwrap();
+        assert!(matches!(
+            completed.actions()[0].message,
+            SipMessage::Request(SipRequest {
+                method: SipMethod::Ack,
+                ..
+            })
+        ));
+        assert_eq!(engine.snapshot(call_id).unwrap().state, CallState::Answered);
+        engine
+            .apply_call_command(call_id, CallCommand::Hangup)
+            .unwrap();
+        engine
+            .apply_call_command(call_id, CallCommand::End)
+            .unwrap();
+        engine.reclaim_terminal_call(call_id).unwrap();
+        assert!(!engine.digest_retries.contains_key(call_id));
+    }
+
     #[test]
     fn inbound_invite_is_bounded_answered_and_acknowledged() {
         let mut engine = CallEngine::new(EngineConfig::default()).unwrap();
@@ -1545,6 +1985,273 @@ mod tests {
             engine.snapshot(&call_id).unwrap().state,
             CallState::Answered
         );
+    }
+
+    #[test]
+    fn www_digest_challenge_retries_invite_and_duplicate_only_replays_ack() {
+        let mut engine = CallEngine::new(EngineConfig::default()).unwrap();
+        let mut request = invite(
+            "digest-www",
+            "sip-call-digest-www",
+            "Bob <sip:bob@example.com>",
+            "7 INVITE",
+        );
+        request.headers.push("Authorization", "Digest stale-value");
+        request.body = b"v=0\r\n".to_vec();
+        let destination = address(5061);
+        let (call_id, _) = engine
+            .originate(
+                request.clone(),
+                destination,
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        let challenge_value =
+            r#"Digest realm="carrier", nonce="nonce-1", qop="auth", opaque="opaque-1""#;
+        let challenge = digest_challenge(&request, 401, "WWW-Authenticate", challenge_value);
+        let credentials = DigestCredentials::new("alice", "never-log-this-password");
+
+        let output = engine
+            .receive_digest_challenge(
+                challenge.clone(),
+                Duration::from_millis(10),
+                &credentials,
+                Some("client-nonce"),
+                Some(1),
+            )
+            .unwrap();
+
+        assert_eq!(output.actions().len(), 2);
+        assert!(output.events().is_empty());
+        let SipMessage::Request(ack) = &output.actions()[0].message else {
+            panic!("expected challenge ACK");
+        };
+        assert_eq!(ack.method, SipMethod::Ack);
+        assert_eq!(ack.headers.get("Via"), request.headers.get("Via"));
+        let SipMessage::Request(retry) = &output.actions()[1].message else {
+            panic!("expected authenticated INVITE");
+        };
+        assert_eq!(retry.method, SipMethod::Invite);
+        assert_eq!(retry.request_uri, request.request_uri);
+        assert_eq!(retry.body, request.body);
+        assert_eq!(retry.headers.get("From"), request.headers.get("From"));
+        assert_eq!(retry.headers.get("Call-ID"), request.headers.get("Call-ID"));
+        assert_eq!(retry.headers.get("CSeq"), Some("8 INVITE"));
+        assert_ne!(retry.headers.get("Via"), request.headers.get("Via"));
+        assert!(retry.headers.get("Proxy-Authorization").is_none());
+        let authorization =
+            DigestAuthorization::parse(retry.headers.get("Authorization").unwrap()).unwrap();
+        let parsed_challenge = DigestChallenge::parse(challenge_value).unwrap();
+        assert!(authorization.verify_against(
+            &parsed_challenge,
+            &credentials,
+            "INVITE",
+            &retry.body,
+        ));
+        assert_eq!(
+            engine.snapshot(&call_id).unwrap().state,
+            CallState::Inviting
+        );
+        assert_eq!(engine.transaction_count(), 2);
+        assert!(!format!("{engine:?}").contains("never-log-this-password"));
+
+        let duplicate = engine
+            .receive_digest_challenge(
+                challenge,
+                Duration::from_millis(11),
+                &DigestCredentials::new("unused", "also-not-retained"),
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(duplicate.actions().len(), 1);
+        assert!(matches!(
+            duplicate.actions()[0].message,
+            SipMessage::Request(SipRequest {
+                method: SipMethod::Ack,
+                ..
+            })
+        ));
+        assert_eq!(engine.transaction_count(), 2);
+
+        complete_and_reclaim_authenticated_call(&mut engine, &call_id, retry);
+    }
+
+    #[test]
+    fn proxy_digest_without_qop_is_bounded_across_new_transactions() {
+        let config = EngineConfig {
+            max_digest_retries_per_call: 2,
+            ..EngineConfig::default()
+        };
+        let mut engine = CallEngine::new(config).unwrap();
+        let request = invite(
+            "digest-proxy",
+            "sip-call-digest-proxy",
+            "Bob <sip:bob@example.com>",
+            "20 INVITE",
+        );
+        let (call_id, _) = engine
+            .originate(
+                request.clone(),
+                address(5061),
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        let credentials = DigestCredentials::new("proxy-user", "proxy-password");
+        let first_challenge_value = r#"Digest realm="proxy", nonce="proxy-nonce-1""#;
+        let first_challenge =
+            digest_challenge(&request, 407, "Proxy-Authenticate", first_challenge_value);
+        let first = engine
+            .receive_digest_challenge(
+                first_challenge,
+                Duration::from_millis(1),
+                &credentials,
+                None,
+                None,
+            )
+            .unwrap();
+        let SipMessage::Request(first_retry) = &first.actions()[1].message else {
+            panic!("expected first proxy retry");
+        };
+        assert_eq!(first_retry.headers.get("CSeq"), Some("21 INVITE"));
+        assert!(first_retry.headers.get("Authorization").is_none());
+        let first_authorization =
+            DigestAuthorization::parse(first_retry.headers.get("Proxy-Authorization").unwrap())
+                .unwrap();
+        assert!(first_authorization.verify_against(
+            &DigestChallenge::parse(first_challenge_value).unwrap(),
+            &credentials,
+            "INVITE",
+            &first_retry.body,
+        ));
+
+        let second_challenge = digest_challenge(
+            first_retry,
+            407,
+            "Proxy-Authenticate",
+            r#"Digest realm="proxy", nonce="proxy-nonce-2""#,
+        );
+        let second = engine
+            .receive_digest_challenge(
+                second_challenge,
+                Duration::from_millis(2),
+                &credentials,
+                None,
+                None,
+            )
+            .unwrap();
+        let SipMessage::Request(second_retry) = &second.actions()[1].message else {
+            panic!("expected second proxy retry");
+        };
+        assert_eq!(second_retry.headers.get("CSeq"), Some("22 INVITE"));
+        assert_eq!(engine.digest_retries.get(&call_id), Some(&2));
+
+        let third_challenge = digest_challenge(
+            second_retry,
+            407,
+            "Proxy-Authenticate",
+            r#"Digest realm="proxy", nonce="proxy-nonce-3""#,
+        );
+        let before_transactions = engine.transaction_count();
+        assert_eq!(
+            engine
+                .receive_digest_challenge(
+                    third_challenge,
+                    Duration::from_millis(3),
+                    &credentials,
+                    None,
+                    None,
+                )
+                .unwrap_err(),
+            EngineError::DigestRetryLimitReached
+        );
+        assert_eq!(engine.transaction_count(), before_transactions);
+        assert_eq!(engine.digest_retries.get(&call_id), Some(&2));
+        assert_eq!(
+            engine.snapshot(&call_id).unwrap().state,
+            CallState::Inviting
+        );
+        assert!(!format!("{engine:?}").contains("proxy-password"));
+    }
+
+    #[test]
+    fn malformed_digest_retry_is_atomic_and_does_not_consume_retry_budget() {
+        let mut engine = CallEngine::new(EngineConfig::default()).unwrap();
+        let request = invite(
+            "digest-atomic",
+            "sip-call-digest-atomic",
+            "Bob <sip:bob@example.com>",
+            "3 INVITE",
+        );
+        let (call_id, _) = engine
+            .originate(
+                request.clone(),
+                address(5061),
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        let malformed = digest_challenge(
+            &request,
+            401,
+            "WWW-Authenticate",
+            "Digest realm=missing-nonce",
+        );
+        let credentials = DigestCredentials::new("alice", "atomic-password");
+        let transaction_count = engine.transaction_count();
+        let error = engine
+            .receive_digest_challenge(
+                malformed,
+                Duration::from_millis(1),
+                &credentials,
+                None,
+                None,
+            )
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            EngineError::Digest(DigestError::MissingParameter("nonce"))
+        ));
+        assert!(!format!("{error:?}").contains("atomic-password"));
+        assert_eq!(engine.transaction_count(), transaction_count);
+        assert!(!engine.digest_retries.contains_key(&call_id));
+        assert_eq!(
+            engine.snapshot(&call_id).unwrap().state,
+            CallState::Inviting
+        );
+
+        let qop_challenge = digest_challenge(
+            &request,
+            401,
+            "WWW-Authenticate",
+            r#"Digest realm="carrier", nonce="nonce", qop="auth""#,
+        );
+        assert!(matches!(
+            engine.receive_digest_challenge(
+                qop_challenge.clone(),
+                Duration::from_millis(2),
+                &credentials,
+                None,
+                Some(1),
+            ),
+            Err(EngineError::Digest(DigestError::MissingParameter("cnonce")))
+        ));
+        assert_eq!(engine.transaction_count(), transaction_count);
+        assert!(!engine.digest_retries.contains_key(&call_id));
+
+        let valid = engine
+            .receive_digest_challenge(
+                qop_challenge,
+                Duration::from_millis(3),
+                &credentials,
+                Some("atomic-cnonce"),
+                Some(1),
+            )
+            .unwrap();
+        assert_eq!(valid.actions().len(), 2);
+        assert_eq!(engine.digest_retries.get(&call_id), Some(&1));
     }
 
     #[test]
@@ -1864,6 +2571,14 @@ mod tests {
         };
         assert_eq!(
             CallEngine::new(invalid_timers).unwrap_err(),
+            EngineError::InvalidConfig
+        );
+        let invalid_digest_retries = EngineConfig {
+            max_digest_retries_per_call: 0,
+            ..EngineConfig::default()
+        };
+        assert_eq!(
+            CallEngine::new(invalid_digest_retries).unwrap_err(),
             EngineError::InvalidConfig
         );
     }

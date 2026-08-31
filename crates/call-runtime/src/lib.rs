@@ -24,6 +24,7 @@ use call_api::CallCommand;
 use call_bridge::{BridgeError, BridgeEvent, BridgeRegistry, BridgeState};
 use call_core::{BridgeId, CallEventKind, CallId, LegId, LifecycleEvent};
 use call_engine::{CallEngine, EngineError, EngineOutput, SendAction};
+use sip_auth::DigestCredentials;
 use sip_security::SourceIpPolicy;
 use sip_transaction::TransportReliability;
 use sip_transport::{TcpTransport, TransportError, UdpTransport};
@@ -456,6 +457,55 @@ impl CallRuntime {
         self.commit_runtime_output(working_engine, output)
     }
 
+    /// Receives one transport read and applies explicit Digest credentials to
+    /// any outbound INVITE 401/407 challenge in that read.
+    ///
+    /// Other requests and responses follow the ordinary dispatch path. The
+    /// credentials and qop inputs are borrowed only for this operation and are
+    /// never retained by the runtime or engine.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when transport I/O, source policy, SIP validation,
+    /// Digest construction, engine processing, or action delivery fails. The
+    /// engine remains unchanged on every error.
+    pub fn receive_once_with_digest_auth(
+        &mut self,
+        now: Duration,
+        credentials: &DigestCredentials,
+        cnonce: Option<&str>,
+        nonce_count: Option<u32>,
+    ) -> Result<RuntimeOutput, RuntimeError> {
+        let messages = self.transport.receive()?;
+        for (_, source) in &messages {
+            if !self.source_policy.allows_socket(*source) {
+                return Err(RuntimeError::SourceAddressDenied { source: *source });
+            }
+        }
+        let reliability = self.transport.reliability();
+        let mut working_engine = self.engine.clone();
+        let mut output = RuntimeOutput::default();
+        for (message, source) in messages {
+            let engine_output = match message {
+                SipMessage::Request(request) => {
+                    working_engine.receive_request(source, request, now, reliability)?
+                }
+                SipMessage::Response(response) if matches!(response.status_code, 401 | 407) => {
+                    working_engine.receive_digest_challenge(
+                        response,
+                        now,
+                        credentials,
+                        cnonce,
+                        nonce_count,
+                    )?
+                }
+                SipMessage::Response(response) => working_engine.receive_response(response, now)?,
+            };
+            output.append(engine_output);
+        }
+        self.commit_runtime_output(working_engine, output)
+    }
+
     /// Polls call-engine timers and delivers any retransmissions or failures.
     ///
     /// # Errors
@@ -625,6 +675,26 @@ mod tests {
                 "Busy Here"
             }
             .to_owned(),
+            headers,
+            body: Vec::new(),
+        })
+    }
+
+    fn digest_challenge_for_invite(request: &SipRequest) -> SipMessage {
+        let mut headers = Headers::new();
+        headers.push("Via", request.headers.get("Via").unwrap());
+        headers.push("From", request.headers.get("From").unwrap());
+        headers.push("To", "Bob <sip:bob@example.com>;tag=runtime-digest");
+        headers.push("Call-ID", request.headers.get("Call-ID").unwrap());
+        headers.push("CSeq", request.headers.get("CSeq").unwrap());
+        headers.push(
+            "WWW-Authenticate",
+            r#"Digest realm="runtime", nonce="runtime-nonce", qop="auth""#,
+        );
+        SipMessage::Response(SipResponse {
+            version: "SIP/2.0".to_owned(),
+            status_code: 401,
+            reason: "Unauthorized".to_owned(),
             headers,
             body: Vec::new(),
         })
@@ -858,6 +928,87 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn udp_runtime_delivers_digest_ack_retry_and_authenticated_completion() {
+        let peer = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 4_096).unwrap();
+        let runtime_transport = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 4_096).unwrap();
+        let runtime_address = runtime_transport.local_addr().unwrap();
+        let mut runtime = CallRuntime::udp(
+            CallEngine::new(EngineConfig::default()).unwrap(),
+            runtime_transport,
+        );
+        let credentials = DigestCredentials::new("runtime-user", "runtime-secret");
+        let (call_id, _) = runtime
+            .originate(invite(), peer.local_addr().unwrap(), Duration::ZERO)
+            .unwrap();
+        let (originated, _) = peer.recv().unwrap();
+        let SipMessage::Request(originated) = originated else {
+            panic!("expected originated INVITE");
+        };
+        peer.send_to(&digest_challenge_for_invite(&originated), runtime_address)
+            .unwrap();
+
+        let challenged = runtime
+            .receive_once_with_digest_auth(
+                Duration::from_millis(1),
+                &credentials,
+                Some("runtime-cnonce"),
+                Some(1),
+            )
+            .unwrap();
+        assert_eq!(challenged.actions().len(), 2);
+        assert!(challenged.events().is_empty());
+        let (ack, _) = peer.recv().unwrap();
+        assert!(matches!(
+            ack,
+            SipMessage::Request(SipRequest {
+                method: SipMethod::Ack,
+                ..
+            })
+        ));
+        let (retry, _) = peer.recv().unwrap();
+        let SipMessage::Request(retry) = retry else {
+            panic!("expected authenticated retry");
+        };
+        assert_eq!(retry.headers.get("CSeq"), Some("2 INVITE"));
+        let authorization =
+            sip_auth::DigestAuthorization::parse(retry.headers.get("Authorization").unwrap())
+                .unwrap();
+        assert!(authorization.verify_request(
+            &credentials,
+            "INVITE",
+            &retry.request_uri,
+            &retry.body,
+        ));
+        assert_eq!(
+            runtime.engine().snapshot(&call_id).unwrap().state,
+            CallState::Inviting
+        );
+
+        peer.send_to(&response_for_invite(&retry, 200), runtime_address)
+            .unwrap();
+        let completed = runtime.receive_once(Duration::from_millis(2)).unwrap();
+        assert!(
+            completed
+                .events()
+                .iter()
+                .any(|event| event.kind == CallEventKind::Answered)
+        );
+        let (ack, _) = peer.recv().unwrap();
+        assert!(matches!(
+            ack,
+            SipMessage::Request(SipRequest {
+                method: SipMethod::Ack,
+                ..
+            })
+        ));
+        assert_eq!(
+            runtime.engine().snapshot(&call_id).unwrap().state,
+            CallState::Answered
+        );
+        assert!(!format!("{runtime:?}").contains("runtime-secret"));
     }
 
     #[test]
