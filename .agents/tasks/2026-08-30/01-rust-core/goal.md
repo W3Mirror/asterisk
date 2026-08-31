@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-180 — Graceful drain PR #60 hosted validation reconciled
-**Last checkpoint (UTC):** 2026-08-31T13:21:00Z
+**Current checkpoint:** CP-181 — CI test-scope contract clarified
+**Last checkpoint (UTC):** 2026-08-31T13:29:24Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Graceful drain/restart and Asterisk fallback<br>
 **Next resume action:** Start the next bounded offline acceptance slice from the green `graceful-drain` head while retaining the provider/Asterisk evidence gate
@@ -1778,6 +1778,14 @@ Before production:
 ---
 
 # 52. CI Requirements
+
+The repository implementation of this contract is
+`.github/workflows/rust-quality.yml`. Its `pull_request:` trigger uses
+GitHub's default activity types (opened, reopened, and synchronized), and its
+`push` trigger is limited to `aistack/main`. Both execute the ordinary jobs on
+hosted `ubuntu-latest` runners. There is currently no path filter or
+affected-module-only selector: focused tests for a changed module run because
+the workspace job executes the complete locked workspace suite.
 
 Every pull request should run:
 
@@ -6020,6 +6028,27 @@ blockers: Provider credentials/runtime access, sanitized real captures, producti
 next_action: Create the next dedicated stacked worktree from `origin/graceful-drain` only after selecting the next bounded offline acceptance gap; do not enable Rust traffic until the provider/Asterisk evidence gate is satisfied.
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close downstream work or revert `c15d53330903b155074eb772a1048b995bdd7cd4` if the drain contract is superseded.
 notes: All workflow runners remain hosted `ubuntu-latest`; Docker is used only by the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-181 — CI test-scope contract clarified
+
+~~~yaml
+checkpoint_id: CP-181
+recorded_at_utc: 2026-08-31T13:29:24Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Graceful drain/restart and Asterisk fallback
+scope: Clarify the required test coverage and reconcile it with the repository workflow triggers
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-60-graceful-drain
+branch: graceful-drain
+base_branch: audit-signals
+pr: https://github.com/W3Mirror/asterisk/pull/60
+head_sha: pending documentation-only checkpoint commit
+evidence: `.github/workflows/rust-quality.yml` declares `pull_request:` and `push` to `aistack/main`. The PR trigger therefore runs on opened, reopened, and synchronized updates. Its ordinary hosted jobs run the complete locked workspace tests, focused tests included, plus SIPp, reclamation smokes, fuzz-target checks, dependency audit, formatting, and Clippy. The push to `aistack/main` repeats that same ordinary suite. No affected-module-only selector is currently implemented; larger capacity/property/soak jobs remain schedule/manual-only.
+blockers: This clarification does not change provider-neutral implementation status. Provider credentials/runtime access, sanitized real captures, production rollout/rollback execution, and live provider interoperability remain later evidence gates; Rust traffic remains disabled and Asterisk remains the fallback.
+next_action: Commit and publish this goal clarification with the active stack, then continue the next bounded offline acceptance slice from `graceful-drain`.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; revert this documentation-only checkpoint if the CI contract changes.
+notes: Every implementation slice must add or update its relevant tests in the same change. “Affected-module test” means the focused tests owned by that module are required and included in the full PR workspace run; it does not mean CI currently skips unrelated packages.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
