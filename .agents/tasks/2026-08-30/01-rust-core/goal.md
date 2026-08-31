@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-145 — PR #50 hosted provider-auth validation green
-**Last checkpoint (UTC):** 2026-08-31T07:11:11Z
+**Current checkpoint:** CP-146 — PR #50 documentation-head hosted validation green
+**Last checkpoint (UTC):** 2026-08-31T07:16:27Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Provider-route-scoped Digest authentication context and Asterisk fallback<br>
-**Next resume action:** Push this CP-145 evidence reconciliation, verify the complete hosted suite on the resulting documentation-only head, then continue the next bounded interoperability or transport gap
+**Next resume action:** Continue the next bounded interoperability or transport gap while retaining provider, rollback, and Asterisk-fallback gates
 **Active PR:** [#50](https://github.com/W3Mirror/asterisk/pull/50) — `provider-auth-context` targets `provider-route-runtime`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-49`
@@ -5206,6 +5206,27 @@ blockers: This remains provider-neutral offline authentication-context evidence.
 next_action: Push this CP-145 evidence reconciliation and verify the complete ordinary hosted suite on the resulting documentation-only head, then continue the next bounded interoperability or transport gap
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #50 or revert the routed provider-authentication context if its contract is superseded
 notes: Relevant implementation and four directly relevant regressions ship together. Every pull request and push to aistack/main runs the complete ordinary hosted suite rather than affected-module-only selection. All workflow runners remain hosted ubuntu-latest, and Docker remains limited to pinned SIPp inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-146 — PR #50 documentation-head hosted validation green
+
+~~~yaml
+checkpoint_id: CP-146
+recorded_at_utc: 2026-08-31T07:16:27Z
+status: hosted_green
+phase: Phase 1 — Rust media engine
+milestone: Provider-route-scoped Digest authentication context and Asterisk fallback
+scope: Reconcile the complete ordinary hosted Rust quality suite on the documentation-only head after CP-145, including the routed provider-auth context regressions and repository-wide safety checks
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-49
+branch: provider-auth-context
+base_branch: provider-route-runtime
+pr: https://github.com/W3Mirror/asterisk/pull/50
+head_sha: a2f206c0e6f63fd049be3ae6634c4bb217665f0a before this evidence reconciliation
+evidence: PR #50 is OPEN, non-draft, MERGEABLE, and CLEAN against exact base provider-route-runtime, with local, origin, and GitHub publication-head parity at a2f206c. Hosted run 33367298999 passed on that exact head: Workspace checks passed formatting, all 235 locked workspace tests, all three pinned Docker-backed SIPp scenarios, ordinary signaling/RTP-media/WebSocket-media/combined/short-soak reclamation smokes, and workspace Clippy across all targets; Protocol fuzz checks passed all six address-sanitizer targets; Dependency audit passed. The schedule/manual-only Two-hour lifecycle soak and Signaling capacity matrix correctly skipped for the pull-request event
+blockers: This remains provider-neutral offline authentication-context evidence. It does not implement a real secret store, DNS/service discovery, TLS/WebSocket provider transport, carrier/Asterisk interoperability, route failover, rollback execution, or safe production traffic enablement. Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Continue the next bounded interoperability or transport gap while retaining all provider, rollback, and production-traffic gates
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #50 or revert the routed provider-authentication context if its contract is superseded
+notes: Relevant implementation and four directly relevant regressions ship together. Every pull request and push to aistack/main runs the complete ordinary hosted suite rather than affected-module-only selection. Focused module tests are included in that full suite; scheduled/manual jobs add deeper capacity and soak tiers. All workflow runners remain hosted ubuntu-latest, and Docker remains limited to pinned SIPp inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
