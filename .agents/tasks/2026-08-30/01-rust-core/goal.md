@@ -1,12 +1,12 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-132 — outbound SIP Digest integration locally green
-**Last checkpoint (UTC):** 2026-08-31T05:53:04Z
+**Current checkpoint:** CP-133 — PR #46 published with hosted validation running
+**Last checkpoint (UTC):** 2026-08-31T05:54:50Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Provider-neutral outbound SIP Digest challenge/retry integration<br>
-**Next resume action:** Commit and push the locally green outbound Digest implementation normally, open stacked PR #46 against `lifecycle-soak`, then verify the complete hosted suite on its exact head
-**Active PR:** pending #46 — `outbound-digest-auth` targets `lifecycle-soak`
+**Next resume action:** Push the CP-133 publication checkpoint and verify the complete ordinary hosted suite on PR #46's resulting exact head
+**Active PR:** [#46](https://github.com/W3Mirror/asterisk/pull/46) — `outbound-digest-auth` targets `lifecycle-soak`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-46`
 **Primary language:** Rust  
@@ -2684,7 +2684,7 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 43 | [#43](https://github.com/W3Mirror/asterisk/pull/43) | `signaling-capacity-matrix` | `websocket-load-smoke` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-43` | Exact scheduled 1,000/5,000/10,000 in-memory signaling concurrency matrix with bounded logical reclamation and best-effort process observations | hosted green | `7a6938e98` | CP-119–CP-122; two directly relevant regressions, all 12 load-smoke tests, all 215 workspace tests, the complete local verification matrix, ordinary/manual hosted runs, and final-head run `33351327106` pass; PR #43 is OPEN/non-draft/CLEAN against the exact base with local/origin/GitHub parity | Review and merge in stack order; retain Asterisk fallback and all traffic-enablement gates |
 | 44 | [#44](https://github.com/W3Mirror/asterisk/pull/44) | `combined-load-smoke` | `signaling-capacity-matrix` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-44` | Bounded in-memory combined SIP call plus RTP/jitter/AI-media lifecycle, reclamation, and capacity-reuse smoke for ordinary and scheduled CI | hosted green | `2e72b96ce` | CP-122–CP-126; three directly relevant regressions, all 15 load-smoke tests, all 218 workspace tests, the complete local verification matrix, and final-head run `33352395438` pass; PR #44 is OPEN/non-draft/CLEAN against the exact base with local/origin/GitHub parity | Review and merge in stack order; retain Asterisk fallback and all traffic-enablement gates |
 | 45 | [#45](https://github.com/W3Mirror/asterisk/pull/45) | `lifecycle-soak` | `combined-load-smoke` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-45` | Repeated mixed answered, rejected, and cancelled call lifecycles with media work, exact logical reclamation, stable descriptor/thread bounds, and post-warmup resident-memory observations | hosted green | `1bcacd853` before CP-130 evidence reconciliation | CP-126–CP-130; four directly relevant soak regressions, all 19 load-smoke tests, all 222 workspace tests, local SIPp, sanitizer fuzz checks, ordinary/extended load tiers, and standalone strict-resource probes pass; final ordinary run 33353745023 passed, and manual run 33353926272 passed the full suite, exact signaling matrix, and two-hour lifecycle soak with zero final logical resources, stable descriptors/threads, and 225,280-byte post-warmup RSS range | Push CP-130, verify ordinary CI on its final documentation head, then continue the next bounded offline goal gap without enabling Rust traffic |
-| 46 | pending | `outbound-digest-auth` | `lifecycle-soak` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-46` | Provider-neutral bounded outbound INVITE handling for 401/407 Digest challenges, authenticated retry, and exact call/transaction lifecycle preservation | local green | `be6d72fa0` exact base plus uncommitted implementation | CP-131–CP-132; four directly relevant regressions and all 226 locked workspace tests pass together with the complete local ordinary/load/fuzz verification matrix | Commit and push normally, open stacked PR #46 against `lifecycle-soak`, and verify the complete hosted suite on its exact head |
+| 46 | [#46](https://github.com/W3Mirror/asterisk/pull/46) | `outbound-digest-auth` | `lifecycle-soak` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-46` | Provider-neutral bounded outbound INVITE handling for 401/407 Digest challenges, authenticated retry, and exact call/transaction lifecycle preservation | hosted validation running | `f3d353062` implementation head before CP-133 publication checkpoint | CP-131–CP-133; four directly relevant regressions and all 226 locked workspace tests pass together with the complete local ordinary/load/fuzz verification matrix; PR is OPEN/non-draft/MERGEABLE with local/origin/GitHub implementation-head parity | Push CP-133 and verify the complete ordinary hosted suite on the resulting exact PR head |
 
 ### CP-026 — PR10 published and stacked remote parity verified
 
@@ -4931,6 +4931,27 @@ blockers: This proves only provider-neutral deterministic challenge handling wit
 next_action: Commit and push the implementation, tests, dependency wiring, and CP-131–CP-132 normally; open stacked PR #46 against lifecycle-soak; then verify local, origin, and GitHub head parity plus the complete ordinary hosted suite
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #46 or revert the provider-neutral Digest integration if its API or lifecycle contract is superseded
 notes: Relevant tests ship with the behavior they cover. Every pull request and push to aistack/main runs the complete ordinary hosted suite rather than affected-module-only selection. All workflow runners remain hosted ubuntu-latest, and Docker remains limited to pinned SIPp inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-133 — PR #46 published with hosted validation running
+
+~~~yaml
+checkpoint_id: CP-133
+recorded_at_utc: 2026-08-31T05:54:50Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Provider-neutral outbound SIP Digest challenge/retry integration
+scope: Publish the locally green outbound Digest integration as stacked PR #46 and reconcile its worktree, branch, base, implementation head, and initial hosted-check state
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-46
+branch: outbound-digest-auth
+base_branch: lifecycle-soak
+pr: https://github.com/W3Mirror/asterisk/pull/46
+head_sha: f3d353062837315ea4512282e6cdfe4435738871 implementation head before this publication checkpoint
+evidence: Implementation and CP-131–CP-132 were committed normally as f3d353062 without bypassing hooks and pushed with exact local, origin/outbound-digest-auth, and GitHub PR-head parity. PR #46 is OPEN, non-draft, MERGEABLE, and targets lifecycle-soak. Hosted Rust quality run 33362172358 started Workspace checks, Protocol fuzz checks, and Dependency audit; the schedule/manual-only Two-hour lifecycle soak and Signaling capacity matrix correctly report skipped for the pull-request event
+blockers: The complete hosted ordinary suite is still running, and this provider-neutral slice has no real provider credentials or carrier/Asterisk interoperability evidence. It does not authorize Rust traffic. Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Push this CP-133 publication checkpoint, verify local, origin, and GitHub parity on its final head, and wait for Workspace checks, Protocol fuzz checks, and Dependency audit to reach a successful terminal state
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #46 or revert the provider-neutral Digest integration if its API or lifecycle contract is superseded
+notes: PR #46 contains the implementation, four directly relevant regressions, dependency wiring, and goal checkpoints. Every pull request and push to aistack/main runs the complete ordinary hosted suite. All workflow runners remain hosted ubuntu-latest, and Docker remains limited to pinned SIPp inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
