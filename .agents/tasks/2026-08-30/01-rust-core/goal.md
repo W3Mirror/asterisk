@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-209 — PR #68 final hosted head validated
-**Last checkpoint (UTC):** 2026-08-31T18:13:47Z
+**Current checkpoint:** CP-213 — PR #69 documentation head reconciled
+**Last checkpoint (UTC):** 2026-08-31T18:53:38Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Configuration-level route activation/rollback and Asterisk fallback<br>
 **Next resume action:** Continue the next bounded offline acceptance slice without enabling Rust traffic; retain Asterisk as the fallback
-**Active PR:** #68 — `route-rollback` targets `process-restart-handoff` (hosted validation green; open and mergeable)
+**Active PR:** #69 — `route-config-reload` targets `route-rollback` (hosted validation green; open and mergeable)
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-68-route-rollback`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-69-route-config-reload`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -2110,6 +2110,7 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 | Media recording | hosted_green | CP-188–CP-197; optional bounded caller/agent recording sinks, timestamp-aligned saturating mixed WAV export, metadata, configuration validation, idempotent post-call snapshot finalization, terminal queue reclamation, and recorder rejection errors propagated through media/runtime playout without panic; focused `media-core` (26 tests), complete locked workspace tests, format, workspace Clippy, and `git diff --check` pass locally; PR #64 hosted checks remain green at its reconciled head `14abe4a`; PR #65 ledger-head run `33412310260` passed Workspace, Protocol fuzz, and Dependency audit jobs; scheduled/manual-only capacity and two-hour soak jobs skipped as intended | [#65](https://github.com/W3Mirror/asterisk/pull/65) OPEN/CLEAN/MERGEABLE at `a2ed61e`; [#64](https://github.com/W3Mirror/asterisk/pull/64) OPEN/CLEAN/MERGEABLE at `14abe4a` | Continue the next bounded offline acceptance slice |
 | PR #65 final head reconciliation | hosted_green | CP-198; final ledger head `c298e81eb` has hosted run `33412750305` green for Workspace, Protocol fuzz, and Dependency audit; PR remains OPEN/CLEAN/MERGEABLE | [#65](https://github.com/W3Mirror/asterisk/pull/65) | Continue the next bounded offline acceptance slice |
 | Call diagnostics export | hosted_green | CP-199–CP-202; bounded redaction-safe call diagnostics and deterministic listing across call-engine/runtime, read authorization before lookup, lifecycle/media/signaling detail, and terminal reclamation; focused call-engine (33 tests) and call-runtime (46 tests), complete hosted workspace tests, SIPp/reclamation smokes, workspace Clippy, six-target ASAN fuzz checks, and dependency audit all green | [#66](https://github.com/W3Mirror/asterisk/pull/66) OPEN/CLEAN/MERGEABLE at `45aba2951` | Continue the next bounded offline acceptance slice |
+| Configuration-level route reload | hosted_green | CP-210–CP-213; generation-checked atomic `ProviderRouteTable` replacement, fail-closed Asterisk reset after changed configuration, idempotent identical reloads, explicit Rust reactivation, stale-generation and exhaustion safety, and runtime no-resolution/no-mutation coverage; focused provider-routing (11 tests) and call-runtime (48 tests), complete locked workspace tests, formatting, workspace Clippy, three pinned Docker-backed SIPp scenarios, deterministic signaling/media/WebSocket/combined/short-soak reclamation smokes, all fuzz-target checks, and dependency audit pass; final documentation-head hosted run `33426631429` is green; `docs/rust-route-config-reload.md` | [#69](https://github.com/W3Mirror/asterisk/pull/69) OPEN/CLEAN/MERGEABLE at `49cea7b26` | Continue the next bounded offline acceptance slice without enabling Rust traffic |
 | Phase 2 — SIP edge shadow mode | not_started | — | — | Extend offline differential tooling with sanitized Asterisk/provider captures when available |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
 | Phase 4 — expanded provider coverage | not_started | — | — | Add one provider compatibility suite per rollout target |
@@ -6663,6 +6664,90 @@ blockers: This remains provider-neutral offline evidence. Production configurati
 next_action: Continue the next bounded offline acceptance slice without enabling Rust traffic; retain Asterisk as the fallback until external interoperability and rollout gates are approved.
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #68 or revert `f77ff30` if the route-controller contract is superseded.
 notes: This checkpoint commit only reconciles the ledger after the hosted run; it does not change behavior or CI configuration. Focused provider-routing and call-runtime tests remain included in the full hosted workspace invocation. Every pull-request event (`opened`, `reopened`, or `synchronize`) and every push to `aistack/main` runs that ordinary suite; affected-module-only selection is not configured. Larger capacity, extended property, multi-hour soak, and credentialed provider/live-call evidence remain scheduled/manual or approval-gated. All workflow runners remain hosted `ubuntu-latest`; Docker is limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-210 — Route-table reload locally green
+
+~~~yaml
+checkpoint_id: CP-210
+recorded_at_utc: 2026-08-31T18:28:51Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Configuration-level route activation/rollback and Asterisk fallback
+scope: Add an atomic, generation-checked provider-route configuration reload that fails closed to Asterisk until explicit Rust reactivation
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-69-route-config-reload
+branch: route-config-reload
+base_branch: route-rollback
+pr: pending #69 publication
+head_sha: 5391bba3566c386d54d9f42b1d41a0fbad76f450
+evidence: `RouteController::replace_table` atomically installs changed tables, advances the generation, resets the active target to Asterisk, and preserves state on stale-generation or generation-exhaustion errors. Identical replacements are idempotent and do not churn generation. Explicit reactivation is required before Rust routes are eligible again. Added provider-routing reload regressions and extended the call-runtime rollback regression to prove a reloaded route remains blocked before reactivation. `cargo fmt --all -- --check`, focused `cargo test -p provider-routing --locked` (11 tests), focused `cargo test -p call-runtime --locked` (48 tests), `cargo test --workspace --locked`, `cargo clippy --workspace --all-targets --locked` (exit 0 with existing repository documentation/pedantic warnings), `git diff --check`, three pinned Docker-backed SIPp scenarios, deterministic 512-call signaling, 64-stream RTP/media, 64-stream WebSocket-media, 64-call combined, and short mixed-lifecycle reclamation smokes all pass locally. Documentation added at `docs/rust-route-config-reload.md`.
+blockers: Commit/push of the checkpoint, PR #69 publication, hosted Workspace/fuzz/dependency-audit validation, and final ledger reconciliation remain pending. Provider credentials/runtime access, sanitized provider captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated; Asterisk remains the fallback.
+next_action: Commit this checkpoint, push `route-config-reload`, open PR #69 against `route-rollback`, and verify exact local/origin/GitHub parity plus the complete ordinary hosted suite.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #69 or revert `5391bba35` if the reload contract is superseded.
+notes: Relevant focused tests ship with the implementation and are included in the full hosted workspace invocation. Every pull-request event (`opened`, `reopened`, or `synchronize`) runs the complete ordinary hosted suite on `ubuntu-latest`; it is not an affected-module-only job. Every push to `aistack/main` repeats that same ordinary suite. Larger capacity, extended property, multi-hour soak, and credentialed provider/live-call evidence remain scheduled/manual or approval-gated. Docker remains limited to the pinned SIPp integration dependency; no credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-211 — PR #69 hosted validation green
+
+~~~yaml
+checkpoint_id: CP-211
+recorded_at_utc: 2026-08-31T18:33:02Z
+status: hosted_green
+phase: Phase 1 — Rust media engine
+milestone: Configuration-level route activation/rollback and Asterisk fallback
+scope: Verify the complete ordinary hosted Rust quality suite on PR #69's route-table reload head
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-69-route-config-reload
+branch: route-config-reload
+base_branch: route-rollback
+pr: https://github.com/W3Mirror/asterisk/pull/69
+head_sha: 38f6140e7f8bf4c32edcd69d5a00ce071788cd18
+evidence: Local HEAD, `origin/route-config-reload`, and `gh pr view 69 --json headRefOid` report `38f6140e7f8bf4c32edcd69d5a00ce071788cd18`. Hosted Rust quality run `33425289168` passed Workspace checks `99597266048` (formatting, complete locked workspace tests, three pinned Docker-backed SIPp scenarios, deterministic signaling/media/WebSocket/combined/short-soak reclamation smokes, and workspace Clippy), Protocol fuzz checks `99597266046` (all address-sanitizer targets), and Dependency audit `99597265746`. Schedule/manual-only Signaling capacity matrix `99597267070` and Two-hour lifecycle soak `99597267199` correctly skipped for the pull-request event. PR #69 is OPEN, non-draft, CLEAN, and MERGEABLE against `route-rollback`.
+blockers: This remains provider-neutral offline evidence. Production configuration, sanitized provider captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated.
+next_action: Continue the next bounded offline acceptance slice without enabling Rust traffic; retain Asterisk as the fallback until external interoperability and rollout gates are approved.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #69 or revert `5391bba35` if the reload contract is superseded.
+notes: The hosted ordinary suite includes the focused provider-routing and call-runtime reload regressions through the complete workspace test invocation. Every pull-request event (`opened`, `reopened`, or `synchronize`) and every push to `aistack/main` runs that ordinary suite on hosted `ubuntu-latest` runners; affected-module-only selection is not configured. Larger capacity, extended property, multi-hour soak, and credentialed provider/live-call evidence remain scheduled/manual or approval-gated. Docker remains limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-212 — PR #69 final hosted head reconciled
+
+~~~yaml
+checkpoint_id: CP-212
+recorded_at_utc: 2026-08-31T18:41:22Z
+status: hosted_green
+phase: Phase 1 — Rust media engine
+milestone: Configuration-level route activation/rollback and Asterisk fallback
+scope: Reconcile the final synchronized-head hosted validation and parity for PR #69
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-69-route-config-reload
+branch: route-config-reload
+base_branch: route-rollback
+pr: https://github.com/W3Mirror/asterisk/pull/69
+head_sha: 9830b05b4e45b4fac39e4048369fe6f102fb9522
+evidence: Local HEAD, `origin/route-config-reload`, and `gh pr view 69 --json headRefOid` report `9830b05b4e45b4fac39e4048369fe6f102fb9522`. Final synchronized-head hosted Rust quality run `33426112463` passed Workspace checks `99599956879` (formatting, complete locked workspace tests, pinned Docker-backed SIPp scenarios, deterministic signaling/media/WebSocket/combined/short-soak reclamation smokes, workspace Clippy, and expected skips for scheduled-only extended loads), Protocol fuzz checks `99599956934` (all address-sanitizer targets), and Dependency audit `99599956615`; schedule/manual-only Signaling capacity matrix `99599957775` and Two-hour lifecycle soak `99599957981` correctly skipped for the pull-request event. PR #69 is OPEN, non-draft, CLEAN, and MERGEABLE against `route-rollback`.
+blockers: This remains provider-neutral offline evidence. Production configuration, sanitized provider captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated.
+next_action: Continue the next bounded offline acceptance slice without enabling Rust traffic; retain Asterisk as the fallback until external interoperability and rollout gates are approved.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #69 or revert the route reload commits if the configuration contract is superseded.
+notes: This checkpoint records the hosted result for the synchronized documentation-only reconciliation head; it does not change behavior or CI configuration. Focused provider-routing and call-runtime reload tests remain included in the full hosted workspace invocation. Every pull-request event (`opened`, `reopened`, or `synchronize`) and every push to `aistack/main` runs that ordinary suite on hosted `ubuntu-latest` runners; affected-module-only selection is not configured. Larger capacity, extended property, multi-hour soak, and credentialed provider/live-call evidence remain scheduled/manual or approval-gated. Docker remains limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-213 — PR #69 documentation head reconciled
+
+~~~yaml
+checkpoint_id: CP-213
+recorded_at_utc: 2026-08-31T18:53:38Z
+status: hosted_green
+phase: Phase 1 — Rust media engine
+milestone: Configuration-level route activation/rollback and Asterisk fallback
+scope: Reconcile the active PR #69 head after the final goal-ledger documentation commit
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-69-route-config-reload
+branch: route-config-reload
+base_branch: route-rollback
+pr: https://github.com/W3Mirror/asterisk/pull/69
+head_sha: 49cea7b26b9500cde7d829aa5103b8e970a44ee
+evidence: Local HEAD, `origin/route-config-reload`, and `gh pr view 69 --json headRefOid` report `49cea7b26b9500cde7d829aa5103b8e970a44ee`. Hosted Rust quality run `33426631429` passed Workspace checks `99601680588` (formatting, complete locked workspace tests, pinned Docker-backed SIPp scenarios, deterministic signaling/media/WebSocket/combined/short-soak reclamation smokes, and workspace Clippy), Protocol fuzz checks `99601680674` (all address-sanitizer targets), and Dependency audit `99601680616`; schedule/manual-only Signaling capacity matrix `99601682332` and Two-hour lifecycle soak `99601681710` correctly skipped for the pull-request event. PR #69 is OPEN, non-draft, CLEAN, and MERGEABLE against `route-rollback`.
+blockers: This remains provider-neutral offline evidence. Production configuration, sanitized provider captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated.
+next_action: Create the next tracked stacked worktree from `origin/route-config-reload` for a bounded offline acceptance slice without enabling Rust traffic.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #69 or revert the route reload commits if the configuration contract is superseded.
+notes: This checkpoint reconciles the previously stale CP-212 head reference; it does not change behavior or CI configuration. Focused provider-routing and call-runtime reload tests remain included in the complete hosted workspace invocation. Every pull-request event (`opened`, `reopened`, or `synchronize`) and every push to `aistack/main` runs that ordinary suite on hosted `ubuntu-latest` runners; affected-module-only selection is not configured. Larger capacity, extended property, multi-hour soak, and credentialed provider/live-call evidence remain scheduled/manual or approval-gated. Docker remains limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints

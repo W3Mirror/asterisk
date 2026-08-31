@@ -658,6 +658,57 @@ impl RouteController {
         self.transition(EngineTarget::Asterisk, expected_generation)
     }
 
+    /// Replaces the provider table and returns to the fail-closed Asterisk
+    /// target whenever the table actually changes.
+    ///
+    /// A configuration reload is deliberately not an implicit Rust rollout:
+    /// callers must activate Rust again with the generation returned by this
+    /// method after they have verified the new table. Replacing a byte-for-byte
+    /// identical table is idempotent and does not churn the generation or
+    /// active target.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RoutingError::StaleGeneration`] when the caller observed an
+    /// old state or [`RoutingError::GenerationExhausted`] when a changed table
+    /// would exceed the `u64` generation bound. The controller and its current
+    /// table are unchanged on every error.
+    pub fn replace_table(
+        &mut self,
+        expected_generation: u64,
+        table: ProviderRouteTable,
+    ) -> Result<RouteTransition, RoutingError> {
+        if expected_generation != self.state.generation {
+            return Err(RoutingError::StaleGeneration {
+                expected: expected_generation,
+                actual: self.state.generation,
+            });
+        }
+        if table == self.table {
+            return Ok(RouteTransition {
+                previous: self.state.target,
+                current: self.state.target,
+                generation: self.state.generation,
+            });
+        }
+        let generation = self
+            .state
+            .generation
+            .checked_add(1)
+            .ok_or(RoutingError::GenerationExhausted)?;
+        let previous = self.state.target;
+        self.table = table;
+        self.state = RouteActivationState {
+            target: EngineTarget::Asterisk,
+            generation,
+        };
+        Ok(RouteTransition {
+            previous,
+            current: EngineTarget::Asterisk,
+            generation,
+        })
+    }
+
     fn has_rust_route(&self) -> bool {
         self.table
             .profiles
@@ -710,7 +761,7 @@ impl RouteController {
 }
 
 /// A bounded provider-profile route table.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProviderRouteTable {
     config: RoutingConfig,
     profiles: Vec<ProviderProfile>,
@@ -1290,6 +1341,80 @@ mod tests {
         assert_eq!(repeated_rollback.previous(), EngineTarget::Asterisk);
         assert_eq!(repeated_rollback.current(), EngineTarget::Asterisk);
         assert_eq!(repeated_rollback.generation(), 2);
+    }
+
+    #[test]
+    fn route_controller_reload_fails_closed_until_explicit_reactivation() {
+        let mut controller = RouteController::new(rust_route_table());
+        controller.activate_rust(0).unwrap();
+
+        let replacement_profile = ProviderProfile::new(
+            "replacement-provider",
+            "replacement.provider.invalid",
+            5060,
+            SignalingTransport::Udp,
+        )
+        .unwrap()
+        .with_match_domain("replacement.invalid")
+        .with_targets(EngineTarget::Rust, EngineTarget::Asterisk);
+        let mut replacement = ProviderRouteTable::new(RoutingConfig::default()).unwrap();
+        replacement.insert(replacement_profile).unwrap();
+
+        let reloaded = controller.replace_table(1, replacement).unwrap();
+        assert_eq!(reloaded.previous(), EngineTarget::Rust);
+        assert_eq!(reloaded.current(), EngineTarget::Asterisk);
+        assert_eq!(reloaded.generation(), 2);
+        assert_eq!(controller.state().target(), EngineTarget::Asterisk);
+        assert_eq!(
+            controller.route_outbound("replacement-provider").target(),
+            EngineTarget::Asterisk
+        );
+        assert_eq!(
+            controller.route_outbound("rust-provider").matched_by(),
+            RouteMatch::Default
+        );
+
+        controller.activate_rust(2).unwrap();
+        assert_eq!(
+            controller.route_outbound("replacement-provider").target(),
+            EngineTarget::Rust
+        );
+    }
+
+    #[test]
+    fn route_controller_reload_is_generation_checked_and_idempotent() {
+        let mut controller = RouteController::new(rust_route_table());
+        let same = controller.table().clone();
+        let unchanged = controller.replace_table(0, same.clone()).unwrap();
+        assert_eq!(unchanged.previous(), EngineTarget::Asterisk);
+        assert_eq!(unchanged.current(), EngineTarget::Asterisk);
+        assert_eq!(unchanged.generation(), 0);
+
+        controller.activate_rust(0).unwrap();
+        let unchanged_active = controller.replace_table(1, same).unwrap();
+        assert_eq!(unchanged_active.previous(), EngineTarget::Rust);
+        assert_eq!(unchanged_active.current(), EngineTarget::Rust);
+        assert_eq!(unchanged_active.generation(), 1);
+
+        let mut changed = ProviderRouteTable::new(RoutingConfig::default()).unwrap();
+        changed
+            .insert(
+                ProviderProfile::new("new", "new.provider.invalid", 5060, SignalingTransport::Udp)
+                    .unwrap()
+                    .with_targets(EngineTarget::Rust, EngineTarget::Asterisk),
+            )
+            .unwrap();
+        let before_state = controller.state();
+        let before_table = controller.table().clone();
+        assert_eq!(
+            controller.replace_table(0, changed),
+            Err(RoutingError::StaleGeneration {
+                expected: 0,
+                actual: 1,
+            })
+        );
+        assert_eq!(controller.state(), before_state);
+        assert_eq!(controller.table(), &before_table);
     }
 
     #[test]
