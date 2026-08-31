@@ -5,6 +5,13 @@
 //! reclaims every terminal call, and verifies that call and transaction counts
 //! return to zero before capacity is reused by the next batch.
 
+mod media;
+
+pub use media::{
+    MediaSmokeConfig, MediaSmokeError, MediaSmokePhase, MediaSmokeReport, ProcessSample,
+    run_media_reclamation_smoke,
+};
+
 use std::{
     error::Error,
     fmt::{Display, Formatter},

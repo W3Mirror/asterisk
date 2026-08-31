@@ -51,9 +51,15 @@ jobs:
       - name: Run deterministic signaling reclamation smoke
         if: steps.rust-workspace.outputs.available == 'true'
         run: cargo run -p load-smoke --locked -- 512 32
+      - name: Run deterministic media reclamation smoke
+        if: steps.rust-workspace.outputs.available == 'true'
+        run: cargo run -p load-smoke --locked -- media 64 8 32 4
       - name: Run extended signaling reclamation load
         if: steps.rust-workspace.outputs.available == 'true' && github.event_name == 'schedule'
         run: cargo run -p load-smoke --locked -- 16384 256
+      - name: Run extended media reclamation load
+        if: steps.rust-workspace.outputs.available == 'true' && github.event_name == 'schedule'
+        run: cargo run -p load-smoke --locked -- media 4096 256 128 8
       - name: Run extended property tests
         if: steps.rust-workspace.outputs.available == 'true' && github.event_name == 'schedule'
         env:
