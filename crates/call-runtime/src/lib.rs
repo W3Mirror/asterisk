@@ -2138,6 +2138,44 @@ mod tests {
         ));
         assert_eq!(resolver_calls.get(), 1);
         assert_eq!(runtime.engine().list(10).unwrap().len(), 1);
+
+        let mut replacement_routes = routed_digest_routes();
+        replacement_routes
+            .insert(
+                ProviderProfile::new(
+                    "reloaded-provider",
+                    "reloaded.provider.invalid",
+                    5060,
+                    SignalingTransport::Udp,
+                )
+                .unwrap()
+                .with_targets(EngineTarget::Rust, EngineTarget::Asterisk),
+            )
+            .unwrap();
+        let reloaded = routes
+            .replace_table(routes.state().generation(), replacement_routes)
+            .unwrap();
+        assert_eq!(reloaded.previous(), EngineTarget::Asterisk);
+        assert_eq!(reloaded.current(), EngineTarget::Asterisk);
+        assert_eq!(routes.state().generation(), 3);
+
+        let blocked_after_reload = runtime
+            .originate_with_route_controller(
+                &routes,
+                "reloaded-provider",
+                invite(),
+                &mut resolver,
+                Duration::ZERO,
+            )
+            .unwrap_err();
+        assert!(matches!(
+            blocked_after_reload,
+            RuntimeError::ProviderRouteFallback {
+                matched_by: RouteMatch::OutboundProvider
+            }
+        ));
+        assert_eq!(resolver_calls.get(), 1);
+        assert_eq!(runtime.engine().list(10).unwrap().len(), 1);
     }
 
     #[test]
