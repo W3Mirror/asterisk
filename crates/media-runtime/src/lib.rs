@@ -15,7 +15,7 @@ use std::{
 };
 
 use dtmf::DtmfEvent;
-use media_core::{MediaSession, MediaSessionError, ReceivedMedia};
+use media_core::{MediaRecordingExport, MediaSession, MediaSessionError, ReceivedMedia};
 use rtcp::{NtpTimestamp, RtcpPacket};
 
 const MAX_DATAGRAM_BYTES: usize = 65_535;
@@ -332,6 +332,15 @@ impl MediaUdpRuntime {
         &mut self.media
     }
 
+    /// Finalizes configured caller/agent recordings without socket I/O.
+    ///
+    /// The returned bounded artifacts are detached from the media session;
+    /// persistence or upload can therefore run after terminal cleanup without
+    /// retaining media frames on the RTP path.
+    pub fn finalize_recordings(&mut self) -> Result<MediaRecordingExport, MediaRuntimeError> {
+        Ok(self.media.finalize_recordings()?)
+    }
+
     /// Returns the learned or configured RTP destination.
     #[must_use]
     pub const fn remote_rtp(&self) -> Option<SocketAddr> {
@@ -605,7 +614,7 @@ mod tests {
     use dtmf::{DtmfDigit, DtmfEvent};
     use media_core::{
         AudioCodec, AudioFrame, JitterBufferConfig, JitterPushOutcome, MediaBridgeConfig,
-        MediaSessionConfig,
+        MediaRecordingConfig, MediaSessionConfig, RecorderConfig, RecordingChannel,
     };
     use rtp::{RtpPacket, RtpSessionConfig, parse, serialize};
     use sip_security::{Cidr, SourceIpPolicy, SourcePolicyConfig};
@@ -764,6 +773,68 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn finalizes_recordings_without_touching_udp_endpoints() {
+        let audio_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let control_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let peer = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let media = MediaSession::new(
+            MediaSessionConfig {
+                recording: Some(MediaRecordingConfig {
+                    caller: Some(RecorderConfig {
+                        max_frames: 2,
+                        max_samples_per_frame: 160,
+                        ..RecorderConfig::default()
+                    }),
+                    agent: None,
+                }),
+                max_audio_samples: 160,
+                ..MediaSessionConfig::default()
+            },
+            20,
+            2_000,
+        )
+        .unwrap();
+        let mut runtime = MediaUdpRuntime::from_sockets(
+            audio_socket,
+            control_socket,
+            media,
+            MediaUdpRuntimeConfig {
+                max_datagram_bytes: 1_024,
+                ..MediaUdpRuntimeConfig::default()
+            },
+        )
+        .unwrap();
+        peer.send_to(&audio_packet(), runtime.local_rtp_addr().unwrap())
+            .unwrap();
+        let received = runtime.receive_rtp(Duration::from_millis(20)).unwrap();
+        let learned = received.source;
+
+        let export = runtime.finalize_recordings().unwrap();
+        assert_eq!(export.caller.as_ref().unwrap().metadata.frames, 1);
+        assert!(export.agent.is_none());
+        assert!(export.mixed_wav.is_none());
+        assert_eq!(runtime.remote_rtp(), Some(learned));
+        assert_eq!(
+            runtime
+                .media()
+                .recording_metadata(RecordingChannel::Caller)
+                .unwrap()
+                .frames,
+            0
+        );
+        assert_eq!(
+            runtime
+                .finalize_recordings()
+                .unwrap()
+                .caller
+                .unwrap()
+                .metadata
+                .frames,
+            0
+        );
     }
 
     #[test]

@@ -21,7 +21,8 @@ use crate::jitter::AudioJitterBuffer;
 use crate::{
     AudioBridge, AudioCodec, AudioFrame, AudioRecorder, JitterBufferConfig, JitterBufferStats,
     JitterPushOutcome, MediaBridgeConfig, MediaBridgeStats, PushOutcome, QueueError,
-    RecorderConfig, RecordingError, RecordingMetadata, decode, encode as encode_audio,
+    RecorderConfig, RecordingError, RecordingMetadata, RecordingSnapshot, decode,
+    encode as encode_audio,
 };
 
 /// Selects one logical channel from a media session's optional recordings.
@@ -45,6 +46,22 @@ pub struct MediaRecordingConfig {
     pub caller: Option<RecorderConfig>,
     /// Optional agent-channel recorder configuration.
     pub agent: Option<RecorderConfig>,
+}
+
+/// Stable post-call recording artifacts detached from a media session.
+///
+/// Finalization materializes bounded in-memory WAV snapshots and then clears
+/// the recorder queues. It performs no persistence or network I/O, and can be
+/// called again safely to obtain an empty snapshot after the first successful
+/// finalization.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MediaRecordingExport {
+    /// Finalized caller-channel recording, when configured.
+    pub caller: Option<RecordingSnapshot>,
+    /// Finalized agent-channel recording, when configured.
+    pub agent: Option<RecordingSnapshot>,
+    /// Timestamp-aligned mixed caller/agent WAV, when both are configured.
+    pub mixed_wav: Option<Vec<u8>>,
 }
 
 /// Bounds and negotiated payload settings for a [`MediaSession`].
@@ -776,6 +793,45 @@ impl MediaSession {
             .map_err(MediaSessionError::from)
     }
 
+    /// Finalizes all configured recordings into bounded post-call artifacts.
+    ///
+    /// Every WAV is built before either recorder is cleared, so serialization
+    /// errors leave the session unchanged. On success, retained recording
+    /// frames are released while historical drop counters remain available in
+    /// subsequent metadata. Calling this method again is idempotent and
+    /// returns empty snapshots for the already-finalized channels.
+    pub fn finalize_recordings(&mut self) -> Result<MediaRecordingExport, MediaSessionError> {
+        let caller = self
+            .caller_recording
+            .as_ref()
+            .map(AudioRecorder::snapshot)
+            .transpose()?;
+        let agent = self
+            .agent_recording
+            .as_ref()
+            .map(AudioRecorder::snapshot)
+            .transpose()?;
+        let mixed_wav = self
+            .caller_recording
+            .as_ref()
+            .zip(self.agent_recording.as_ref())
+            .map(|(caller, agent)| caller.mixed_wav(agent))
+            .transpose()?;
+
+        if let Some(recorder) = &mut self.caller_recording {
+            recorder.clear();
+        }
+        if let Some(recorder) = &mut self.agent_recording {
+            recorder.clear();
+        }
+
+        Ok(MediaRecordingExport {
+            caller,
+            agent,
+            mixed_wav,
+        })
+    }
+
     /// Releases the next fixed-delay audio packet whose monotonic deadline is due.
     ///
     /// Returns `None` when jitter buffering is disabled, the buffer is empty,
@@ -1126,12 +1182,10 @@ mod tests {
         );
         assert!(media.mixed_recording_wav().unwrap().is_some());
 
-        let stats = media.stats();
-        assert_eq!(stats.caller_recording.unwrap().frames, 1);
-        assert_eq!(stats.agent_recording.unwrap().frames, 1);
-        let reclaimed = media.reclaim_pending();
-        assert_eq!(reclaimed.caller_recording_frames, 1);
-        assert_eq!(reclaimed.agent_recording_frames, 1);
+        let export = media.finalize_recordings().unwrap();
+        assert_eq!(export.caller.as_ref().unwrap().metadata.frames, 1);
+        assert_eq!(export.agent.as_ref().unwrap().metadata.frames, 1);
+        assert!(export.mixed_wav.is_some());
         assert_eq!(
             media
                 .recording_metadata(RecordingChannel::Caller)
@@ -1145,6 +1199,48 @@ mod tests {
                 .unwrap()
                 .frames,
             0
+        );
+
+        let stats = media.stats();
+        assert_eq!(stats.caller_recording.unwrap().frames, 0);
+        assert_eq!(stats.agent_recording.unwrap().frames, 0);
+        let reclaimed = media.reclaim_pending();
+        assert_eq!(reclaimed.caller_recording_frames, 0);
+        assert_eq!(reclaimed.agent_recording_frames, 0);
+        assert_eq!(
+            media
+                .recording_metadata(RecordingChannel::Caller)
+                .unwrap()
+                .frames,
+            0
+        );
+        assert_eq!(
+            media
+                .recording_metadata(RecordingChannel::Agent)
+                .unwrap()
+                .frames,
+            0
+        );
+    }
+
+    #[test]
+    fn recording_finalization_is_empty_and_idempotent_without_recorders() {
+        let mut media = MediaSession::new(MediaSessionConfig::default(), 1, 1).unwrap();
+        assert_eq!(
+            media.finalize_recordings().unwrap(),
+            MediaRecordingExport {
+                caller: None,
+                agent: None,
+                mixed_wav: None,
+            }
+        );
+        assert_eq!(
+            media.finalize_recordings().unwrap(),
+            MediaRecordingExport {
+                caller: None,
+                agent: None,
+                mixed_wav: None,
+            }
         );
     }
 

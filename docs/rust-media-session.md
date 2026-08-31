@@ -79,5 +79,14 @@ while recording metadata resets to an empty retained snapshot. A configured
 recorder must use the negotiated RTP clock and have a per-frame bound at least
 as large as `max_audio_samples`; invalid configurations fail construction.
 
+Call `MediaSession::finalize_recordings()` (or the corresponding
+`MediaUdpRuntime` method) before terminal cleanup when post-call artifacts are
+needed. It returns bounded caller/agent metadata and WAV snapshots plus the
+optional mixed WAV, then releases the retained recording frames. WAV
+serialization happens before either queue is cleared, so an error leaves the
+session unchanged; a second call is safe and returns empty snapshots. The
+returned bytes are detached in memory only and must be persisted outside the
+real-time media path.
+
 This slice remains offline and provider-neutral. It does not enable Rust media
 traffic, alter Asterisk configuration, or claim live-provider interoperability.
