@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: Proposed**  
-**Current checkpoint:** CP-004 — hosted CI behavior reconciled for the pre-Rust stack layer
-**Last checkpoint (UTC):** 2026-08-31T12:21:30Z
+**Current checkpoint:** CP-005 — final hosted push validation recorded
+**Last checkpoint (UTC):** 2026-08-31T12:22:32Z
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
 **Active milestone:** Milestone 1 — Scope Baseline  
 **Next resume action:** Inventory production call flows, providers, and the current Asterisk surface  
@@ -2092,6 +2092,26 @@ evidence: Run 33391295279 (https://github.com/W3Mirror/asterisk/actions/runs/333
 blockers: none
 next_action: Inventory production call flows, providers, and the current Asterisk surface
 rollback: not_applicable; this checkpoint records CI behavior only
+```
+
+### CP-005 — Final hosted push validation
+
+```yaml
+checkpoint_id: CP-005
+recorded_at_utc: 2026-08-31T12:22:32Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 1 — Scope Baseline
+scope: Validate the final documentation head and hosted push trigger
+worktree: /home/ashutosh/PROJECTS/w3mirror/asterisk
+branch: aistack/main
+base_branch: aistack/main
+pr: none
+head_sha: af32e74911d6e48f8d3240007223ee1bfb1afc43
+evidence: Run 33391371999 (https://github.com/W3Mirror/asterisk/actions/runs/33391371999) completed success for the exact pushed head on hosted runners. Workspace, fuzz, and audit test steps were skipped by the workflow's stack-layer detection because this pre-Rust branch has no corresponding manifests; no failing action is hidden by a runner mismatch.
+blockers: none
+next_action: Inventory production call flows, providers, and the current Asterisk surface
+rollback: not_applicable; this checkpoint records documentation and CI evidence only
 ```
 
 ### Checkpoint template
