@@ -413,8 +413,11 @@ impl MediaUdpRuntime {
     /// jitter buffering is disabled, no audio is buffered, or the next packet
     /// is not yet due. The owning event loop can use
     /// [`MediaSession::next_playout_deadline`] to schedule the next poll.
-    pub fn playout_audio(&mut self, now: Duration) -> Option<ReceivedMedia> {
-        self.media.playout_audio(now)
+    pub fn playout_audio(
+        &mut self,
+        now: Duration,
+    ) -> Result<Option<ReceivedMedia>, MediaRuntimeError> {
+        Ok(self.media.playout_audio(now)?)
     }
 
     /// Receives and validates one RTCP compound datagram.
@@ -764,9 +767,12 @@ mod tests {
                 timestamp: 100,
             }
         ));
-        assert_eq!(runtime.playout_audio(Duration::from_millis(79)), None);
+        assert_eq!(
+            runtime.playout_audio(Duration::from_millis(79)).unwrap(),
+            None
+        );
         assert!(matches!(
-            runtime.playout_audio(Duration::from_millis(80)),
+            runtime.playout_audio(Duration::from_millis(80)).unwrap(),
             Some(ReceivedMedia::Audio {
                 timestamp: 100,
                 samples: 160,

@@ -467,7 +467,13 @@ impl MediaStream {
             .map_or(0, |jitter| jitter.depth);
         let played = self
             .media
-            .playout_audio(self.arrival.saturating_add(PLAYOUT_DELAY));
+            .playout_audio(self.arrival.saturating_add(PLAYOUT_DELAY))
+            .map_err(|source| MediaSmokeError::Media {
+                stream_number: self.stream_number,
+                packet_number,
+                phase: MediaSmokePhase::Playout,
+                source,
+            })?;
         if !matches!(played, Some(ReceivedMedia::Audio { .. })) {
             return Err(MediaSmokeError::Invariant {
                 stream_number: self.stream_number,

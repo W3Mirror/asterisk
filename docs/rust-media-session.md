@@ -30,7 +30,9 @@ After source authorization:
 3. When `jitter_buffer` is unset, decode PCMU or PCMA audio immediately. When
    configured, retain the validated packet in the bounded fixed-delay stage
    documented in [`rust-jitter-playout.md`](rust-jitter-playout.md), then decode
-   and enqueue it only when caller-driven playout is due.
+   and enqueue it only when caller-driven playout is due. `playout_audio` returns
+   a `Result` so a recorder invariant failure is reported to the caller rather
+   than panicking in the media path.
 4. Deduplicate DTMF start/end packets and enqueue lifecycle notifications with
    an explicit drop counter when the application bound is full.
 
@@ -39,7 +41,8 @@ After source authorization:
 The adapter pushes decoded AI frames into the bounded return queue and calls
 `next_audio_rtp` to serialize one packet at a time. Codec, sample-rate, frame
 size, and RTP packet bounds are checked before a frame is removed from the
-queue. `send_dtmf` emits a telephone-event packet with an explicit timestamp
+queue. Recorder validation also runs before queue removal; a recording error is
+returned without consuming the AI frame. `send_dtmf` emits a telephone-event packet with an explicit timestamp
 increment so retransmissions can reuse the event timestamp.
 `send_dtmf_at_timestamp` emits at an explicitly mapped event timestamp without
 moving the next regular-media timestamp; callers can synchronize that regular
@@ -72,6 +75,11 @@ retained mono PCM with `recording_wav(RecordingChannel::Caller|Agent)`. When
 both sinks are enabled, `mixed_recording_wav()` timestamp-aligns frames and
 sums samples with saturation. These snapshots are in-memory only; persistence
 or object-storage upload must run outside the RTP processing loop.
+
+Recorder failures are returned as `MediaSessionError::Recording`. This keeps a
+configuration or invariant mismatch observable and guarantees that malformed
+or unexpected media input cannot terminate the process through a recording
+panic.
 
 Terminal `reclaim_pending()` also clears both recording queues and reports the
 released frame counts. Historical packet and queue counters remain available,

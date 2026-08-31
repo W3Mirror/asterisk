@@ -671,10 +671,13 @@ impl MediaSession {
             let outcome = jitter_buffer.push(packet, arrival);
             return Ok(ReceivedMedia::AudioBuffered { outcome, timestamp });
         }
-        Ok(self.decode_and_queue_audio(&packet))
+        self.decode_and_queue_audio(&packet)
     }
 
-    fn decode_and_queue_audio(&mut self, packet: &RtpPacket) -> ReceivedMedia {
+    fn decode_and_queue_audio(
+        &mut self,
+        packet: &RtpPacket,
+    ) -> Result<ReceivedMedia, MediaSessionError> {
         let samples = decode(self.config.audio_codec, &packet.payload);
         let sample_count = samples.len();
         let frame = AudioFrame {
@@ -683,29 +686,29 @@ impl MediaSession {
             sample_rate: self.config.rtp.clock_rate,
             samples,
         };
-        self.record_caller_frame(&frame);
+        self.record_caller_frame(&frame)?;
         self.audio_frames_received = self.audio_frames_received.saturating_add(1);
         let queued = self.bridge.push_to_ai(frame);
-        ReceivedMedia::Audio {
+        Ok(ReceivedMedia::Audio {
             queued,
             timestamp: packet.timestamp,
             samples: sample_count,
-        }
+        })
     }
 
-    fn record_caller_frame(&mut self, frame: &AudioFrame) {
+    fn record_caller_frame(&mut self, frame: &AudioFrame) -> Result<(), MediaSessionError> {
         if let Some(recorder) = &mut self.caller_recording {
-            if let Err(error) = recorder.push(frame.clone()) {
-                panic!("validated caller recording rejected a media frame: {error}");
-            }
+            recorder.push(frame.clone()).map(|_| ()).map_err(Into::into)
+        } else {
+            Ok(())
         }
     }
 
-    fn record_agent_frame(&mut self, frame: &AudioFrame) {
+    fn record_agent_frame(&mut self, frame: &AudioFrame) -> Result<(), MediaSessionError> {
         if let Some(recorder) = &mut self.agent_recording {
-            if let Err(error) = recorder.push(frame.clone()) {
-                panic!("validated agent recording rejected a media frame: {error}");
-            }
+            recorder.push(frame.clone()).map(|_| ()).map_err(Into::into)
+        } else {
+            Ok(())
         }
     }
 
@@ -837,12 +840,18 @@ impl MediaSession {
     /// Returns `None` when jitter buffering is disabled, the buffer is empty,
     /// or the earliest packet is not due. Callers own the monotonic clock and
     /// should poll again at [`Self::next_playout_deadline`].
-    pub fn playout_audio(&mut self, now: Duration) -> Option<ReceivedMedia> {
-        let packet = self
+    pub fn playout_audio(
+        &mut self,
+        now: Duration,
+    ) -> Result<Option<ReceivedMedia>, MediaSessionError> {
+        let Some(packet) = self
             .jitter_buffer
-            .as_mut()?
-            .pop_due(now, self.config.rtp.clock_rate)?;
-        Some(self.decode_and_queue_audio(&packet))
+            .as_mut()
+            .and_then(|buffer| buffer.pop_due(now, self.config.rtp.clock_rate))
+        else {
+            return Ok(None);
+        };
+        self.decode_and_queue_audio(&packet).map(Some)
     }
 
     /// Returns the monotonic deadline of the earliest buffered audio packet.
@@ -942,9 +951,9 @@ impl MediaSession {
         let timestamp_increment = u32::try_from(frame.samples.len())
             .map_err(|_| MediaSessionError::TimestampIncrementOverflow)?;
         let encoded = encode_audio(self.config.audio_codec, &frame.samples);
+        self.record_agent_frame(&frame)?;
         let packet = self.rtp.send(&encoded, timestamp_increment, marker)?;
         let _ = self.bridge.pop_for_rtp();
-        self.record_agent_frame(&frame);
         self.audio_frames_sent = self.audio_frames_sent.saturating_add(1);
         Ok(Some(packet))
     }
@@ -1224,6 +1233,66 @@ mod tests {
     }
 
     #[test]
+    fn recording_rejection_is_returned_without_panicking_or_queue_mutation() {
+        let mut media = session();
+        media.caller_recording = Some(
+            AudioRecorder::new(RecorderConfig {
+                sample_rate: 16_000,
+                ..RecorderConfig::default()
+            })
+            .unwrap(),
+        );
+        let mut sender = rtp_sender();
+        let input = sender.send(&[0xff; 2], 2, true).unwrap();
+
+        assert!(matches!(
+            media.receive_rtp(&input, Duration::ZERO),
+            Err(MediaSessionError::Recording(
+                RecordingError::SampleRateMismatch {
+                    expected: 16_000,
+                    actual: 8_000,
+                }
+            ))
+        ));
+        assert_eq!(media.stats().bridge.to_ai.depth, 0);
+        assert_eq!(media.stats().audio_frames_received, 0);
+    }
+
+    #[test]
+    fn agent_recording_rejection_keeps_ai_audio_queued() {
+        let mut media = session();
+        media.agent_recording = Some(
+            AudioRecorder::new(RecorderConfig {
+                sample_rate: 16_000,
+                ..RecorderConfig::default()
+            })
+            .unwrap(),
+        );
+        assert_eq!(
+            media.push_from_ai(AudioFrame {
+                timestamp: 2_000,
+                codec: AudioCodec::Pcmu,
+                sample_rate: 8_000,
+                samples: vec![0, 1, -1],
+            }),
+            PushOutcome::Accepted
+        );
+
+        assert!(matches!(
+            media.next_audio_rtp(false),
+            Err(MediaSessionError::Recording(
+                RecordingError::SampleRateMismatch {
+                    expected: 16_000,
+                    actual: 8_000,
+                }
+            ))
+        ));
+        assert_eq!(media.stats().bridge.from_ai.depth, 1);
+        assert_eq!(media.stats().audio_frames_sent, 0);
+        assert_eq!(media.next_rtp_timestamp(), 2_000);
+    }
+
+    #[test]
     fn recording_finalization_is_empty_and_idempotent_without_recorders() {
         let mut media = MediaSession::new(MediaSessionConfig::default(), 1, 1).unwrap();
         assert_eq!(
@@ -1339,9 +1408,12 @@ mod tests {
             media.next_playout_deadline(),
             Some(Duration::from_millis(60))
         );
-        assert_eq!(media.playout_audio(Duration::from_millis(59)), None);
+        assert_eq!(
+            media.playout_audio(Duration::from_millis(59)).unwrap(),
+            None
+        );
         assert!(matches!(
-            media.playout_audio(Duration::from_millis(60)),
+            media.playout_audio(Duration::from_millis(60)).unwrap(),
             Some(ReceivedMedia::Audio {
                 timestamp: 1_000,
                 samples: 160,
@@ -1357,7 +1429,7 @@ mod tests {
             Some(Duration::from_millis(80))
         );
         assert!(matches!(
-            media.playout_audio(Duration::from_millis(80)),
+            media.playout_audio(Duration::from_millis(80)).unwrap(),
             Some(ReceivedMedia::Audio {
                 timestamp: 1_160,
                 samples: 160,
@@ -1653,7 +1725,7 @@ mod tests {
             ReceivedMedia::AudioBuffered { .. }
         ));
         assert!(matches!(
-            media.playout_audio(Duration::from_millis(60)),
+            media.playout_audio(Duration::from_millis(60)).unwrap(),
             Some(ReceivedMedia::Audio { .. })
         ));
         media.push_from_ai(AudioFrame {
