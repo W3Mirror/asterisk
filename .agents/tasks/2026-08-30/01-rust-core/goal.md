@@ -2119,7 +2119,7 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 | --- | --- | --- | --- | --- |
 | Phase 0 — current Asterisk surface | in_progress | CP-015; PR #1 hosted run 33431290927 passed and GitHub reports CLEAN/MERGEABLE at `8dbd0082823b9444e72a6ceebee27328bd0f506d` | #1 | Keep the verified Asterisk inventory and production-evidence gate in force |
 | Phase 1 — Rust media engine | in_progress | CP-018; PR #2 hosted run 33432577814 passed and GitHub reports CLEAN/MERGEABLE at `ddb50f1b4adaca8e3a099578ef053294a5958cc0` | [#2](https://github.com/W3Mirror/asterisk/pull/2) | Keep the verified Rust foundation contract in force |
-| Phase 2 — SIP edge shadow mode | in_progress | CP-024; PR #5 hosted run 33435184066 passed and GitHub reports CLEAN/MERGEABLE at `7d83ff214730f92b9b8ba637e934c5ec5b41ffbe` | [#5](https://github.com/W3Mirror/asterisk/pull/5) | Publish and validate PR #6's SDP/media slice |
+| Phase 2 — SIP edge shadow mode | in_progress | CP-025; PR #6 hosted run 33436047369 passed and GitHub reports CLEAN/MERGEABLE at `58171bca82804be7a4062cd7e31525a0939edddb` | [#6](https://github.com/W3Mirror/asterisk/pull/6) | Publish and validate PR #7's call-engine slice |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
 | Phase 4 — expanded provider coverage | not_started | — | — | Add one provider compatibility suite per rollout target |
 | Phase 5 — Rust primary engine | not_started | — | — | Confirm production SLO, telemetry, and rollback gates |
@@ -2915,6 +2915,27 @@ rollback: Asterisk remains the active/fallback engine; no routing was changed
 notes: The merge commit preserves the stacked ancestry; focused SDP/media tests remain required PR content and are exercised by the complete hosted workspace invocation.
 ```
 
+### CP-025 — Reconcile PR #7 onto the validated PR #6 head
+
+```yaml
+checkpoint_id: CP-025
+recorded_at_utc: 2026-08-31T20:35:00Z
+status: in_progress
+phase: Phase 2 — SIP edge shadow mode
+milestone: Milestone 4 — Dialog + SDP + Basic Calls
+scope: Merge the validated PR #6 head into PR #7 while preserving call-engine implementation history and the expanded offline test contract
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-7-call-engine
+branch: call-engine-core
+base_branch: sdp-media-core
+pr: "#7 https://github.com/W3Mirror/asterisk/pull/7"
+head_sha: 41182282b
+evidence: Merged origin/sdp-media-core at 58171bca into PR #7 and resolved the shared goal ledger. Local cargo fmt --all -- --check, cargo test -p call-engine --locked, cargo clippy -p call-engine --all-targets --locked, and git diff --check passed. Hosted run 33436047369 passed for the validated PR #6 head; PR #7 hosted validation is pending on this merged head.
+blockers: Production deployment identity, effective configuration, provider credentials, and sanitized inbound/outbound captures remain unavailable; hosted PR #7 validation is pending
+next_action: Publish the reconciled PR #7 head, verify hosted checks and mergeability, then update the next stack branch
+rollback: Asterisk remains the active/fallback engine; no routing was changed
+notes: The merge commit preserves the stacked ancestry; focused call-engine tests remain required PR content and are exercised by the complete hosted workspace invocation.
+```
+
 ### Checkpoint template
 
 Copy this template, assign the next checkpoint ID, fill every field, and append it after each meaningful state change:
@@ -3002,7 +3023,7 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 4 | [#4](https://github.com/W3Mirror/asterisk/pull/4) | `sip-dialog-core` | `sip-transaction-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-4-sip-dialog` | Dialog identity and state: bounded tags, route sets, remote targets, CSeq sequencing, UAC/UAS lifecycle | in_progress | `64a99bd2fe1ab4dc9853699835e7a44540dcdbd0` | Latest hosted run [33434718192](https://github.com/W3Mirror/asterisk/actions/runs/33434718192) passed; GitHub reports CLEAN/MERGEABLE; local focused dialog fmt/test/clippy and diff check passed | Validate PR #5 on this base |
 | 5 | [#5](https://github.com/W3Mirror/asterisk/pull/5) | `call-api-core` | `sip-dialog-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-5-call-api` | Call-control/API boundary: bounded registry, validated lifecycle commands, stable IDs/events, dialog binding, deterministic snapshots, and terminal reclamation | in_progress | `7d83ff214730f92b9b8ba637e934c5ec5b41ffbe` | Hosted run [33435184066](https://github.com/W3Mirror/asterisk/actions/runs/33435184066) passed; GitHub reports CLEAN/MERGEABLE; local focused call-api fmt/test/clippy and diff check passed | Validate PR #6 on this base |
 | 6 | [#6](https://github.com/W3Mirror/asterisk/pull/6) | `sdp-media-core` | `call-api-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-6-sdp-media` | SDP/media binding: negotiated audio codec mappings, direction, remote RTP endpoint, and safe SDP update replacement in `call-api` | in_progress | `58171bca82804be7a4062cd7e31525a0939edddb` | Hosted run [33436047369](https://github.com/W3Mirror/asterisk/actions/runs/33436047369) passed; GitHub reports CLEAN/MERGEABLE; local focused call-api fmt/test/clippy and diff check passed | Validate PR #7 on this base |
-| 7 | [#7](https://github.com/W3Mirror/asterisk/pull/7) | `call-engine-core` | `sdp-media-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-7-call-engine` | Provider-neutral call engine: bounded registry/dialog/transaction orchestration, INVITE/ACK/BYE/CANCEL/OPTIONS handling, retransmission, and deterministic timeout polling | in_progress | `965c0bf6bacb3af4fd003973e6c64ca086acdf2f` | Existing hosted run predates PR #6 base reconciliation; rerun required after merge | Run focused call-engine tests and hosted checks after the base merge |
+| 7 | [#7](https://github.com/W3Mirror/asterisk/pull/7) | `call-engine-core` | `sdp-media-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-7-call-engine` | Provider-neutral call engine: bounded registry/dialog/transaction orchestration, INVITE/ACK/BYE/CANCEL/OPTIONS handling, retransmission, and deterministic timeout polling | in_progress | `41182282b` | Merged the validated PR #6 head; local focused call-engine fmt/test/clippy and diff check passed; hosted validation pending | Publish and validate PR #7 on this base |
 
 ## 59.4 Stacked-PR Checkpoints
 
