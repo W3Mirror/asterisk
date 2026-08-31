@@ -26,8 +26,10 @@ After source authorization:
 2. Accept the negotiated audio payload or the negotiated RFC 4733
    `telephone-event` payload while sharing SSRC, sequence, loss, and jitter
    accounting.
-3. Decode PCMU or PCMA audio to bounded PCM samples and enqueue an
-   `AudioFrame` for the AI adapter.
+3. When `jitter_buffer` is unset, decode PCMU or PCMA audio immediately. When
+   configured, retain the validated packet in the bounded fixed-delay stage
+   documented in [`rust-jitter-playout.md`](rust-jitter-playout.md), then decode
+   and enqueue it only when caller-driven playout is due.
 4. Deduplicate DTMF start/end packets and enqueue lifecycle notifications with
    an explicit drop counter when the application bound is full.
 
