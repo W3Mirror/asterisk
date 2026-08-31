@@ -399,7 +399,9 @@ impl Dialog {
 
     /// Allocates the next local in-dialog `CSeq` for `method`.
     pub fn next_local_sequence_for(&mut self, method: SipMethod) -> Result<u32, DialogError> {
-        if self.state != DialogState::Confirmed {
+        if self.state != DialogState::Confirmed
+            && !(method == SipMethod::Prack && self.state == DialogState::Early)
+        {
             return Err(DialogError::InvalidState);
         }
         self.local_seq = self
@@ -419,8 +421,20 @@ impl Dialog {
             return Err(DialogError::InvalidState);
         }
         validate_message_call_id(&response.headers, &self.call_id)?;
+        let (response_sequence, response_method) = required_cseq(&response.headers)?;
         let local_method = self.local_method.clone().ok_or(DialogError::InvalidState)?;
-        validate_response_cseq(&response.headers, self.local_seq, &local_method)?;
+        // A UAC may receive retransmitted (or subsequent) responses to the
+        // initial INVITE while a PRACK is outstanding.  PRACK advances the
+        // local dialog CSeq, but it does not replace the INVITE transaction
+        // whose provisional responses are being acknowledged.
+        let initial_invite_response = self.role == DialogRole::Uac
+            && self.initial_method == SipMethod::Invite
+            && response_method == SipMethod::Invite
+            && response_sequence == self.initial_sequence
+            && self.state == DialogState::Early;
+        if !initial_invite_response {
+            validate_response_cseq(&response.headers, self.local_seq, &local_method)?;
+        }
         let status = response.status_code;
 
         let mut actions = Vec::new();
@@ -428,9 +442,10 @@ impl Dialog {
             self.set_remote_tag(tag, &mut actions)?;
         }
 
-        let is_initial_transaction = self.role == DialogRole::Uac
+        let is_initial_transaction = (self.role == DialogRole::Uac
             && self.local_seq == self.initial_sequence
-            && local_method == self.initial_method;
+            && local_method == self.initial_method)
+            || initial_invite_response;
         if !is_initial_transaction {
             if status >= 200 && local_method == SipMethod::Bye {
                 self.transition(DialogState::Terminated, &mut actions);
@@ -493,7 +508,9 @@ impl Dialog {
         if request.method == SipMethod::Cancel {
             return Err(DialogError::InvalidMethod);
         }
-        if self.state != DialogState::Confirmed {
+        if self.state != DialogState::Confirmed
+            && !(request.method == SipMethod::Prack && self.state == DialogState::Early)
+        {
             return Err(DialogError::InvalidState);
         }
 
@@ -1053,6 +1070,48 @@ mod tests {
             })
             .unwrap();
         assert_eq!(dialog.state(), DialogState::Terminated);
+    }
+
+    #[test]
+    fn prack_is_allowed_in_an_early_dialog_and_advances_sequence() {
+        let request = invite_request(
+            "Bob <sip:bob@example.com>",
+            "42 INVITE",
+            Some("<sip:alice@192.0.2.10>"),
+        );
+        let mut uas =
+            Dialog::from_uas_invite(&request, "server-1", DialogConfig::default()).unwrap();
+        let mut prack_headers = Headers::new();
+        prack_headers.push("Call-ID", "call-123@example.com");
+        prack_headers.push("From", "Alice <sip:alice@example.com>;tag=local-1");
+        prack_headers.push("To", "Bob <sip:bob@example.com>;tag=server-1");
+        prack_headers.push("CSeq", "43 PRACK");
+        prack_headers.push("RAck", "1 42 INVITE");
+        let actions = uas
+            .receive_request(&SipRequest {
+                method: SipMethod::Prack,
+                request_uri: "sip:bob@example.com".to_owned(),
+                version: "SIP/2.0".to_owned(),
+                headers: prack_headers,
+                body: Vec::new(),
+            })
+            .unwrap();
+        assert!(actions.contains(&DialogAction::RequestAccepted));
+        assert_eq!(uas.remote_sequence(), Some(43));
+
+        let mut uac = Dialog::from_uac_request(
+            &invite_request("Bob <sip:bob@example.com>", "42 INVITE", None),
+            DialogConfig::default(),
+        )
+        .unwrap();
+        uac.receive_response(&response(
+            183,
+            "Bob <sip:bob@example.com>;tag=remote-1",
+            "42 INVITE",
+            None,
+        ))
+        .unwrap();
+        assert_eq!(uac.next_local_sequence_for(SipMethod::Prack).unwrap(), 43);
     }
 
     #[test]

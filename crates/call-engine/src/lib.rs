@@ -101,6 +101,12 @@ pub enum EngineError {
     InvalidResponseStatus,
     /// The outbound call reached its configured Digest retry bound.
     DigestRetryLimitReached,
+    /// A PRACK did not match a reliable provisional response.
+    InvalidPrack,
+    /// A PRACK was received without an outstanding reliable provisional response.
+    PrackNotExpected,
+    /// A reliable provisional response is still awaiting its PRACK.
+    ReliableProvisionalOutstanding,
     /// The provider policy does not configure Digest authentication.
     DigestAuthenticationNotConfigured,
     /// The current provider Digest credentials could not be resolved.
@@ -141,6 +147,15 @@ impl Display for EngineError {
             }
             Self::DigestRetryLimitReached => {
                 formatter.write_str("outbound call reached its SIP Digest retry limit")
+            }
+            Self::InvalidPrack => {
+                formatter.write_str("SIP PRACK does not match its provisional response")
+            }
+            Self::PrackNotExpected => {
+                formatter.write_str("SIP PRACK has no outstanding reliable provisional response")
+            }
+            Self::ReliableProvisionalOutstanding => {
+                formatter.write_str("SIP reliable provisional response is still awaiting PRACK")
             }
             Self::DigestAuthenticationNotConfigured => {
                 formatter.write_str("provider SIP Digest authentication is not configured")
@@ -255,8 +270,17 @@ pub struct CallEngine {
     final_invites: HashMap<String, FinalInvite>,
     final_server_invites: HashMap<String, FinalServerInvite>,
     digest_retries: HashMap<CallId, usize>,
+    received_reliable_rseq: HashMap<CallId, u32>,
+    reliable_provisionals: HashMap<CallId, ReliableProvisional>,
+    next_rseq: u32,
     next_local_tag: u64,
     next_branch: u64,
+}
+
+#[derive(Clone, Debug)]
+struct ReliableProvisional {
+    rseq: u32,
+    invite_sequence: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -297,6 +321,9 @@ impl CallEngine {
             final_invites: HashMap::new(),
             final_server_invites: HashMap::new(),
             digest_retries: HashMap::new(),
+            received_reliable_rseq: HashMap::new(),
+            reliable_provisionals: HashMap::new(),
+            next_rseq: 1,
             next_local_tag: 1,
             next_branch: 1,
         })
@@ -343,6 +370,7 @@ impl CallEngine {
         ) {
             self.remove_final_invites_for_call(id);
             self.remove_final_server_invites_for_call(id);
+            self.remove_reliable_provisional_state(id);
         }
         self.finish(Vec::new())
     }
@@ -380,6 +408,7 @@ impl CallEngine {
         self.remove_final_invites_for_call(id);
         self.remove_final_server_invites_for_call(id);
         self.digest_retries.remove(id);
+        self.remove_reliable_provisional_state(id);
         Ok(snapshot)
     }
 
@@ -506,6 +535,7 @@ impl CallEngine {
                 | SipMethod::Ack
                 | SipMethod::Bye
                 | SipMethod::Cancel
+                | SipMethod::Prack
                 | SipMethod::Options
         ) {
             return Err(EngineError::UnsupportedRequest);
@@ -513,6 +543,10 @@ impl CallEngine {
 
         if request.method == SipMethod::Cancel {
             return self.receive_cancel(source, request, branch, now, reliability);
+        }
+
+        if request.method == SipMethod::Prack {
+            return self.receive_prack(source, request, branch, now, reliability);
         }
 
         if request.method == SipMethod::Ack {
@@ -582,10 +616,14 @@ impl CallEngine {
             .ok_or(EngineError::UnknownDialog)?;
         let mut registry = self.registry.clone();
         let mut next_branch = self.next_branch;
+        let request = transaction.request().clone();
+        let reliable_rseq = reliable_provisional_rseq(&response)?;
 
         let _transaction_actions = transaction.on_response(&response, now)?;
         let call_state = registry.snapshot(&call_id)?.state;
-        let command = response_call_command(call_state, response.status_code);
+        let command = (response_method == SipMethod::Invite)
+            .then(|| response_call_command(call_state, response.status_code))
+            .flatten();
         if command.is_some() {
             ensure_event_capacity_for(&registry, 1)?;
         }
@@ -595,9 +633,46 @@ impl CallEngine {
         }
 
         let mut output_actions = Vec::new();
-        let final_invite = if response.status_code >= 200 {
+        let prack = if response_method == SipMethod::Invite {
+            reliable_rseq.and_then(|rseq| {
+                (self.received_reliable_rseq.get(&call_id).copied() != Some(rseq)).then_some(rseq)
+            })
+        } else {
+            None
+        };
+        let prack = if let Some(rseq) = prack {
+            if self
+                .received_reliable_rseq
+                .get(&call_id)
+                .is_some_and(|previous| rseq < *previous)
+            {
+                return Err(EngineError::InvalidPrack);
+            }
+            self.ensure_transaction_capacity()?;
+            let invite_sequence = invite_cseq(&request.headers)?;
+            let prack = build_prack(
+                &mut next_branch,
+                &request,
+                &response,
+                &mut dialog,
+                rseq,
+                invite_sequence,
+            )?;
+            let prack_key =
+                transaction_key(&transaction_branch(&prack.headers)?, &SipMethod::Prack);
+            self.ensure_new_transaction(&prack_key)?;
+            let prack_transaction = ClientTransaction::new(
+                prack.clone(),
+                now,
+                transaction.reliability(),
+                self.config.timers,
+            )?;
+            Some((rseq, prack_key, prack, prack_transaction))
+        } else {
+            None
+        };
+        let final_invite = if response_method == SipMethod::Invite && response.status_code >= 200 {
             let successful = response.status_code < 300;
-            let request = transaction.request().clone();
             let ack = build_ack(&mut next_branch, &request, &response, &dialog, successful)?;
             output_actions.push(SendAction {
                 destination,
@@ -625,6 +700,9 @@ impl CallEngine {
         } else {
             self.dialogs.insert(call_id.clone(), dialog);
         }
+        if response_method == SipMethod::Invite && response.status_code >= 200 {
+            self.received_reliable_rseq.remove(&call_id);
+        }
 
         // A non-2xx INVITE client transaction remains in Completed until Timer
         // D; a successful INVITE transaction is complete immediately.
@@ -637,6 +715,18 @@ impl CallEngine {
         }
         if let Some(final_invite) = final_invite {
             self.final_invites.insert(key, final_invite);
+        }
+        if let Some((rseq, prack_key, prack, prack_transaction)) = prack {
+            self.received_reliable_rseq.insert(call_id.clone(), rseq);
+            self.client_transactions
+                .insert(prack_key.clone(), prack_transaction);
+            self.client_destinations
+                .insert(prack_key.clone(), destination);
+            self.client_calls.insert(prack_key, call_id);
+            output_actions.push(SendAction {
+                destination,
+                message: SipMessage::Request(prack),
+            });
         }
 
         self.finish(output_actions)
@@ -918,6 +1008,25 @@ impl CallEngine {
         if !response.body.is_empty() {
             response.headers.push("Content-Type", "application/sdp");
         }
+        let reliable = status_code > 100
+            && status_code < 200
+            && header_has_token(&request.headers, "Require", "100rel");
+        if reliable && self.reliable_provisionals.contains_key(id) {
+            return Err(EngineError::ReliableProvisionalOutstanding);
+        }
+        let mut next_rseq = self.next_rseq;
+        let reliable_provisional = if reliable {
+            let rseq = next_rseq;
+            next_rseq = next_rseq.checked_add(1).ok_or(EngineError::InvalidConfig)?;
+            response.headers.push("Require", "100rel");
+            response.headers.push("RSeq", rseq.to_string());
+            Some(ReliableProvisional {
+                rseq,
+                invite_sequence: invite_cseq(&request.headers)?,
+            })
+        } else {
+            None
+        };
 
         let mut registry = self.registry.clone();
         let call_state = registry.snapshot(id)?.state;
@@ -963,6 +1072,13 @@ impl CallEngine {
         }
         if status_code >= 300 {
             self.dialogs.remove(id);
+        }
+        self.next_rseq = next_rseq;
+        if let Some(reliable_provisional) = reliable_provisional {
+            self.reliable_provisionals
+                .insert(id.clone(), reliable_provisional);
+        } else if status_code >= 200 {
+            self.reliable_provisionals.remove(id);
         }
         if let Some(final_invite) = final_server_invite {
             self.final_server_invites.insert(branch, final_invite);
@@ -1091,6 +1207,7 @@ impl CallEngine {
         for call_id in timed_out_calls {
             self.fail_call(&call_id)?;
             self.dialogs.remove(&call_id);
+            self.remove_reliable_provisional_state(&call_id);
         }
         self.finish(output_actions)
     }
@@ -1280,6 +1397,9 @@ impl CallEngine {
         now: Duration,
         reliability: TransportReliability,
     ) -> Result<EngineOutput, EngineError> {
+        if request.method == SipMethod::Prack {
+            return self.receive_prack(source, request, branch, now, reliability);
+        }
         let sip_call_id = required_header(&request.headers, "Call-ID")?.to_owned();
         let call_id = self
             .find_call_by_sip_call_id(&sip_call_id)
@@ -1327,6 +1447,55 @@ impl CallEngine {
         }])
     }
 
+    fn receive_prack(
+        &mut self,
+        source: SocketAddr,
+        request: SipRequest,
+        branch: String,
+        now: Duration,
+        reliability: TransportReliability,
+    ) -> Result<EngineOutput, EngineError> {
+        let sip_call_id = required_header(&request.headers, "Call-ID")?.to_owned();
+        let call_id = self
+            .find_call_by_sip_call_id(&sip_call_id)
+            .ok_or(EngineError::UnknownDialog)?;
+        let reliable = self
+            .reliable_provisionals
+            .get(&call_id)
+            .cloned()
+            .ok_or(EngineError::PrackNotExpected)?;
+        let (rseq, invite_sequence) = parse_rack(&request.headers)?;
+        if (rseq, invite_sequence) != (reliable.rseq, reliable.invite_sequence) {
+            return Err(EngineError::InvalidPrack);
+        }
+        let key = transaction_key(&branch, &SipMethod::Prack);
+        self.ensure_transaction_capacity()?;
+        self.ensure_new_transaction(&key)?;
+        let mut dialog = self
+            .dialogs
+            .get(&call_id)
+            .cloned()
+            .ok_or(EngineError::UnknownDialog)?;
+        dialog.receive_request(&request)?;
+        let local_tag = dialog.local_tag().to_owned();
+        let response = response_for_request(&request, 200, "OK", Some(&local_tag), Vec::new())?;
+        let mut transaction = ServerTransaction::new(request, reliability, self.config.timers)?;
+        transaction.send_final(response.clone(), now)?;
+        let terminated = transaction.state() == ServerState::Terminated;
+
+        self.dialogs.insert(call_id.clone(), dialog);
+        self.reliable_provisionals.remove(&call_id);
+        if !terminated {
+            self.server_transactions.insert(key.clone(), transaction);
+            self.server_destinations.insert(key.clone(), source);
+            self.server_calls.insert(key, call_id);
+        }
+        self.finish(vec![SendAction {
+            destination: source,
+            message: SipMessage::Response(response),
+        }])
+    }
+
     fn fail_call(&mut self, id: &CallId) -> Result<(), EngineError> {
         let state = self.registry.snapshot(id)?.state;
         if matches!(state, CallState::Ended | CallState::Failed) {
@@ -1344,6 +1513,7 @@ impl CallEngine {
         ) {
             self.registry.apply(id, CallCommand::End)?;
         }
+        self.remove_reliable_provisional_state(id);
         Ok(())
     }
 
@@ -1367,6 +1537,11 @@ impl CallEngine {
     fn remove_final_server_invites_for_call(&mut self, id: &CallId) {
         self.final_server_invites
             .retain(|_, invite| invite.call_id != id.clone());
+    }
+
+    fn remove_reliable_provisional_state(&mut self, id: &CallId) {
+        self.received_reliable_rseq.remove(id);
+        self.reliable_provisionals.remove(id);
     }
 
     fn find_call_by_sip_call_id(&self, sip_call_id: &str) -> Option<CallId> {
@@ -1775,6 +1950,94 @@ fn build_ack(
     })
 }
 
+fn build_prack(
+    next_branch: &mut u64,
+    invite: &SipRequest,
+    response: &SipResponse,
+    dialog: &mut Dialog,
+    rseq: u32,
+    invite_sequence: u32,
+) -> Result<SipRequest, EngineError> {
+    let cseq = dialog.next_local_sequence_for(SipMethod::Prack)?;
+    let branch_sequence = *next_branch;
+    *next_branch = branch_sequence
+        .checked_add(1)
+        .ok_or(EngineError::InvalidConfig)?;
+    let via = replace_top_via_branch(
+        required_header(&invite.headers, "Via")?,
+        &format!("z9hG4bKrust-prack-{branch_sequence}"),
+    )?;
+    let mut headers = Headers::new();
+    headers.push("Via", via);
+    headers.push("Max-Forwards", "70");
+    headers.push("From", required_header(&invite.headers, "From")?);
+    headers.push("To", required_header(&response.headers, "To")?);
+    headers.push("Call-ID", required_header(&invite.headers, "Call-ID")?);
+    headers.push("CSeq", format!("{cseq} PRACK"));
+    headers.push("RAck", format!("{rseq} {invite_sequence} INVITE"));
+    for route in dialog.route_set() {
+        headers.push("Route", format!("<{route}>"));
+    }
+    Ok(SipRequest {
+        method: SipMethod::Prack,
+        request_uri: dialog.remote_target().to_owned(),
+        version: "SIP/2.0".to_owned(),
+        headers,
+        body: Vec::new(),
+    })
+}
+
+fn reliable_provisional_rseq(response: &SipResponse) -> Result<Option<u32>, EngineError> {
+    if !(101..200).contains(&response.status_code) {
+        return Ok(None);
+    }
+    let require_100rel = header_has_token(&response.headers, "Require", "100rel");
+    let Some(value) = header_value(&response.headers, "RSeq") else {
+        return if require_100rel {
+            Err(EngineError::InvalidPrack)
+        } else {
+            Ok(None)
+        };
+    };
+    let rseq = value
+        .trim()
+        .parse::<u32>()
+        .ok()
+        .filter(|rseq| *rseq > 0)
+        .ok_or(EngineError::InvalidPrack)?;
+    Ok(Some(rseq))
+}
+
+fn parse_rack(headers: &Headers) -> Result<(u32, u32), EngineError> {
+    let value = required_header(headers, "RAck")?;
+    let mut fields = value.split_whitespace();
+    let rseq = fields
+        .next()
+        .and_then(|field| field.parse::<u32>().ok())
+        .filter(|rseq| *rseq > 0)
+        .ok_or(EngineError::InvalidPrack)?;
+    let invite_sequence = fields
+        .next()
+        .and_then(|field| field.parse::<u32>().ok())
+        .ok_or(EngineError::InvalidPrack)?;
+    let method = fields
+        .next()
+        .and_then(SipMethod::parse)
+        .ok_or(EngineError::InvalidPrack)?;
+    if fields.next().is_some() || method != SipMethod::Invite {
+        return Err(EngineError::InvalidPrack);
+    }
+    Ok((rseq, invite_sequence))
+}
+
+fn header_has_token(headers: &Headers, name: &str, expected: &str) -> bool {
+    headers.get_all(name).any(|value| {
+        value
+            .split(',')
+            .any(|token| token.trim().eq_ignore_ascii_case(expected))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1862,10 +2125,14 @@ mod tests {
     }
 
     fn successful_response(request: &SipRequest) -> SipResponse {
+        successful_response_with_tag(request, "authenticated-peer")
+    }
+
+    fn successful_response_with_tag(request: &SipRequest, tag: &str) -> SipResponse {
         let mut headers = Headers::new();
         headers.push("Via", request.headers.get("Via").unwrap());
         headers.push("From", request.headers.get("From").unwrap());
-        headers.push("To", "Bob <sip:bob@example.com>;tag=authenticated-peer");
+        headers.push("To", format!("Bob <sip:bob@example.com>;tag={tag}"));
         headers.push("Call-ID", request.headers.get("Call-ID").unwrap());
         headers.push("CSeq", request.headers.get("CSeq").unwrap());
         headers.push("Contact", "<sip:bob@127.0.0.1:5070>");
@@ -1873,6 +2140,78 @@ mod tests {
             version: "SIP/2.0".to_owned(),
             status_code: 200,
             reason: "OK".to_owned(),
+            headers,
+            body: Vec::new(),
+        }
+    }
+
+    fn reliable_provisional_response(request: &SipRequest, rseq: u32) -> SipResponse {
+        let mut headers = Headers::new();
+        headers.push("Via", request.headers.get("Via").unwrap());
+        headers.push("From", request.headers.get("From").unwrap());
+        headers.push("To", "Bob <sip:bob@example.com>;tag=provisional-peer");
+        headers.push("Call-ID", request.headers.get("Call-ID").unwrap());
+        headers.push("CSeq", request.headers.get("CSeq").unwrap());
+        headers.push("Require", "100rel");
+        headers.push("RSeq", rseq.to_string());
+        SipResponse {
+            version: "SIP/2.0".to_owned(),
+            status_code: 183,
+            reason: "Session Progress".to_owned(),
+            headers,
+            body: Vec::new(),
+        }
+    }
+
+    fn reliable_provisional_without_rseq(request: &SipRequest) -> SipResponse {
+        let mut response = reliable_provisional_response(request, 1);
+        response.headers = {
+            let mut headers = Headers::new();
+            headers.push("Via", request.headers.get("Via").unwrap());
+            headers.push("From", request.headers.get("From").unwrap());
+            headers.push("To", "Bob <sip:bob@example.com>;tag=provisional-peer");
+            headers.push("Call-ID", request.headers.get("Call-ID").unwrap());
+            headers.push("CSeq", request.headers.get("CSeq").unwrap());
+            headers.push("Require", "100rel");
+            headers
+        };
+        response
+    }
+
+    fn prack_response(request: &SipRequest) -> SipResponse {
+        let mut headers = Headers::new();
+        headers.push("Via", request.headers.get("Via").unwrap());
+        headers.push("From", request.headers.get("From").unwrap());
+        headers.push("To", "Bob <sip:bob@example.com>;tag=provisional-peer");
+        headers.push("Call-ID", request.headers.get("Call-ID").unwrap());
+        headers.push("CSeq", request.headers.get("CSeq").unwrap());
+        SipResponse {
+            version: "SIP/2.0".to_owned(),
+            status_code: 200,
+            reason: "OK".to_owned(),
+            headers,
+            body: Vec::new(),
+        }
+    }
+
+    fn inbound_prack(
+        invite: &SipRequest,
+        provisional: &SipResponse,
+        branch: &str,
+        cseq: u32,
+        rack: &str,
+    ) -> SipRequest {
+        let mut headers = Headers::new();
+        headers.push("Via", format!("SIP/2.0/UDP peer.invalid;branch={branch}"));
+        headers.push("From", invite.headers.get("From").unwrap());
+        headers.push("To", provisional.headers.get("To").unwrap());
+        headers.push("Call-ID", invite.headers.get("Call-ID").unwrap());
+        headers.push("CSeq", format!("{cseq} PRACK"));
+        headers.push("RAck", rack);
+        SipRequest {
+            method: SipMethod::Prack,
+            request_uri: invite.request_uri.clone(),
+            version: invite.version.clone(),
             headers,
             body: Vec::new(),
         }
@@ -2037,6 +2376,240 @@ mod tests {
         assert_eq!(
             engine.snapshot(&call_id).unwrap().state,
             CallState::Answered
+        );
+    }
+
+    #[test]
+    fn outbound_reliable_provisional_emits_prack_and_duplicate_replays_nothing() {
+        let mut engine = CallEngine::new(EngineConfig::default()).unwrap();
+        let request = invite(
+            "prack-out-1",
+            "sip-call-prack-out",
+            "Bob <sip:bob@example.com>",
+            "7 INVITE",
+        );
+        let (call_id, _) = engine
+            .originate(
+                request.clone(),
+                address(5061),
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        let provisional = reliable_provisional_response(&request, 1);
+        let first = engine
+            .receive_response(provisional.clone(), Duration::from_millis(1))
+            .unwrap();
+        assert_eq!(first.actions().len(), 1);
+        let SipMessage::Request(prack) = &first.actions()[0].message else {
+            panic!("expected PRACK");
+        };
+        assert_eq!(prack.method, SipMethod::Prack);
+        assert_eq!(prack.headers.get("CSeq"), Some("8 PRACK"));
+        assert_eq!(prack.headers.get("RAck"), Some("1 7 INVITE"));
+        assert_eq!(prack.headers.get("To"), provisional.headers.get("To"));
+        assert_eq!(engine.snapshot(&call_id).unwrap().state, CallState::Early);
+        assert_eq!(engine.transaction_count(), 2);
+
+        let duplicate = engine
+            .receive_response(provisional, Duration::from_millis(2))
+            .unwrap();
+        assert!(duplicate.actions().is_empty());
+        assert_eq!(engine.transaction_count(), 2);
+
+        let acknowledged = engine
+            .receive_response(prack_response(prack), Duration::from_millis(3))
+            .unwrap();
+        assert!(acknowledged.actions().is_empty());
+        assert!(acknowledged.events().is_empty());
+        assert_eq!(engine.snapshot(&call_id).unwrap().state, CallState::Early);
+
+        let late_duplicate = engine
+            .receive_response(
+                reliable_provisional_response(&request, 1),
+                Duration::from_millis(4),
+            )
+            .unwrap();
+        assert!(late_duplicate.actions().is_empty());
+
+        let completed = engine
+            .receive_response(
+                successful_response_with_tag(&request, "provisional-peer"),
+                Duration::from_millis(5),
+            )
+            .unwrap();
+        assert!(matches!(
+            completed.actions()[0].message,
+            SipMessage::Request(SipRequest {
+                method: SipMethod::Ack,
+                ..
+            })
+        ));
+        assert_eq!(
+            engine.snapshot(&call_id).unwrap().state,
+            CallState::Answered
+        );
+        assert!(!engine.received_reliable_rseq.contains_key(&call_id));
+    }
+
+    #[test]
+    fn inbound_reliable_provisional_requires_matching_prack_and_replays_response() {
+        let mut engine = CallEngine::new(EngineConfig::default()).unwrap();
+        let mut request = invite(
+            "prack-in-1",
+            "sip-call-prack-in",
+            "Bob <sip:bob@example.com>",
+            "42 INVITE",
+        );
+        request.headers.push("Require", "100rel");
+        let source = address(5060);
+        let created = engine
+            .receive_request(
+                source,
+                request.clone(),
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        let call_id = created.events()[0].call_id.clone();
+        let provisional = engine
+            .respond_to_invite(
+                &call_id,
+                183,
+                "Session Progress",
+                Vec::new(),
+                Duration::from_millis(1),
+            )
+            .unwrap();
+        let SipMessage::Response(provisional_response) = &provisional.actions()[0].message else {
+            panic!("expected reliable provisional response");
+        };
+        assert_eq!(provisional_response.headers.get("Require"), Some("100rel"));
+        assert_eq!(provisional_response.headers.get("RSeq"), Some("1"));
+
+        let transactions = engine.transaction_count();
+        let mismatched = inbound_prack(
+            &request,
+            provisional_response,
+            "prack-in-mismatch",
+            43,
+            "9 42 INVITE",
+        );
+        assert_eq!(
+            engine
+                .receive_request(
+                    source,
+                    mismatched,
+                    Duration::from_millis(2),
+                    TransportReliability::Unreliable,
+                )
+                .unwrap_err(),
+            EngineError::InvalidPrack
+        );
+        assert_eq!(engine.transaction_count(), transactions);
+        assert_eq!(engine.snapshot(&call_id).unwrap().state, CallState::Early);
+
+        let prack = inbound_prack(
+            &request,
+            provisional_response,
+            "prack-in-2",
+            43,
+            "1 42 INVITE",
+        );
+        let acknowledged = engine
+            .receive_request(
+                source,
+                prack.clone(),
+                Duration::from_millis(3),
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        assert!(matches!(
+            acknowledged.actions()[0].message,
+            SipMessage::Response(SipResponse {
+                status_code: 200,
+                ..
+            })
+        ));
+        assert_eq!(engine.snapshot(&call_id).unwrap().state, CallState::Early);
+
+        let duplicate = engine
+            .receive_request(
+                source,
+                prack,
+                Duration::from_millis(4),
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        assert!(matches!(
+            duplicate.actions()[0].message,
+            SipMessage::Response(SipResponse {
+                status_code: 200,
+                ..
+            })
+        ));
+
+        engine
+            .respond_to_invite(&call_id, 200, "OK", Vec::new(), Duration::from_millis(5))
+            .unwrap();
+        assert!(!engine.reliable_provisionals.contains_key(&call_id));
+    }
+
+    #[test]
+    fn malformed_reliable_provisional_and_rack_are_atomic() {
+        let mut engine = CallEngine::new(EngineConfig::default()).unwrap();
+        let request = invite(
+            "prack-atomic",
+            "sip-call-prack-atomic",
+            "Bob <sip:bob@example.com>",
+            "7 INVITE",
+        );
+        let (call_id, _) = engine
+            .originate(
+                request.clone(),
+                address(5061),
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        let mut malformed = reliable_provisional_response(&request, 1);
+        malformed.headers = {
+            let mut headers = Headers::new();
+            headers.push("Via", request.headers.get("Via").unwrap());
+            headers.push("From", request.headers.get("From").unwrap());
+            headers.push("To", "Bob <sip:bob@example.com>;tag=provisional-peer");
+            headers.push("Call-ID", request.headers.get("Call-ID").unwrap());
+            headers.push("CSeq", request.headers.get("CSeq").unwrap());
+            headers.push("Require", "100rel");
+            headers.push("RSeq", "not-a-number");
+            headers
+        };
+        let transactions = engine.transaction_count();
+        assert_eq!(
+            engine
+                .receive_response(malformed, Duration::from_millis(1))
+                .unwrap_err(),
+            EngineError::InvalidPrack
+        );
+        assert_eq!(engine.transaction_count(), transactions);
+        assert_eq!(
+            engine.snapshot(&call_id).unwrap().state,
+            CallState::Inviting
+        );
+
+        assert_eq!(
+            engine
+                .receive_response(
+                    reliable_provisional_without_rseq(&request),
+                    Duration::from_millis(2),
+                )
+                .unwrap_err(),
+            EngineError::InvalidPrack
+        );
+        assert_eq!(engine.transaction_count(), transactions);
+        assert_eq!(
+            engine.snapshot(&call_id).unwrap().state,
+            CallState::Inviting
         );
     }
 
