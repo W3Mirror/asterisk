@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**  
-**Current checkpoint:** CP-013 — Identify first-stack PR base conflict and capture current edge evidence
-**Last checkpoint (UTC):** 2026-08-31T19:28:29Z
+**Current checkpoint:** CP-014 — Reconcile PR #1 with current main and preserve Phase 0 inventory
+**Last checkpoint (UTC):** 2026-08-31T19:31:40Z
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
 **Active milestone:** Milestone 1 — Scope Baseline  
-**Next resume action:** Reconcile PR #1 with the current `aistack/main` head, resolve the goal-ledger conflict, run focused documentation checks, and publish the updated branch
+**Next resume action:** Run hosted PR checks against the reconciled PR #1 head, verify mergeability, and update downstream stack bases sequentially if green
 **Active PR:** [#1](https://github.com/W3Mirror/asterisk/pull/1); the first stacked PR targets `aistack/main`  
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/sip-rtp-engine-rust`  
@@ -2117,7 +2117,7 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 
 | Workstream | Status | Evidence / checkpoint | PR | Next action |
 | --- | --- | --- | --- | --- |
-| Phase 0 — current Asterisk surface | in_progress | CP-007; repository inventory plus current DNS/TLS probe evidence recorded in `docs/current-asterisk-surface.md` | — | Obtain the effective production configuration and sanitized provider call-flow captures |
+| Phase 0 — current Asterisk surface | in_progress | CP-014; reconciled PR #1 inventory and current DNS/TLS probe evidence in `docs/current-asterisk-surface.md` | #1 | Run PR checks and verify mergeability before downstream stack work |
 | Phase 1 — Rust media engine | not_started | — | — | Define media-core scope from the Phase 0 inventory |
 | Phase 2 — SIP edge shadow mode | not_started | — | — | Build sanitized replay and comparison fixtures |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
@@ -2411,6 +2411,27 @@ rollback: Asterisk remains the active/fallback engine; no routing was changed
 notes: Downstream PRs 2–70 remain open on their existing stack branches and require sequential revalidation after PR #1 is green.
 ```
 
+### CP-014 — Reconcile PR #1 with current main and preserve Phase 0 inventory
+
+```yaml
+checkpoint_id: CP-014
+recorded_at_utc: 2026-08-31T19:31:40Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 1 — Scope Baseline
+scope: Merge the current aistack/main head into the first stacked PR and preserve the richer Phase 0 inventory
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/sip-rtp-engine-rust
+branch: sip-rtp-engine-rust
+base_branch: aistack/main
+pr: "#1 https://github.com/W3Mirror/asterisk/pull/1"
+head_sha: 6a076f7c968a7672cf11c14c8deccc3da378afba
+evidence: Merged origin/aistack/main into PR #1, resolved the goal-ledger conflict in favor of the current acceptance/test contract, preserved the detailed 263-line Phase 0 inventory, confirmed no conflict markers, and verified the PR diff against origin/aistack/main with git diff --check. The branch is clean locally; publication and hosted recheck are next.
+blockers: Production deployment identity, effective configuration, provider credentials, and sanitized inbound/outbound captures remain unavailable; downstream branches must wait for PR #1 hosted validation
+next_action: Publish PR #1 head 6a076f7c968a7672cf11c14c8deccc3da378afba and verify hosted checks plus GitHub mergeability
+rollback: Asterisk remains the active/fallback engine; no routing was changed
+notes: The merge commit keeps downstream PR ancestry intact while bringing the first PR onto the current main documentation/test-contract head.
+```
+
 ### Checkpoint template
 
 Copy this template, assign the next checkpoint ID, fill every field, and append it after each meaningful state change:
@@ -2492,7 +2513,7 @@ Populate one row per PR before implementation begins, then update it at every ch
 
 | Order | PR | Branch | Base / target | Worktree | Scope | Status | Head SHA | CI / evidence | Next action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | [#1](https://github.com/W3Mirror/asterisk/pull/1) | `sip-rtp-engine-rust` | `aistack/main` | `/home/ashutosh/.worktrees/w3mirror/asterisk/sip-rtp-engine-rust` | Phase 0 repository surface inventory and evidence boundary | in_progress | `6198727d7b1497bfc1948fa01e0840984cb93178` | Hosted checks pass; PR is open but currently `CONFLICTING` with `aistack/main` | Reconcile the branch with the current main head before downstream stack work |
+| 1 | [#1](https://github.com/W3Mirror/asterisk/pull/1) | `sip-rtp-engine-rust` | `aistack/main` | `/home/ashutosh/.worktrees/w3mirror/asterisk/sip-rtp-engine-rust` | Phase 0 repository surface inventory and evidence boundary | in_progress | `6a076f7c968a7672cf11c14c8deccc3da378afba` | Main-head merge conflict resolved locally; inventory diff and marker checks pass; branch publication and hosted recheck pending | Run hosted PR checks and verify mergeability before downstream stack work |
 | 2+ | Open stacked PRs | per PR metadata | immediately preceding PR branch | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-*` | Follow-on Rust protocol, media, runtime, test, and operational slices | in_progress | per PR | Downstream branches exist, but must be revalidated after PR #1 base reconciliation | Update downstream branches sequentially after PR #1 is green |
 
 ## 59.4 Stacked-PR Checkpoints
