@@ -617,6 +617,33 @@ impl RtpSession {
         timestamp_increment: u32,
         marker: bool,
     ) -> Result<Vec<u8>, SessionError> {
+        let wire = self.send_with_payload_type_at_timestamp(
+            payload_type,
+            payload,
+            self.next_timestamp,
+            marker,
+        )?;
+        self.next_timestamp = self.next_timestamp.wrapping_add(timestamp_increment);
+        Ok(wire)
+    }
+
+    /// Serializes one RTP payload at an explicit timestamp without changing
+    /// the session's next regular-media timestamp.
+    ///
+    /// Sequence and send-counter state still advance. This permits RFC 4733
+    /// retransmissions to retain their event timestamp after the shared audio
+    /// clock has moved forward.
+    ///
+    /// # Errors
+    ///
+    /// Returns an invalid payload-type, packet-bound, or serialization error.
+    pub fn send_with_payload_type_at_timestamp(
+        &mut self,
+        payload_type: u8,
+        payload: &[u8],
+        timestamp: u32,
+        marker: bool,
+    ) -> Result<Vec<u8>, SessionError> {
         if payload_type > 127 {
             return Err(SessionError::InvalidPayloadType(payload_type));
         }
@@ -638,7 +665,7 @@ impl RtpSession {
             marker,
             payload_type,
             sequence_number: self.next_sequence,
-            timestamp: self.next_timestamp,
+            timestamp,
             ssrc: self.config.local_ssrc,
             csrcs: Vec::new(),
             extension: None,
@@ -652,10 +679,17 @@ impl RtpSession {
             });
         }
         self.next_sequence = self.next_sequence.wrapping_add(1);
-        self.next_timestamp = self.next_timestamp.wrapping_add(timestamp_increment);
         self.packets_sent = self.packets_sent.saturating_add(1);
         self.octets_sent = self.octets_sent.saturating_add(payload.len() as u64);
         Ok(wire)
+    }
+
+    /// Replaces the timestamp used by the next regular RTP send.
+    ///
+    /// This is used when an explicitly timestamped RFC 4733 event finishes and
+    /// regular audio must resume at the mapped end of that event.
+    pub const fn synchronize_next_timestamp(&mut self, timestamp: u32) {
+        self.next_timestamp = timestamp;
     }
 
     /// Parses and validates one received RTP packet, updating quality metrics.
@@ -1064,5 +1098,24 @@ mod tests {
             101
         );
         assert_eq!(receiver.stats().received.packets_received, 1);
+    }
+
+    #[test]
+    fn explicit_timestamp_preserves_regular_clock_while_advancing_sequence() {
+        let mut session = RtpSession::new(RtpSessionConfig::default(), 12, 4_000).unwrap();
+        let event = session
+            .send_with_payload_type_at_timestamp(101, &[5, 0x8a, 0, 80], 9_000, true)
+            .unwrap();
+        let packet = parse(&event).unwrap();
+        assert_eq!(packet.sequence_number, 12);
+        assert_eq!(packet.timestamp, 9_000);
+        assert_eq!(session.next_sequence(), 13);
+        assert_eq!(session.next_timestamp(), 4_000);
+
+        session.synchronize_next_timestamp(9_160);
+        let audio = parse(&session.send(&[0xff; 160], 160, false).unwrap()).unwrap();
+        assert_eq!(audio.sequence_number, 13);
+        assert_eq!(audio.timestamp, 9_160);
+        assert_eq!(session.next_timestamp(), 9_320);
     }
 }
