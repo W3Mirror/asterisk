@@ -16,7 +16,7 @@ use std::{
 
 use dtmf::DtmfEvent;
 use media_core::{MediaSession, MediaSessionError, ReceivedMedia};
-use rtcp::RtcpPacket;
+use rtcp::{NtpTimestamp, RtcpPacket};
 
 const MAX_DATAGRAM_BYTES: usize = 65_535;
 const MIN_RTP_DATAGRAM_BYTES: usize = 12;
@@ -54,6 +54,12 @@ pub struct MediaUdpRuntimeConfig {
     /// `NAT` peers.  Applications should pair it with an explicit
     /// `SourceIpPolicy` when the socket is internet-facing.
     pub learn_remote_endpoints: bool,
+    /// Minimum monotonic interval between successfully sent RTCP Sender Reports.
+    ///
+    /// The runtime remains event-loop agnostic: callers poll
+    /// [`MediaUdpRuntime::send_sender_report_if_due`] with explicit monotonic
+    /// and NTP wall-clock values.
+    pub sender_report_interval: Duration,
 }
 
 impl Default for MediaUdpRuntimeConfig {
@@ -61,6 +67,7 @@ impl Default for MediaUdpRuntimeConfig {
         Self {
             max_datagram_bytes: MAX_DATAGRAM_BYTES,
             learn_remote_endpoints: true,
+            sender_report_interval: Duration::from_secs(5),
         }
     }
 }
@@ -69,6 +76,7 @@ impl MediaUdpRuntimeConfig {
     fn validate(self, media: &MediaSession) -> Result<Self, MediaRuntimeError> {
         if !(MIN_RTP_DATAGRAM_BYTES..=MAX_DATAGRAM_BYTES).contains(&self.max_datagram_bytes)
             || self.max_datagram_bytes > media.config().rtp.max_packet_bytes
+            || self.sender_report_interval.is_zero()
         {
             return Err(MediaRuntimeError::InvalidConfig);
         }
@@ -201,6 +209,7 @@ pub struct MediaUdpRuntime {
     config: MediaUdpRuntimeConfig,
     remote_rtp: Option<SocketAddr>,
     remote_rtcp: Option<SocketAddr>,
+    last_sender_report: Option<Duration>,
     receive_buffer: Vec<u8>,
 }
 
@@ -255,6 +264,7 @@ impl MediaUdpRuntime {
             config,
             remote_rtp: None,
             remote_rtcp: None,
+            last_sender_report: None,
             receive_buffer: vec![0; buffer_size],
         })
     }
@@ -517,6 +527,41 @@ impl MediaUdpRuntime {
         self.send_datagram(MediaChannel::Rtcp, &wire, destination)
     }
 
+    /// Sends an RTCP Sender Report when this RTP sender's interval is due.
+    ///
+    /// The first report is due immediately after the first serialized RTP
+    /// packet. Later reports require the configured monotonic interval. The
+    /// caller supplies the corresponding NTP seconds/fraction words so tests
+    /// and event loops retain explicit ownership of wall-clock time. Missing
+    /// RTP send state or a not-yet-due interval returns `Ok(None)`.
+    ///
+    /// Scheduling advances only after the complete datagram is sent. A
+    /// missing RTCP destination, serialization failure, or socket error can be
+    /// retried at the same `now` value.
+    ///
+    /// # Errors
+    ///
+    /// Returns a missing destination, media serialization, or socket error
+    /// only when a Sender Report is due.
+    pub fn send_sender_report_if_due(
+        &mut self,
+        now: Duration,
+        ntp: NtpTimestamp,
+    ) -> Result<Option<usize>, MediaRuntimeError> {
+        let Some(packet) = self.media.sender_report(ntp) else {
+            return Ok(None);
+        };
+        if self
+            .last_sender_report
+            .is_some_and(|last| now.saturating_sub(last) < self.config.sender_report_interval)
+        {
+            return Ok(None);
+        }
+        let written = self.send_rtcp(&packet)?;
+        self.last_sender_report = Some(now);
+        Ok(Some(written))
+    }
+
     fn send_datagram(
         &self,
         channel: MediaChannel,
@@ -590,10 +635,30 @@ mod tests {
             MediaUdpRuntimeConfig {
                 max_datagram_bytes: 1_024,
                 learn_remote_endpoints: true,
+                ..MediaUdpRuntimeConfig::default()
             },
         )
         .unwrap();
         (runtime, peer_audio, peer_control)
+    }
+
+    #[test]
+    fn rejects_zero_sender_report_interval() {
+        let audio_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let control_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+        assert!(matches!(
+            MediaUdpRuntime::from_sockets(
+                audio_socket,
+                control_socket,
+                media(),
+                MediaUdpRuntimeConfig {
+                    max_datagram_bytes: 1_024,
+                    learn_remote_endpoints: true,
+                    sender_report_interval: Duration::ZERO,
+                },
+            ),
+            Err(MediaRuntimeError::InvalidConfig)
+        ));
     }
 
     fn audio_packet() -> Vec<u8> {
@@ -729,6 +794,105 @@ mod tests {
     }
 
     #[test]
+    fn schedules_sender_reports_after_rtp_without_advancing_on_failure() {
+        let (mut runtime, audio_peer, control_peer) = runtime();
+        assert_eq!(
+            runtime
+                .send_sender_report_if_due(
+                    Duration::ZERO,
+                    NtpTimestamp {
+                        seconds: 1,
+                        fraction: 2,
+                    },
+                )
+                .unwrap(),
+            None
+        );
+        runtime.set_remote_rtp(audio_peer.local_addr().unwrap());
+        runtime.media_mut().push_from_ai(AudioFrame {
+            timestamp: 2_000,
+            codec: AudioCodec::Pcmu,
+            sample_rate: 8_000,
+            samples: vec![0; 160],
+        });
+        assert_eq!(runtime.send_audio(false).unwrap(), Some(172));
+        let mut audio = [0_u8; 1_024];
+        audio_peer.recv_from(&mut audio).unwrap();
+
+        assert!(matches!(
+            runtime.send_sender_report_if_due(
+                Duration::from_secs(1),
+                NtpTimestamp {
+                    seconds: 10,
+                    fraction: 20,
+                },
+            ),
+            Err(MediaRuntimeError::NoRemoteEndpoint {
+                channel: MediaChannel::Rtcp
+            })
+        ));
+        runtime.set_remote_rtcp(control_peer.local_addr().unwrap());
+        assert_eq!(
+            runtime
+                .send_sender_report_if_due(
+                    Duration::from_secs(1),
+                    NtpTimestamp {
+                        seconds: 10,
+                        fraction: 20,
+                    },
+                )
+                .unwrap(),
+            Some(28)
+        );
+        let mut output = [0_u8; 1_024];
+        let (length, source) = control_peer.recv_from(&mut output).unwrap();
+        assert_eq!(source, runtime.local_rtcp_addr().unwrap());
+        assert_eq!(
+            rtcp::parse(&output[..length]).unwrap(),
+            vec![RtcpPacket::SenderReport(rtcp::SenderReport {
+                ssrc: 88,
+                ntp_msw: 10,
+                ntp_lsw: 20,
+                rtp_timestamp: 2_160,
+                packets_sent: 1,
+                octets_sent: 160,
+                reports: Vec::new(),
+            })]
+        );
+        assert_eq!(
+            runtime
+                .send_sender_report_if_due(
+                    Duration::from_millis(5_999),
+                    NtpTimestamp {
+                        seconds: 30,
+                        fraction: 40,
+                    },
+                )
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            runtime
+                .send_sender_report_if_due(
+                    Duration::from_secs(6),
+                    NtpTimestamp {
+                        seconds: 30,
+                        fraction: 40,
+                    },
+                )
+                .unwrap(),
+            Some(28)
+        );
+        let (length, _) = control_peer.recv_from(&mut output).unwrap();
+        let packets = rtcp::parse(&output[..length]).unwrap();
+        let [RtcpPacket::SenderReport(report)] = packets.as_slice() else {
+            panic!("expected one sender report");
+        };
+        assert_eq!((report.ntp_msw, report.ntp_lsw), (30, 40));
+        assert_eq!(runtime.media().stats().rtcp.packets_sent, 2);
+    }
+
+    #[test]
     fn no_destination_is_reported_without_consuming_audio() {
         let (mut runtime, _, _) = runtime();
         runtime.media_mut().push_from_ai(AudioFrame {
@@ -821,6 +985,7 @@ mod tests {
             MediaUdpRuntimeConfig {
                 max_datagram_bytes: 1_024,
                 learn_remote_endpoints: true,
+                ..MediaUdpRuntimeConfig::default()
             },
         )
         .unwrap();
