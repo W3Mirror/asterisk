@@ -21,7 +21,7 @@ use std::{
     time::Duration,
 };
 
-use call_api::CallCommand;
+use call_api::{AuthenticatedPrincipal, CallCommand};
 use call_bridge::{BridgeError, BridgeEvent, BridgeRegistry, BridgeState};
 use call_core::{BridgeId, CallEventKind, CallId, CommandId, LegId, LifecycleEvent};
 use call_engine::{CallEngine, EngineError, EngineOutput, SendAction};
@@ -473,6 +473,27 @@ impl CallRuntime {
         Ok((call_id, runtime_output))
     }
 
+    /// Starts an outbound INVITE after verifying control-plane originate
+    /// permission, then delivers it through the configured transport.
+    pub fn originate_authorized(
+        &mut self,
+        principal: &AuthenticatedPrincipal,
+        request: SipRequest,
+        destination: SocketAddr,
+        now: Duration,
+    ) -> Result<(CallId, RuntimeOutput), RuntimeError> {
+        let mut working_engine = self.engine.clone();
+        let (call_id, output) = working_engine.originate_authorized(
+            principal,
+            request,
+            destination,
+            now,
+            self.transport.reliability(),
+        )?;
+        let runtime_output = self.commit_engine_output(working_engine, output)?;
+        Ok((call_id, runtime_output))
+    }
+
     /// Starts an outbound call only when the provider route explicitly
     /// selects the Rust engine.
     ///
@@ -580,6 +601,19 @@ impl CallRuntime {
         self.commit_engine_output(working_engine, output)
     }
 
+    /// Applies one call command after verifying control-plane permission and
+    /// delivers any resulting transport action.
+    pub fn apply_authorized_call_command(
+        &mut self,
+        principal: &AuthenticatedPrincipal,
+        call_id: &CallId,
+        command: CallCommand,
+    ) -> Result<RuntimeOutput, RuntimeError> {
+        let mut working_engine = self.engine.clone();
+        let output = working_engine.apply_authorized_call_command(principal, call_id, command)?;
+        self.commit_engine_output(working_engine, output)
+    }
+
     /// Applies an application command with a bounded idempotency key and
     /// delivers its lifecycle result to the transport boundary.
     ///
@@ -593,6 +627,22 @@ impl CallRuntime {
     ) -> Result<RuntimeOutput, RuntimeError> {
         let mut working_engine = self.engine.clone();
         let output = working_engine.apply_idempotent_call_command(call_id, command, command_id)?;
+        self.commit_engine_output(working_engine, output)
+    }
+
+    /// Applies an idempotent call command after verifying control-plane
+    /// permission. Authorization precedes retry-key lookup and transport
+    /// delivery remains atomic with engine state.
+    pub fn apply_authorized_idempotent_call_command(
+        &mut self,
+        principal: &AuthenticatedPrincipal,
+        call_id: &CallId,
+        command: CallCommand,
+        command_id: CommandId,
+    ) -> Result<RuntimeOutput, RuntimeError> {
+        let mut working_engine = self.engine.clone();
+        let output = working_engine
+            .apply_authorized_idempotent_call_command(principal, call_id, command, command_id)?;
         self.commit_engine_output(working_engine, output)
     }
 
@@ -613,6 +663,29 @@ impl CallRuntime {
     ) -> Result<RuntimeOutput, RuntimeError> {
         let mut working_engine = self.engine.clone();
         let output = working_engine.respond_to_invite(call_id, status_code, reason, body, now)?;
+        self.commit_engine_output(working_engine, output)
+    }
+
+    /// Sends an inbound INVITE response after verifying the principal's
+    /// command permission.
+    pub fn respond_to_invite_authorized(
+        &mut self,
+        principal: &AuthenticatedPrincipal,
+        call_id: &CallId,
+        status_code: u16,
+        reason: impl Into<String>,
+        body: Vec<u8>,
+        now: Duration,
+    ) -> Result<RuntimeOutput, RuntimeError> {
+        let mut working_engine = self.engine.clone();
+        let output = working_engine.respond_to_invite_authorized(
+            principal,
+            call_id,
+            status_code,
+            reason,
+            body,
+            now,
+        )?;
         self.commit_engine_output(working_engine, output)
     }
 
@@ -915,6 +988,7 @@ fn provider_transport_matches(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use call_api::ControlPermission;
     use call_bridge::{BridgeEventKind, BridgeRegistryConfig};
     use call_core::{CallState, CommandId, StreamId};
     use call_engine::EngineConfig;
@@ -1195,6 +1269,11 @@ mod tests {
         })
     }
 
+    fn principal(permissions: &[ControlPermission]) -> AuthenticatedPrincipal {
+        AuthenticatedPrincipal::from_verified_claims("voice-app", permissions.iter().copied())
+            .unwrap()
+    }
+
     fn runtime_with_inbound_bridge() -> (CallRuntime, BridgeId, CallId) {
         let runtime_transport = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 2_048).unwrap();
         let runtime_address = runtime_transport.local_addr().unwrap();
@@ -1266,6 +1345,59 @@ mod tests {
                 call_api::ApiError::IdempotencyConflict,
             )))
         ));
+        assert_eq!(
+            runtime.engine().snapshot(&call_id).unwrap().state,
+            CallState::Ending
+        );
+    }
+
+    #[test]
+    fn udp_runtime_authorized_commands_preserve_atomic_denials() {
+        let runtime_transport = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 2_048).unwrap();
+        let peer = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 2_048).unwrap();
+        let mut runtime = CallRuntime::udp(
+            CallEngine::new(EngineConfig::default()).unwrap(),
+            runtime_transport,
+        );
+        let (call_id, _) = runtime
+            .originate(invite(), peer.local_addr().unwrap(), Duration::ZERO)
+            .unwrap();
+        let _ = peer.recv().unwrap();
+        let read_only = principal(&[ControlPermission::ReadCalls]);
+        let hangup = principal(&[ControlPermission::HangupCalls]);
+
+        assert!(matches!(
+            runtime.apply_authorized_call_command(&read_only, &call_id, CallCommand::Hangup),
+            Err(RuntimeError::Engine(EngineError::CallApi(
+                call_api::ApiError::PermissionDenied {
+                    command: CallCommand::Hangup,
+                    permission: ControlPermission::HangupCalls,
+                },
+            )))
+        ));
+        assert_eq!(
+            runtime.engine().snapshot(&call_id).unwrap().state,
+            CallState::Inviting
+        );
+
+        let command_id = CommandId::from_sequence(77);
+        let first = runtime
+            .apply_authorized_idempotent_call_command(
+                &hangup,
+                &call_id,
+                CallCommand::Hangup,
+                command_id.clone(),
+            )
+            .unwrap();
+        let retry = runtime
+            .apply_authorized_idempotent_call_command(
+                &hangup,
+                &call_id,
+                CallCommand::Hangup,
+                command_id,
+            )
+            .unwrap();
+        assert_eq!(retry.events(), first.events());
         assert_eq!(
             runtime.engine().snapshot(&call_id).unwrap().state,
             CallState::Ending

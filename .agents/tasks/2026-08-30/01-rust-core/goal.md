@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-168 — PR #55 latest documentation-head hosted validation green
-**Last checkpoint (UTC):** 2026-08-31T10:35:47Z
+**Current checkpoint:** CP-171 — PR #56 hosted validation green
+**Last checkpoint (UTC):** 2026-08-31T11:09:26Z
 **Active phase:** Phase 1 — Rust media engine
-**Active milestone:** Idempotent control-plane commands and Asterisk fallback<br>
-**Next resume action:** Continue the next bounded control-plane or interoperability gap while preserving the non-real-time acceptance targets, provider evidence gate, and verified Asterisk rollback
-**Active PR:** #55 — `command-idempotency` targets `lifecycle-event-replay`
+**Active milestone:** Authenticated control-plane access and Asterisk fallback<br>
+**Next resume action:** Continue the next bounded control-plane, interoperability, or transport gap while retaining the expanded non-real-time acceptance targets and verified Asterisk fallback
+**Active PR:** [#56](https://github.com/W3Mirror/asterisk/pull/56) — `control-plane-auth` targets `command-idempotency`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-55-command-idempotency`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-56-control-plane-auth`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -2081,6 +2081,7 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 | Phase 0 — current Asterisk surface | in_progress | CP-004/CP-010/CP-045/CP-051; `docs/current-asterisk-surface.md` (commit `edba8386c` plus 2026-08-30 rechecks); no Asterisk runtime, target SIP/RTP/8088 listeners, `.env.aistack`, or sanitized capture corpus; DNS/config/host address drift remains | #1 | Obtain provider/runtime access and sanitized successful/failed fixtures |
 | Phase 1 — Rust media engine | in_progress | CP-005/CP-008/CP-019/CP-042/CP-047–CP-067, CP-138, CP-142–CP-168; PR #2 safe protocol/media foundation, PR #8 bounded RTP↔AI media session/DTMF/PCM recorder, PR #18 WebSocket adapter, PR #19 stream driver, PR #20 UDP RTP/RTCP runtime, PR #21 parser fuzz harnesses, PR #25 deterministic replay foundation, PR #26 signaling/media fault corpus, PR #47 lazy provider Digest resolution, PR #48 provider-route gating, PR #50 routed provider-auth context, PR #51 PRACK/100rel support, PR #52 reliable provisional retransmission, PR #53 SIP-over-TLS transport, PR #54 bounded lifecycle-event replay, and PR #55 bounded command idempotency; repository-native hosted Rust CI runs the complete ordinary suite on every PR and push to `aistack/main` | [#55](https://github.com/W3Mirror/asterisk/pull/55) OPEN/CLEAN/MERGEABLE at `55b32fc9`; #54 OPEN/CLEAN/MERGEABLE at `a6b04012b`; #53 OPEN/CLEAN/MERGEABLE at `a496e114a`; #52 OPEN/CLEAN/MERGEABLE; #51 OPEN/CLEAN/MERGEABLE | Continue the next bounded control-plane, interoperability, or transport gap while retaining the provider, rollback, and Asterisk-fallback gates |
 | Offline deterministic verification | in_progress | CP-060–CP-067 plus CP-143–CP-168 cover bounded replay, signaling/media faults, provider routing, lazy Digest resolution, duplicate-challenge replay, PRACK/100rel sequencing and RAck validation, atomic error paths, secret redaction, terminal context reclamation, TLS handshake/certificate validation, bounded SIP-over-TLS framing, explicit terminal `Ended` events, bounded lifecycle-event replay with evicted-cursor errors, bounded command idempotency with cross-crate property coverage, and 256 locked workspace tests locally; hosted Rust quality run 33382769780 passed Workspace checks 99458620858, Protocol fuzz checks 99458620679, and Dependency audit 99458620789 on the exact PR #55 documentation head; local SIPp, signaling/media/WebSocket/combined/short-soak reclamation smokes and all six nightly address-sanitizer fuzz-target checks also pass | [#55](https://github.com/W3Mirror/asterisk/pull/55) OPEN/CLEAN/MERGEABLE; #54 OPEN/CLEAN/MERGEABLE; #53 OPEN/CLEAN/MERGEABLE; #52 OPEN/CLEAN/MERGEABLE; #51 OPEN/CLEAN/MERGEABLE | Continue the next bounded control-plane, interoperability, or transport gap while retaining provider, rollback, and Asterisk-fallback gates |
+| Authenticated control-plane access | in_progress | CP-169; permission-gated API/engine/runtime wrappers, bounded non-secret principals, authorization-before-lookup, idempotent retry protection, terminal-resource cleanup, focused and property tests | pending #56 | Commit/publish `control-plane-auth`, then verify the complete hosted suite |
 | Phase 2 — SIP edge shadow mode | not_started | — | — | Extend offline differential tooling with sanitized Asterisk/provider captures when available |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
 | Phase 4 — expanded provider coverage | not_started | — | — | Add one provider compatibility suite per rollout target |
@@ -2757,6 +2758,8 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 53 | hosted green | `sip-tls-transport` | `prack-retransmission` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-53-tls-transport` | Bounded blocking Rustls SIP-over-TLS transport with SIP-over-TCP framing, certificate validation, runtime dispatch, and TLS provider-route matching | `a496e114a` | CP-156–CP-160; focused TLS handshake, trust/mismatch, clean EOF, frame-limit, runtime dispatch, and TLS route tests pass locally; 250 locked workspace tests, format, workspace Clippy, six sanitizer fuzz checks, SIPp, and deterministic load/reclamation smokes pass locally; fresh hosted run `33377179264` passed Workspace (`99441179071`), Protocol fuzz (`99441178260`), and Dependency audit (`99441178490`); schedule/manual-only capacity and two-hour jobs skipped as designed | Continue the next bounded interoperability or transport gap while retaining Asterisk fallback and all provider/rollback traffic gates |
 | 54 | `lifecycle-event-replay` | `sip-tls-transport` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-54-lifecycle-event-replay` | Bounded terminal lifecycle events and replay/backfill cursors with explicit evicted-history errors | hosted green | `a6b04012b` | CP-161–CP-162; focused API/call-core/differential/scenario replay tests, 252 locked workspace tests, format, workspace Clippy, six sanitizer fuzz checks, SIPp, and deterministic load/reclamation smokes pass locally; final hosted run `33379375285` passed Workspace (`99447979268`), Protocol fuzz (`99447978970`), and Dependency audit (`99447979346`); PR #54 OPEN/CLEAN/MERGEABLE | Continue the next bounded control-plane, interoperability, or transport gap while retaining Asterisk fallback and all provider/rollback traffic gates |
 | 55 | `command-idempotency` | `lifecycle-event-replay` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-55-command-idempotency` | Bounded command-key idempotency across call API, engine, UDP runtime, and cross-crate property fixtures | hosted green | `0808bb0f0` | CP-163–CP-167; focused API/engine/runtime tests, 256 locked workspace tests, format, workspace Clippy, six sanitizer fuzz checks, SIPp, and deterministic load/reclamation smokes pass locally; final documentation-head run `33382105103` passed Workspace (`99456571181`), Protocol fuzz (`99456571380`), and Dependency audit (`99456571269`); PR #55 OPEN/CLEAN/MERGEABLE | Continue the next bounded control-plane, interoperability, or transport gap while retaining Asterisk fallback and all provider/rollback traffic gates |
+
+| 56 | [#56](https://github.com/W3Mirror/asterisk/pull/56) | `control-plane-auth` | `command-idempotency` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-56-control-plane-auth` | Authenticated/authorized control-plane principals and permission-gated call API, engine, and blocking runtime wrappers with authorization-before-lookup, bounded non-secret identity handoff, idempotent retry protection, and complete terminal-resource reclamation | hosted green | `bec6974b3` | CP-169–CP-171; focused call-api (14), call-engine (24), call-runtime (40), and property (14) tests; 264 locked workspace tests; format, diff, workspace Clippy, three SIPp scenarios, signaling/media/WebSocket/combined/short-soak smokes, and six address-sanitizer fuzz-target checks pass locally; hosted Rust quality run `33385198785` passed Workspace (`99466158134`), Protocol fuzz (`99466157969`), and Dependency audit (`99466158309`); schedule/manual-only capacity and two-hour soak jobs correctly skipped for the pull-request event; PR #56 is OPEN/non-draft/CLEAN/MERGEABLE with local, origin, and GitHub head parity | Continue the next bounded control-plane, interoperability, or transport gap while retaining Asterisk fallback and all provider/rollback traffic gates |
 
 ### CP-026 — PR10 published and stacked remote parity verified
 
@@ -5759,6 +5762,69 @@ blockers: This remains provider-neutral offline control-plane evidence. It does 
 next_action: Continue the next bounded control-plane, interoperability, or transport gap while preserving the expanded non-real-time acceptance targets, provider evidence gate, and verified Asterisk rollback
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #55 or revert the command-idempotency implementation if its contract is superseded
 notes: This is a documentation-only ledger reconciliation; the executable command-idempotency implementation and its relevant API, call-core, engine, runtime, and cross-crate property tests remain unchanged. Every pull request event and push to `aistack/main` runs the complete ordinary hosted suite rather than affected-module-only selection; focused tests are included in the full locked workspace run. Scheduled/manual jobs add deeper capacity, property, and soak tiers. All workflow runners remain hosted `ubuntu-latest`, and Docker remains limited to pinned SIPp inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-169 — Authenticated control-plane access locally green
+
+~~~yaml
+checkpoint_id: CP-169
+recorded_at_utc: 2026-08-31T10:58:12Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Authenticated control-plane access and Asterisk fallback
+scope: Add bounded authenticated-principal handoff, permission-gated call API/engine/runtime wrappers, authorization-before-lookup and retry-replay protection, terminal-resource reclamation, cross-crate property coverage, and documentation
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-56-control-plane-auth
+branch: control-plane-auth
+base_branch: command-idempotency
+pr: pending #56 publication
+head_sha: 417230cce25e90ee3009850919617e620502ae0d plus uncommitted control-plane-auth implementation, tests, documentation, and CP-169
+evidence: `cargo fmt --all -- --check`, `git diff --check`, `cargo test --workspace --locked` (264 tests), `cargo clippy --workspace --all-targets --locked`, `tests/rust-sipp/run.sh` (success, busy, and cancel scenarios), signaling/media/WebSocket/combined load smokes, short mixed-lifecycle soak, and `cargo +nightly fuzz check --fuzz-dir fuzz --sanitizer address --no-cfg-fuzzing` (all six targets) pass locally. Focused authorization coverage includes bounded non-secret principal validation, permission/error-code checks, authorization before call lookup and idempotency replay, authorized snapshot/list/replay/originate/response/negotiation/command/reclaim paths, runtime atomic denials, terminal signaling-resource cleanup, and an unauthorized property invariant.
+blockers: Commit/push and hosted PR #56 validation remain pending. This is provider-neutral offline control-plane evidence; it does not prove real Asterisk/provider interoperability, provider credentials, live traffic, rollout/rollback execution, or safe Rust traffic enablement. Rust traffic stays disabled and Asterisk remains the fallback.
+next_action: Commit the implementation, tests, docs, and CP-169 normally; push `control-plane-auth`, open PR #56 against `command-idempotency`, then verify exact local/origin/GitHub parity and the complete ordinary hosted suite.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #56 or revert the authenticated control-plane implementation if its contract is superseded.
+notes: Relevant API, engine, runtime, and cross-crate property tests ship with the authorization behavior. Every pull request event (opened, reopened, or synchronized) runs the complete ordinary hosted suite, not an affected-module-only subset; a push to `aistack/main` runs the same complete ordinary hosted suite. Focused tests are included in the full locked workspace run. Scheduled/manual jobs add the larger capacity, property, and soak tiers. All workflow runners remain hosted `ubuntu-latest`, and Docker remains limited to pinned SIPp inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-170 — Authenticated control-plane access committed
+
+~~~yaml
+checkpoint_id: CP-170
+recorded_at_utc: 2026-08-31T11:00:20Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Authenticated control-plane access and Asterisk fallback
+scope: Record the committed authorization slice and its offline verification before publication
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-56-control-plane-auth
+branch: control-plane-auth
+base_branch: command-idempotency
+pr: pending #56 publication
+head_sha: 389c6af8e
+evidence: Commit `389c6af8e` contains the bounded authenticated-principal handoff, permission-gated API/engine/runtime wrappers, authorization-before-lookup and retry-replay protection, terminal-resource cleanup, focused tests, cross-crate property coverage, and documentation. CP-169 local evidence remains green: 264 locked workspace tests, format/diff checks, workspace Clippy, three SIPp scenarios, signaling/media/WebSocket/combined/short-soak smokes, and all six address-sanitizer fuzz-target checks.
+blockers: Push and hosted PR #56 validation remain pending. This is provider-neutral offline control-plane evidence; it does not prove real Asterisk/provider interoperability, provider credentials, live traffic, rollout/rollback execution, or safe Rust traffic enablement. Rust traffic stays disabled and Asterisk remains the fallback.
+next_action: Push `control-plane-auth`, open PR #56 against `command-idempotency`, then verify exact local/origin/GitHub parity and the complete ordinary hosted suite.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #56 or revert `389c6af8e` if the authenticated control-plane contract is superseded.
+notes: Every pull request event (opened, reopened, or synchronized) runs the complete ordinary hosted suite, not an affected-module-only subset; a push to `aistack/main` runs the same complete ordinary hosted suite. Focused tests are included in the full locked workspace run. Scheduled/manual jobs add the larger capacity, property, and soak tiers. All workflow runners remain hosted `ubuntu-latest`, and Docker remains limited to pinned SIPp inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-171 — PR #56 hosted validation green
+
+~~~yaml
+checkpoint_id: CP-171
+recorded_at_utc: 2026-08-31T11:09:26Z
+status: hosted_green
+phase: Phase 1 — Rust media engine
+milestone: Authenticated control-plane access and Asterisk fallback
+scope: Verify the complete ordinary hosted Rust quality suite on PR #56's exact publication head, including authorization, retry-replay protection, terminal-resource reclamation, and the expanded non-real-time acceptance/test contract
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-56-control-plane-auth
+branch: control-plane-auth
+base_branch: command-idempotency
+pr: https://github.com/W3Mirror/asterisk/pull/56
+head_sha: bec6974b34a12c3d63435ed44f5173179b2ac6ab
+evidence: PR #56 is OPEN, non-draft, CLEAN, and MERGEABLE against exact base `command-idempotency` at `417230cce25e90ee3009850919617e620502ae0d`, with local, origin, and GitHub head parity at `bec6974b34a12c3d63435ed44f5173179b2ac6ab`. Hosted Rust quality run `33385198785` passed: Workspace checks `99466158134` passed formatting, all 264 locked workspace tests, all three pinned Docker-backed SIPp scenarios, deterministic signaling/RTP-media/WebSocket-media/combined/short-soak reclamation smokes, and workspace Clippy across all targets; Protocol fuzz checks `99466157969` passed all six address-sanitizer targets; Dependency audit `99466158309` passed. The schedule/manual-only Signaling capacity matrix `99466159204` and Two-hour lifecycle soak `99466159546` correctly skipped for the pull-request event.
+blockers: This remains provider-neutral offline control-plane evidence. It does not prove real Asterisk/provider interoperability, provider credentials, live traffic, route failover, production rollout/rollback execution, or safe Rust traffic enablement. Rust traffic stays disabled and Asterisk remains the fallback. The broader lifecycle/post-call, failure/recovery, observability/security, and deployment/rollback acceptance targets remain future bounded implementation/evidence slices.
+next_action: Continue the next bounded control-plane, interoperability, or transport gap while preserving the expanded non-real-time acceptance targets, provider evidence gate, and verified Asterisk rollback
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #56 or revert the authenticated control-plane implementation if its contract is superseded
+notes: Relevant call-api, call-engine, call-runtime, and cross-crate property tests ship with the authorization behavior. Every pull request event (opened, reopened, or synchronized) runs the complete ordinary hosted suite, not an affected-module-only subset; a push to `aistack/main` runs the same complete ordinary hosted suite. Focused tests are included in the full locked workspace run. Scheduled/manual jobs add the larger capacity, property, and soak tiers. All workflow runners remain hosted `ubuntu-latest`, and Docker remains limited to pinned SIPp inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
