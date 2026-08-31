@@ -1769,6 +1769,22 @@ Scheduled or manually dispatched workflows provide the extended gates:
 All CI jobs use hosted runners. Docker is permitted only for the pinned local
 SIPp integration dependency; it does not change the runner requirement.
 
+## 52.2 Event-to-test execution matrix
+
+The required test evidence is mapped to repository events as follows:
+
+| Event | Hosted checks | Required scope |
+| --- | --- | --- |
+| Pull request `opened`, `reopened`, or `synchronize` | `cargo fmt --all -- --check`, workspace Clippy, and `cargo test --workspace --locked` when a Rust workspace is present | The PR must add or update focused tests for every affected crate/module; those tests are exercised by the complete ordinary workspace run. The workflow does not currently provide a changed-module-only shortcut. |
+| Push to `aistack/main` | The same complete ordinary hosted workspace suite, including formatting, Clippy, and tests | Validate the integrated stack after the PR is merged. “All tests” means all ordinary offline workspace tests available on that branch, not credentialed or long-running tests. |
+| Scheduled or manual dispatch | Extended fuzzing, SIPp/interoperability, capacity, property, soak, memory, security, differential, deployment, rollback, and approved live-provider checks | Run the longer, environment-dependent, or credentialed suites that are not suitable for every PR or main push. |
+
+If a stack layer has no Rust workspace or a particular extended test harness,
+the corresponding detection step may skip that check; the absence must remain
+visible in the CI result and must not be treated as evidence that the test
+layer passed. Focused tests remain part of the implementation acceptance
+criteria even when a stack layer cannot execute them yet.
+
 ---
 
 # 53. Engineering Rules
