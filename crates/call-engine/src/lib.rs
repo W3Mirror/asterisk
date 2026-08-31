@@ -7,6 +7,7 @@
 //! deterministic in tests and keeps the Asterisk fallback untouched.
 
 use std::{
+    borrow::Cow,
     collections::HashMap,
     error::Error,
     fmt::{Display, Formatter},
@@ -100,6 +101,10 @@ pub enum EngineError {
     InvalidResponseStatus,
     /// The outbound call reached its configured Digest retry bound.
     DigestRetryLimitReached,
+    /// The provider policy does not configure Digest authentication.
+    DigestAuthenticationNotConfigured,
+    /// The current provider Digest credentials could not be resolved.
+    DigestCredentialsUnavailable,
     /// A SIP Digest challenge or authorization could not be processed.
     Digest(DigestError),
     /// The call-control registry rejected an operation.
@@ -136,6 +141,12 @@ impl Display for EngineError {
             }
             Self::DigestRetryLimitReached => {
                 formatter.write_str("outbound call reached its SIP Digest retry limit")
+            }
+            Self::DigestAuthenticationNotConfigured => {
+                formatter.write_str("provider SIP Digest authentication is not configured")
+            }
+            Self::DigestCredentialsUnavailable => {
+                formatter.write_str("provider SIP Digest credentials are unavailable")
             }
             Self::Digest(error) => Display::fmt(error, formatter),
             Self::CallApi(error) => Display::fmt(error, formatter),
@@ -652,26 +663,67 @@ impl CallEngine {
         cnonce: Option<&str>,
         nonce_count: Option<u32>,
     ) -> Result<EngineOutput, EngineError> {
+        self.receive_digest_challenge_with(response, now, cnonce, nonce_count, || {
+            Ok(Cow::Borrowed(credentials))
+        })
+    }
+
+    /// Receives an outbound INVITE authentication challenge and lazily
+    /// resolves credentials only when a new authenticated retry is required.
+    ///
+    /// The resolver is not called for a duplicate challenge that only needs
+    /// its transaction ACK replayed. Any owned credentials it returns are
+    /// dropped after this operation and are never retained by the engine.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when challenge processing or credential resolution
+    /// fails. Every error leaves the engine unchanged.
+    pub fn receive_digest_challenge_resolved<F>(
+        &mut self,
+        response: SipResponse,
+        now: Duration,
+        cnonce: Option<&str>,
+        nonce_count: Option<u32>,
+        resolve: F,
+    ) -> Result<EngineOutput, EngineError>
+    where
+        F: FnOnce() -> Result<DigestCredentials, EngineError>,
+    {
+        self.receive_digest_challenge_with(response, now, cnonce, nonce_count, || {
+            resolve().map(Cow::Owned)
+        })
+    }
+
+    fn receive_digest_challenge_with<'a, F>(
+        &mut self,
+        response: SipResponse,
+        now: Duration,
+        cnonce: Option<&str>,
+        nonce_count: Option<u32>,
+        resolve: F,
+    ) -> Result<EngineOutput, EngineError>
+    where
+        F: FnOnce() -> Result<Cow<'a, DigestCredentials>, EngineError>,
+    {
         let mut working = self.clone();
-        let output = working.receive_digest_challenge_inner(
-            response,
-            now,
-            credentials,
-            cnonce,
-            nonce_count,
-        )?;
+        let output =
+            working.receive_digest_challenge_inner(response, now, cnonce, nonce_count, resolve)?;
         *self = working;
         Ok(output)
     }
 
-    fn receive_digest_challenge_inner(
+    fn receive_digest_challenge_inner<'a, F>(
         &mut self,
         response: SipResponse,
         now: Duration,
-        credentials: &DigestCredentials,
         cnonce: Option<&str>,
         nonce_count: Option<u32>,
-    ) -> Result<EngineOutput, EngineError> {
+        resolve: F,
+    ) -> Result<EngineOutput, EngineError>
+    where
+        F: FnOnce() -> Result<Cow<'a, DigestCredentials>, EngineError>,
+    {
         let (challenge_header, authorization_header) = digest_header_names(response.status_code)?;
         let key = invite_response_key(&response)?;
 
@@ -719,12 +771,13 @@ impl CallEngine {
 
         let mut next_branch = self.next_branch;
         let retry_branch = self.allocate_unique_client_branch(&mut next_branch)?;
+        let credentials = resolve()?;
         let retry_request = build_digest_retry_request(
             &request,
             &retry_branch,
             authorization_header,
             &challenge,
-            credentials,
+            credentials.as_ref(),
             cnonce,
             nonce_count,
         )?;
@@ -2252,6 +2305,76 @@ mod tests {
             .unwrap();
         assert_eq!(valid.actions().len(), 2);
         assert_eq!(engine.digest_retries.get(&call_id), Some(&1));
+    }
+
+    #[test]
+    fn resolved_digest_credentials_are_lazy_and_missing_values_are_atomic() {
+        let mut engine = CallEngine::new(EngineConfig::default()).unwrap();
+        let request = invite(
+            "digest-resolved",
+            "sip-call-digest-resolved",
+            "Bob <sip:bob@example.com>",
+            "4 INVITE",
+        );
+        let (call_id, _) = engine
+            .originate(
+                request.clone(),
+                address(5061),
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        let challenge = digest_challenge(
+            &request,
+            401,
+            "WWW-Authenticate",
+            r#"Digest realm="carrier", nonce="resolved-nonce", qop="auth""#,
+        );
+        let transaction_count = engine.transaction_count();
+
+        assert_eq!(
+            engine
+                .receive_digest_challenge_resolved(
+                    challenge.clone(),
+                    Duration::from_millis(1),
+                    Some("resolved-cnonce"),
+                    Some(1),
+                    || Err(EngineError::DigestCredentialsUnavailable),
+                )
+                .unwrap_err(),
+            EngineError::DigestCredentialsUnavailable
+        );
+        assert_eq!(engine.transaction_count(), transaction_count);
+        assert!(!engine.digest_retries.contains_key(&call_id));
+
+        let resolutions = std::cell::Cell::new(0);
+        let retried = engine
+            .receive_digest_challenge_resolved(
+                challenge.clone(),
+                Duration::from_millis(2),
+                Some("resolved-cnonce"),
+                Some(1),
+                || {
+                    resolutions.set(resolutions.get() + 1);
+                    Ok(DigestCredentials::new("resolved-user", "resolved-secret"))
+                },
+            )
+            .unwrap();
+        assert_eq!(resolutions.get(), 1);
+        assert_eq!(retried.actions().len(), 2);
+
+        let duplicate = engine
+            .receive_digest_challenge_resolved(
+                challenge,
+                Duration::from_millis(3),
+                None,
+                None,
+                || panic!("duplicate challenge must not resolve credentials"),
+            )
+            .unwrap();
+        assert_eq!(duplicate.actions().len(), 1);
+        assert_eq!(resolutions.get(), 1);
+        assert!(!format!("{engine:?}").contains("resolved-secret"));
     }
 
     #[test]

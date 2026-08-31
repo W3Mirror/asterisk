@@ -24,11 +24,12 @@ use call_api::CallCommand;
 use call_bridge::{BridgeError, BridgeEvent, BridgeRegistry, BridgeState};
 use call_core::{BridgeId, CallEventKind, CallId, LegId, LifecycleEvent};
 use call_engine::{CallEngine, EngineError, EngineOutput, SendAction};
+use provider_routing::AuthenticationPolicy;
 use sip_auth::DigestCredentials;
 use sip_security::SourceIpPolicy;
 use sip_transaction::TransportReliability;
 use sip_transport::{TcpTransport, TransportError, UdpTransport};
-use sip_types::{SipMessage, SipRequest};
+use sip_types::{SipMessage, SipRequest, SipResponse};
 
 /// A blocking transport endpoint connected to one [`CallEngine`].
 #[derive(Debug)]
@@ -110,6 +111,27 @@ impl RuntimeTransport {
             Self::Udp(_) => None,
             Self::Tcp { peer, .. } => Some(*peer),
         }
+    }
+}
+
+/// Resolves one provider credential reference at the moment an authenticated
+/// retry is required.
+///
+/// Implementations should fetch the current secret-store value on every call
+/// so credential rotation does not require rebuilding the runtime. Returned
+/// credentials are consumed only for the current Digest calculation and are
+/// never retained by [`CallRuntime`].
+pub trait DigestCredentialResolver {
+    /// Returns the current credentials for a secret-opaque provider reference.
+    fn resolve(&mut self, credential_ref: &str) -> Option<DigestCredentials>;
+}
+
+impl<F> DigestCredentialResolver for F
+where
+    F: FnMut(&str) -> Option<DigestCredentials>,
+{
+    fn resolve(&mut self, credential_ref: &str) -> Option<DigestCredentials> {
+        self(credential_ref)
     }
 }
 
@@ -476,6 +498,62 @@ impl CallRuntime {
         cnonce: Option<&str>,
         nonce_count: Option<u32>,
     ) -> Result<RuntimeOutput, RuntimeError> {
+        self.receive_once_with_digest_handler(now, |engine, response| {
+            Ok(engine.receive_digest_challenge(response, now, credentials, cnonce, nonce_count)?)
+        })
+    }
+
+    /// Receives one transport read and resolves provider Digest credentials
+    /// from the supplied authentication policy only when a new authenticated
+    /// INVITE retry is required.
+    ///
+    /// The resolver is invoked again for each new challenge, allowing runtime
+    /// credential rotation. It is not called for ordinary messages, duplicate
+    /// challenge ACK replay, or a challenge rejected before authentication.
+    /// Neither the credential reference nor returned credentials are retained.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the provider does not configure Digest, the
+    /// current credentials are unavailable, or ordinary transport/engine
+    /// processing fails. Engine state remains unchanged on every error.
+    pub fn receive_once_with_provider_digest_auth<R>(
+        &mut self,
+        now: Duration,
+        authentication: &AuthenticationPolicy,
+        resolver: &mut R,
+        cnonce: Option<&str>,
+        nonce_count: Option<u32>,
+    ) -> Result<RuntimeOutput, RuntimeError>
+    where
+        R: DigestCredentialResolver + ?Sized,
+    {
+        self.receive_once_with_digest_handler(now, |engine, response| {
+            Ok(engine.receive_digest_challenge_resolved(
+                response,
+                now,
+                cnonce,
+                nonce_count,
+                || match authentication {
+                    AuthenticationPolicy::None => {
+                        Err(EngineError::DigestAuthenticationNotConfigured)
+                    }
+                    AuthenticationPolicy::Digest { credential_ref, .. } => resolver
+                        .resolve(credential_ref)
+                        .ok_or(EngineError::DigestCredentialsUnavailable),
+                },
+            )?)
+        })
+    }
+
+    fn receive_once_with_digest_handler<F>(
+        &mut self,
+        now: Duration,
+        mut handle_challenge: F,
+    ) -> Result<RuntimeOutput, RuntimeError>
+    where
+        F: FnMut(&mut CallEngine, SipResponse) -> Result<EngineOutput, RuntimeError>,
+    {
         let messages = self.transport.receive()?;
         for (_, source) in &messages {
             if !self.source_policy.allows_socket(*source) {
@@ -491,13 +569,7 @@ impl CallRuntime {
                     working_engine.receive_request(source, request, now, reliability)?
                 }
                 SipMessage::Response(response) if matches!(response.status_code, 401 | 407) => {
-                    working_engine.receive_digest_challenge(
-                        response,
-                        now,
-                        credentials,
-                        cnonce,
-                        nonce_count,
-                    )?
+                    handle_challenge(&mut working_engine, response)?
                 }
                 SipMessage::Response(response) => working_engine.receive_response(response, now)?,
             };
@@ -602,6 +674,7 @@ mod tests {
     use call_bridge::{BridgeEventKind, BridgeRegistryConfig};
     use call_core::{CallState, StreamId};
     use call_engine::EngineConfig;
+    use sip_auth::{DigestAlgorithm, DigestAuthorization, DigestChallenge};
     use sip_transport::{TcpTransport, UdpTransport};
     use sip_types::{Headers, SipMethod, SipRequest, SipResponse};
     use std::io::{Read, Write};
@@ -680,17 +753,14 @@ mod tests {
         })
     }
 
-    fn digest_challenge_for_invite(request: &SipRequest) -> SipMessage {
+    fn digest_challenge_for_invite_with(request: &SipRequest, challenge_value: &str) -> SipMessage {
         let mut headers = Headers::new();
         headers.push("Via", request.headers.get("Via").unwrap());
         headers.push("From", request.headers.get("From").unwrap());
         headers.push("To", "Bob <sip:bob@example.com>;tag=runtime-digest");
         headers.push("Call-ID", request.headers.get("Call-ID").unwrap());
         headers.push("CSeq", request.headers.get("CSeq").unwrap());
-        headers.push(
-            "WWW-Authenticate",
-            r#"Digest realm="runtime", nonce="runtime-nonce", qop="auth""#,
-        );
+        headers.push("WWW-Authenticate", challenge_value);
         SipMessage::Response(SipResponse {
             version: "SIP/2.0".to_owned(),
             status_code: 401,
@@ -698,6 +768,125 @@ mod tests {
             headers,
             body: Vec::new(),
         })
+    }
+
+    fn digest_challenge_for_invite(request: &SipRequest) -> SipMessage {
+        digest_challenge_for_invite_with(
+            request,
+            r#"Digest realm="runtime", nonce="runtime-nonce", qop="auth""#,
+        )
+    }
+
+    fn receive_ack(peer: &UdpTransport) {
+        let (message, _) = peer.recv().unwrap();
+        assert!(matches!(
+            message,
+            SipMessage::Request(SipRequest {
+                method: SipMethod::Ack,
+                ..
+            })
+        ));
+    }
+
+    fn receive_ack_and_retry(peer: &UdpTransport) -> SipRequest {
+        receive_ack(peer);
+        let (message, _) = peer.recv().unwrap();
+        let SipMessage::Request(request) = message else {
+            panic!("expected authenticated INVITE retry");
+        };
+        assert_eq!(request.method, SipMethod::Invite);
+        request
+    }
+
+    fn assert_digest_retry(
+        request: &SipRequest,
+        challenge_value: &str,
+        credentials: &DigestCredentials,
+    ) {
+        let authorization =
+            DigestAuthorization::parse(request.headers.get("Authorization").unwrap()).unwrap();
+        assert!(authorization.verify_against(
+            &DigestChallenge::parse(challenge_value).unwrap(),
+            credentials,
+            "INVITE",
+            &request.body,
+        ));
+    }
+
+    fn complete_provider_digest_call(
+        runtime: &mut CallRuntime,
+        peer: &UdpTransport,
+        runtime_address: SocketAddr,
+        call_id: &CallId,
+        retry: &SipRequest,
+    ) {
+        peer.send_to(&response_for_invite(retry, 200), runtime_address)
+            .unwrap();
+        let completed = runtime.receive_once(Duration::from_millis(5)).unwrap();
+        assert!(
+            completed
+                .events()
+                .iter()
+                .any(|event| event.kind == CallEventKind::Answered)
+        );
+        receive_ack(peer);
+        assert_eq!(
+            runtime.engine().snapshot(call_id).unwrap().state,
+            CallState::Answered
+        );
+    }
+
+    fn reject_provider_digest_retry<R>(
+        runtime: &mut CallRuntime,
+        peer: &UdpTransport,
+        runtime_address: SocketAddr,
+        policy: &AuthenticationPolicy,
+        resolver: &mut R,
+        retry: &SipRequest,
+    ) where
+        R: DigestCredentialResolver + ?Sized,
+    {
+        let challenge = digest_challenge_for_invite_with(
+            retry,
+            r#"Digest realm="runtime", nonce="rotation-nonce-3", qop="auth", stale=true"#,
+        );
+        peer.send_to(&challenge, runtime_address).unwrap();
+        let error = runtime
+            .receive_once_with_provider_digest_auth(
+                Duration::from_millis(4),
+                policy,
+                resolver,
+                Some("rotation-cnonce-3"),
+                Some(1),
+            )
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            RuntimeError::Engine(EngineError::DigestRetryLimitReached)
+        ));
+    }
+
+    fn replay_duplicate_provider_digest_challenge<R>(
+        runtime: &mut CallRuntime,
+        peer: &UdpTransport,
+        runtime_address: SocketAddr,
+        challenge: &SipMessage,
+        resolver: &mut R,
+    ) where
+        R: DigestCredentialResolver + ?Sized,
+    {
+        peer.send_to(challenge, runtime_address).unwrap();
+        let output = runtime
+            .receive_once_with_provider_digest_auth(
+                Duration::from_millis(3),
+                &AuthenticationPolicy::None,
+                resolver,
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(output.actions().len(), 1);
+        receive_ack(peer);
     }
 
     fn bye_for_invite(request: &SipRequest) -> SipMessage {
@@ -1009,6 +1198,187 @@ mod tests {
             CallState::Answered
         );
         assert!(!format!("{runtime:?}").contains("runtime-secret"));
+    }
+
+    #[test]
+    fn provider_digest_policy_and_missing_credentials_fail_atomically() {
+        let peer = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 4_096).unwrap();
+        let runtime_transport = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 4_096).unwrap();
+        let runtime_address = runtime_transport.local_addr().unwrap();
+        let mut runtime = CallRuntime::udp(
+            CallEngine::new(EngineConfig::default()).unwrap(),
+            runtime_transport,
+        );
+        let (call_id, _) = runtime
+            .originate(invite(), peer.local_addr().unwrap(), Duration::ZERO)
+            .unwrap();
+        let (originated, _) = peer.recv().unwrap();
+        let SipMessage::Request(originated) = originated else {
+            panic!("expected originated INVITE");
+        };
+        let transaction_count = runtime.engine().transaction_count();
+        let resolutions = std::cell::Cell::new(0);
+        let mut resolver = |_: &str| {
+            resolutions.set(resolutions.get() + 1);
+            None
+        };
+
+        peer.send_to(&digest_challenge_for_invite(&originated), runtime_address)
+            .unwrap();
+        let missing_policy = runtime
+            .receive_once_with_provider_digest_auth(
+                Duration::from_millis(1),
+                &AuthenticationPolicy::None,
+                &mut resolver,
+                Some("policy-cnonce"),
+                Some(1),
+            )
+            .unwrap_err();
+        assert!(matches!(
+            missing_policy,
+            RuntimeError::Engine(EngineError::DigestAuthenticationNotConfigured)
+        ));
+        assert_eq!(resolutions.get(), 0);
+        assert_eq!(runtime.engine().transaction_count(), transaction_count);
+        assert_eq!(
+            runtime.engine().snapshot(&call_id).unwrap().state,
+            CallState::Inviting
+        );
+
+        let policy = AuthenticationPolicy::Digest {
+            credential_ref: "opaque-provider-reference".to_owned(),
+            algorithm: DigestAlgorithm::Md5,
+        };
+        peer.send_to(&digest_challenge_for_invite(&originated), runtime_address)
+            .unwrap();
+        let missing_credentials = runtime
+            .receive_once_with_provider_digest_auth(
+                Duration::from_millis(2),
+                &policy,
+                &mut resolver,
+                Some("policy-cnonce"),
+                Some(1),
+            )
+            .unwrap_err();
+        assert!(matches!(
+            missing_credentials,
+            RuntimeError::Engine(EngineError::DigestCredentialsUnavailable)
+        ));
+        assert_eq!(resolutions.get(), 1);
+        assert_eq!(runtime.engine().transaction_count(), transaction_count);
+        assert_eq!(
+            runtime.engine().snapshot(&call_id).unwrap().state,
+            CallState::Inviting
+        );
+        assert!(!format!("{policy:?}").contains("opaque-provider-reference"));
+        assert!(!format!("{missing_credentials:?}").contains("opaque-provider-reference"));
+    }
+
+    #[test]
+    fn provider_digest_resolves_rotation_for_stale_nonce_and_preserves_retry_bound() {
+        let peer = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 4_096).unwrap();
+        let runtime_transport = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 4_096).unwrap();
+        let runtime_address = runtime_transport.local_addr().unwrap();
+        let mut runtime = CallRuntime::udp(
+            CallEngine::new(EngineConfig {
+                max_digest_retries_per_call: 2,
+                ..EngineConfig::default()
+            })
+            .unwrap(),
+            runtime_transport,
+        );
+        let (call_id, _) = runtime
+            .originate(invite(), peer.local_addr().unwrap(), Duration::ZERO)
+            .unwrap();
+        let (originated, _) = peer.recv().unwrap();
+        let SipMessage::Request(originated) = originated else {
+            panic!("expected originated INVITE");
+        };
+        let policy = AuthenticationPolicy::Digest {
+            credential_ref: "rotating-provider-reference".to_owned(),
+            algorithm: DigestAlgorithm::Md5,
+        };
+        let old_credentials = DigestCredentials::new("runtime-user", "old-runtime-secret");
+        let rotated_credentials = DigestCredentials::new("runtime-user", "rotated-runtime-secret");
+        let resolutions = std::cell::Cell::new(0);
+        let mut resolver = |credential_ref: &str| {
+            assert_eq!(credential_ref, "rotating-provider-reference");
+            let next = resolutions.get() + 1;
+            resolutions.set(next);
+            match next {
+                1 => Some(old_credentials.clone()),
+                2 => Some(rotated_credentials.clone()),
+                _ => panic!("credential resolver called after the retry bound"),
+            }
+        };
+
+        let first_value = r#"Digest realm="runtime", nonce="rotation-nonce-1", qop="auth""#;
+        peer.send_to(
+            &digest_challenge_for_invite_with(&originated, first_value),
+            runtime_address,
+        )
+        .unwrap();
+        runtime
+            .receive_once_with_provider_digest_auth(
+                Duration::from_millis(1),
+                &policy,
+                &mut resolver,
+                Some("rotation-cnonce-1"),
+                Some(1),
+            )
+            .unwrap();
+        let first_retry = receive_ack_and_retry(&peer);
+        assert_digest_retry(&first_retry, first_value, &old_credentials);
+
+        let stale_value =
+            r#"Digest realm="runtime", nonce="rotation-nonce-2", qop="auth", stale=true"#;
+        assert!(DigestChallenge::parse(stale_value).unwrap().stale());
+        let stale_challenge = digest_challenge_for_invite_with(&first_retry, stale_value);
+        peer.send_to(&stale_challenge, runtime_address).unwrap();
+        runtime
+            .receive_once_with_provider_digest_auth(
+                Duration::from_millis(2),
+                &policy,
+                &mut resolver,
+                Some("rotation-cnonce-2"),
+                Some(1),
+            )
+            .unwrap();
+        let second_retry = receive_ack_and_retry(&peer);
+        assert_eq!(second_retry.headers.get("CSeq"), Some("3 INVITE"));
+        assert_digest_retry(&second_retry, stale_value, &rotated_credentials);
+        assert_eq!(resolutions.get(), 2);
+
+        replay_duplicate_provider_digest_challenge(
+            &mut runtime,
+            &peer,
+            runtime_address,
+            &stale_challenge,
+            &mut resolver,
+        );
+        assert_eq!(resolutions.get(), 2);
+
+        reject_provider_digest_retry(
+            &mut runtime,
+            &peer,
+            runtime_address,
+            &policy,
+            &mut resolver,
+            &second_retry,
+        );
+        assert_eq!(resolutions.get(), 2);
+
+        complete_provider_digest_call(
+            &mut runtime,
+            &peer,
+            runtime_address,
+            &call_id,
+            &second_retry,
+        );
+        let debug = format!("{runtime:?}");
+        assert!(!debug.contains("old-runtime-secret"));
+        assert!(!debug.contains("rotated-runtime-secret"));
+        assert!(!debug.contains("rotating-provider-reference"));
     }
 
     #[test]

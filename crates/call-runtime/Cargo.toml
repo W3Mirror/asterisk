@@ -13,6 +13,7 @@ call-engine = { path = "../call-engine" }
 dtmf = { path = "../dtmf" }
 media-core = { path = "../media-core" }
 media-runtime = { path = "../media-runtime" }
+provider-routing = { path = "../provider-routing" }
 rtcp = { path = "../rtcp" }
 sip-auth = { path = "../sip-auth" }
 sip-transaction = { path = "../sip-transaction" }
