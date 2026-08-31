@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-202 — PR #66 final hosted head validated
-**Last checkpoint (UTC):** 2026-08-31T16:50:00Z
+**Current checkpoint:** CP-206 — PR #67 final hosted head reconciliation validated
+**Last checkpoint (UTC):** 2026-08-31T17:42:23Z
 **Active phase:** Phase 1 — Rust media engine
-**Active milestone:** Redaction-safe call diagnostics and Asterisk fallback<br>
+**Active milestone:** Controlled process-restart handoff and Asterisk fallback<br>
 **Next resume action:** Continue the next bounded offline acceptance slice without enabling Rust traffic
-**Active PR:** #66 — `call-diagnostics` targets `media-recording-errors` (hosted green)
+**Active PR:** #67 — `process-restart-handoff` targets `call-diagnostics` (hosted green)
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-66-call-diagnostics`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-67-process-restart`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -1809,7 +1809,10 @@ Additionally:
 - parser unit tests;
 - state-machine tests;
 - integration tests;
-- protocol fixture tests.
+- protocol fixture tests;
+- restart/drain handoff tests covering admission stop, terminal-event ordering and
+  idempotency, bridge/provider-context cleanup, resource reclamation, and
+  cancellation via `resume`.
 
 Tests added for the affected module must run on its PR. Cross-cutting changes
 must also run tests for dependent modules and shared API/event contracts. The
@@ -1837,6 +1840,7 @@ Every implementation slice carries its relevant tests in the same change:
 | Runtime or cross-crate behavior | Focused module tests plus dependent-module/API-event contract tests and a deterministic integration scenario |
 | RTP, RTCP, DTMF, WebSocket, or AI-media behavior | Direction/format/bounds tests, backpressure or loss cases, and reclamation assertions |
 | Lifecycle, capacity, or resource behavior | Deterministic load/reclamation tests and a short soak; larger capacity and multi-hour soak jobs remain scheduled or manually dispatched |
+| Process restart or drain handoff | Idempotent terminalization, ordered call/bridge events, admission/readiness transitions, provider-context and resource cleanup, and resume/cancellation tests |
 | Provider/Asterisk interoperability | Sanitized replay/fixture coverage first; real provider calls and rollback evidence are a separate pre-traffic gate |
 
 The PR check therefore includes the focused tests for the affected module because
@@ -2094,8 +2098,8 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 | Workstream | Status | Evidence / checkpoint | PR | Next action |
 | --- | --- | --- | --- | --- |
 | Phase 0 — current Asterisk surface | in_progress | CP-004/CP-010/CP-045/CP-051; `docs/current-asterisk-surface.md` (commit `edba8386c` plus 2026-08-30 rechecks); no Asterisk runtime, target SIP/RTP/8088 listeners, `.env.aistack`, or sanitized capture corpus; DNS/config/host address drift remains | #1 | Obtain provider/runtime access and sanitized successful/failed fixtures |
-| Phase 1 — Rust media engine | in_progress | CP-005/CP-008/CP-019/CP-042/CP-047–CP-067, CP-138, CP-142–CP-197, CP-199–CP-202; PR #2 safe protocol/media foundation, PR #8 bounded RTP↔AI media session/DTMF/PCM recorder, PR #18 WebSocket adapter, PR #19 stream driver, PR #20 UDP RTP/RTCP runtime, PR #21 parser fuzz harnesses, PR #25 deterministic replay foundation, PR #26 signaling/media fault corpus, PR #47 lazy provider Digest resolution, PR #48 provider-route gating, PR #50 routed provider-auth context, PR #51 PRACK/100rel support, PR #52 reliable provisional retransmission, PR #53 SIP-over-TLS transport, PR #54 bounded lifecycle-event replay, PR #55 bounded command idempotency, PR #56 authenticated control-plane access, PR #57 cardinality-safe aggregate metrics, PR #58 capacity-aware health/readiness, PR #59 bounded audit signals, PR #60 graceful drain, PR #61 transport-failure cleanup, PR #62 AI/WebSocket disconnect cleanup, PR #63 bounded media recording, PR #64 post-call recording finalization, PR #65 recorder error propagation, and PR #66 redaction-safe call diagnostics; repository-native hosted Rust CI runs the complete ordinary suite on every PR and push to `aistack/main` | [#66](https://github.com/W3Mirror/asterisk/pull/66) OPEN/CLEAN/MERGEABLE at `45aba2951`; [#65](https://github.com/W3Mirror/asterisk/pull/65) OPEN/CLEAN/MERGEABLE at `a2ed61e`; [#64](https://github.com/W3Mirror/asterisk/pull/64) OPEN/CLEAN/MERGEABLE at `14abe4a`; #63 OPEN/CLEAN/MERGEABLE at `9adb9d084`; #62 OPEN/CLEAN/MERGEABLE at `e8355f391`; #61 OPEN/CLEAN/MERGEABLE at `ba4bdde6d`; #60 OPEN/CLEAN/MERGEABLE at `3ec8e9618`; #59 OPEN/CLEAN/MERGEABLE at `723af3937`; #58 OPEN/CLEAN/MERGEABLE at `889c250f4`; #57 OPEN/CLEAN/MERGEABLE at `afa5de0fc`; #56 OPEN/CLEAN/MERGEABLE at `bec6974b3`; #55 OPEN/CLEAN/MERGEABLE at `55b32fc9`; #54 OPEN/CLEAN/MERGEABLE at `a6b04012b`; #53 OPEN/CLEAN/MERGEABLE at `a496e114a`; #52 OPEN/CLEAN/MERGEABLE; #51 OPEN/CLEAN/MERGEABLE | Continue the next bounded offline acceptance slice without enabling Rust traffic |
-| Offline deterministic verification | in_progress | CP-060–CP-067 plus CP-143–CP-197 and CP-199–CP-202 cover bounded replay, signaling/media faults, provider routing, lazy Digest resolution, duplicate-challenge replay, PRACK/100rel sequencing and RAck validation, atomic error paths, secret redaction, terminal context reclamation, TLS handshake/certificate validation, bounded SIP-over-TLS framing, explicit terminal `Ended` events, bounded lifecycle-event replay with evicted-cursor errors, bounded command idempotency with cross-crate property coverage, authenticated control-plane authorization, label-free aggregate metrics with identifier-redaction assertions, capacity-aware health/readiness with terminal retention metrics, credential-free bounded audit outcomes for authorized operations, graceful drain/restart admission with stateless rejection and existing-dialog continuation, TCP transport-loss failure/reclamation, AI/WebSocket disconnect cleanup, bounded caller/agent recording capture, timestamp-aligned mixed WAV export, configuration validation, idempotent post-call recording finalization, terminal recording reclamation, recorder error propagation without process panics, and redaction-safe call diagnostics/listing with authorization and bounded signaling/media detail; focused call-engine (33 tests) and call-runtime (46 tests), complete locked workspace tests, format, workspace Clippy, and `git diff --check` pass locally; hosted PR #66 run `33416312924` passed Workspace checks `99567679211` (formatting, complete locked workspace tests, pinned SIPp scenarios, deterministic signaling/media/WebSocket/combined/short-soak reclamation smokes, and workspace Clippy), Protocol fuzz checks `99567679452` (all address-sanitizer targets), and Dependency audit `99567679324`; schedule/manual-only Signaling capacity matrix `99567680928` and Two-hour lifecycle soak `99567680317` correctly skipped for the pull-request event | [#66](https://github.com/W3Mirror/asterisk/pull/66) OPEN/CLEAN/MERGEABLE at `45aba2951` | Continue the next bounded offline acceptance slice |
+| Phase 1 — Rust media engine | in_progress | CP-005/CP-008/CP-019/CP-042/CP-047–CP-067, CP-138, CP-142–CP-197, CP-199–CP-206; PR #2 safe protocol/media foundation, PR #8 bounded RTP↔AI media session/DTMF/PCM recorder, PR #18 WebSocket adapter, PR #19 stream driver, PR #20 UDP RTP/RTCP runtime, PR #21 parser fuzz harnesses, PR #25 deterministic replay foundation, PR #26 signaling/media fault corpus, PR #47 lazy provider Digest resolution, PR #48 provider-route gating, PR #50 routed provider-auth context, PR #51 PRACK/100rel support, PR #52 reliable provisional retransmission, PR #53 SIP-over-TLS transport, PR #54 bounded lifecycle-event replay, PR #55 bounded command idempotency, PR #56 authenticated control-plane access, PR #57 cardinality-safe aggregate metrics, PR #58 capacity-aware health/readiness, PR #59 bounded audit signals, PR #60 graceful drain, PR #61 transport-failure cleanup, PR #62 AI/WebSocket disconnect cleanup, PR #63 bounded media recording, PR #64 post-call recording finalization, PR #65 recorder error propagation, PR #66 redaction-safe call diagnostics, and PR #67 controlled process-restart handoff; repository-native hosted Rust CI runs the complete ordinary suite on every PR and push to `aistack/main` | [#67](https://github.com/W3Mirror/asterisk/pull/67) OPEN/CLEAN/MERGEABLE at `c1944645e`; final hosted run `33420380060` green; [#66](https://github.com/W3Mirror/asterisk/pull/66) OPEN/CLEAN/MERGEABLE at `495af2985`; [#65](https://github.com/W3Mirror/asterisk/pull/65) OPEN/CLEAN/MERGEABLE at `a2ed61e`; [#64](https://github.com/W3Mirror/asterisk/pull/64) OPEN/CLEAN/MERGEABLE at `14abe4a`; #63 OPEN/CLEAN/MERGEABLE at `9adb9d084`; #62 OPEN/CLEAN/MERGEABLE at `e8355f391`; #61 OPEN/CLEAN/MERGEABLE at `ba4bdde6d`; #60 OPEN/CLEAN/MERGEABLE at `3ec8e9618`; #59 OPEN/CLEAN/MERGEABLE at `723af3937`; #58 OPEN/CLEAN/MERGEABLE at `889c250f4`; #57 OPEN/CLEAN/MERGEABLE at `afa5de0fc`; #56 OPEN/CLEAN/MERGEABLE at `bec6974b3`; #55 OPEN/CLEAN/MERGEABLE at `55b32fc9`; #54 OPEN/CLEAN/MERGEABLE at `a6b04012b`; #53 OPEN/CLEAN/MERGEABLE at `a496e114a`; #52 OPEN/CLEAN/MERGEABLE; #51 OPEN/CLEAN/MERGEABLE | Continue the next bounded offline acceptance slice without enabling Rust traffic |
+| Offline deterministic verification | in_progress | CP-060–CP-067 plus CP-143–CP-197 and CP-199–CP-206 cover bounded replay, signaling/media faults, provider routing, lazy Digest resolution, duplicate-challenge replay, PRACK/100rel sequencing and RAck validation, atomic error paths, secret redaction, terminal context reclamation, TLS handshake/certificate validation, bounded SIP-over-TLS framing, explicit terminal `Ended` events, bounded lifecycle-event replay with evicted-cursor errors, bounded command idempotency with cross-crate property coverage, authenticated control-plane authorization, label-free aggregate metrics with identifier-redaction assertions, capacity-aware health/readiness with terminal retention metrics, credential-free bounded audit outcomes for authorized operations, graceful drain/restart admission with stateless rejection and existing-dialog continuation, TCP transport-loss failure/reclamation, AI/WebSocket disconnect cleanup, bounded caller/agent recording capture, timestamp-aligned mixed WAV export, configuration validation, idempotent post-call recording finalization, terminal recording reclamation, recorder error propagation without process panics, redaction-safe call diagnostics/listing with authorization and bounded signaling/media detail, and controlled process-restart handoff with idempotent terminalization, ordered call/bridge events, admission drain, provider-context cleanup, and bounded resource reclamation; focused call-engine (34 tests) and call-runtime (47 tests), complete locked workspace tests, format, workspace Clippy, and `git diff --check` pass locally; hosted PR #67 final run `33420380060` passed Workspace checks `99581012361` (formatting, complete locked workspace tests, pinned SIPp scenarios, deterministic signaling/media/WebSocket/combined/short-soak reclamation smokes, and workspace Clippy), Protocol fuzz checks `99581012542` (all address-sanitizer targets), and Dependency audit `99581012466`; schedule/manual-only Signaling capacity matrix `99581013569` and Two-hour lifecycle soak `99581013502` correctly skipped for the pull-request event | [#67](https://github.com/W3Mirror/asterisk/pull/67) OPEN/CLEAN/MERGEABLE at `c1944645e` | Continue the next bounded offline acceptance slice without enabling Rust traffic |
 | Authenticated control-plane access | hosted_green | CP-169–CP-171; permission-gated API/engine/runtime wrappers, bounded non-secret principals, authorization-before-lookup, idempotent retry protection, terminal-resource cleanup, focused and property tests; hosted PR #56 validation green | [#56](https://github.com/W3Mirror/asterisk/pull/56) | Continue with observability and other bounded non-real-time acceptance slices |
 | Cardinality-safe observability | hosted_green | CP-172–CP-173; bounded call lifecycle counters, active-resource/queue gauges, signaling retransmission gauges, label-free Prometheus exposition, runtime delegation, identifier-redaction tests, 268 locked workspace tests, local SIPp/load/soak/fuzz checks, and hosted PR #57 validation green | [#57](https://github.com/W3Mirror/asterisk/pull/57) | Continue the next bounded control-plane, interoperability, or transport gap |
 | Health/readiness | hosted_green | CP-174–CP-175; capacity-aware `live`/`ready` state, retained-call metrics, label-free health exposition, runtime delegation, and focused terminal-reclamation/readiness tests; local 270-test workspace, format, Clippy, SIPp, load/smoke, soak, and six-target fuzz checks pass; hosted run `33389642572` passed workspace, fuzz, and dependency-audit jobs while scheduled capacity/soak jobs skipped as intended | [#58](https://github.com/W3Mirror/asterisk/pull/58) OPEN/CLEAN/MERGEABLE at `889c250f4` | Start the next bounded control-plane, interoperability, or transport slice from `health-readiness` |
@@ -2793,6 +2797,8 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 63 | pending | `media-recording` | `media-ai-disconnect-cleanup` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-63-media-recording` | Bounded caller/agent recording capture, timestamp-aligned mixed WAV export, metadata, and terminal recording reclamation | in_progress | `e8355f391d1a2e118b9e6c0280cf250ffef49b9a` plus uncommitted implementation/tests/docs/ledger | CP-188; focused media-core and complete local workspace tests pass; hosted validation pending publication | Commit and publish PR #63, then verify exact local/origin/GitHub parity and hosted checks |
 | 64 | [#64](https://github.com/W3Mirror/asterisk/pull/64) | `media-recording-finalize` | `media-recording` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-64-media-recording-finalize` | Post-call recording snapshot/finalization for caller and agent WAV artifacts, atomic queue release, idempotent retry behavior, and UDP-runtime delegation | hosted green | `14abe4a740d0ee1bc8f2285d8f989455dab9ebb6` | CP-191–CP-194; PR #64 is OPEN/non-draft/MERGEABLE against exact `media-recording` base `9adb9d084bcd634b777ff8a906a397a3404aef79`; reconciliation commit `14abe4a74` is ledger-only after the hosted-green implementation head `e7e16853e`; hosted Rust quality run `33409229167` passed Workspace checks `99544340567` (formatting, 292 locked workspace tests including recording finalization, three pinned Docker-backed SIPp scenarios, deterministic signaling/RTP-media/WebSocket-media/combined/short-soak reclamation smokes, and workspace Clippy), Protocol fuzz checks `99544340466` (all six address-sanitizer targets), and Dependency audit `99544340228`; schedule/manual-only Signaling capacity matrix `99544341856` and Two-hour lifecycle soak `99544341511` correctly skipped for the pull-request event | Continue the next bounded offline acceptance slice without enabling Rust traffic |
 | 65 | [#65](https://github.com/W3Mirror/asterisk/pull/65) | `media-recording-errors` | `media-recording-finalize` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-65-media-recording-errors` | Propagate recorder invariant failures through media-core, UDP runtime, deterministic replay, bridge, and load-smoke callers instead of panicking; preserve queued AI audio on rejected agent recording | hosted green | `ebf0061d3296fd475c27a09e7128422dec7183d7` | CP-195–CP-196; PR #65 is OPEN/non-draft/CLEAN/MERGEABLE against exact `media-recording-finalize` base; hosted Rust quality run `33411786153` passed Workspace checks `99552855007`, Protocol fuzz checks `99552854768`, and Dependency audit `99552855169`; schedule/manual-only Signaling capacity matrix `99552856331` and Two-hour lifecycle soak `99552856718` correctly skipped for the pull-request event | Record final ledger-head hosted validation without enabling Rust traffic |
+| 66 | [#66](https://github.com/W3Mirror/asterisk/pull/66) | `call-diagnostics` | `media-recording-errors` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-66-call-diagnostics` | Redaction-safe bounded call diagnostics and deterministic listing across call-engine/runtime, authorization-before-lookup, signaling/media detail, and terminal reclamation | hosted green | `495af2985` | CP-199–CP-202; PR #66 is OPEN/CLEAN/MERGEABLE; hosted ordinary Rust checks are green on its final published head; no provider credentials, production routing, or live traffic changed | Use this exact head as the base for the controlled process-restart handoff |
+| 67 | [#67](https://github.com/W3Mirror/asterisk/pull/67) | `process-restart-handoff` | `call-diagnostics` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-67-process-restart` | Controlled process-restart handoff: drain admission, terminalize active calls, end bridges, clear provider-auth context, return ordered bounded events, and preserve idempotent resource cleanup | hosted green | `8c448d91f608baa8b9508053966574ec176ee151` | CP-203–CP-206; focused call-engine (34 tests) and call-runtime (47 tests), complete locked workspace tests, formatting, diff checks, SIPp, reclamation smokes, short soak, and six ASAN fuzz-target checks pass locally. PR #67 is OPEN/non-draft/CLEAN/MERGEABLE against `call-diagnostics`; final hosted run `33421141483` passed Workspace checks `99583537776` (formatting, complete locked workspace tests, pinned SIPp scenarios, deterministic signaling/media/WebSocket/combined/short-soak reclamation smokes, and workspace Clippy), Protocol fuzz checks `99583537697`, and Dependency audit `99583537459`; schedule/manual-only Signaling capacity matrix `99583539166` and Two-hour lifecycle soak `99583538965` correctly skipped for the pull-request event | Continue the next bounded offline acceptance slice without enabling Rust traffic |
 
 ### CP-026 — PR10 published and stacked remote parity verified
 
@@ -6509,6 +6515,90 @@ blockers: This remains provider-neutral offline evidence. Production configurati
 next_action: Continue the next bounded offline acceptance slice without enabling Rust traffic; retain Asterisk as the fallback until external interoperability and rollout gates are approved.
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #66 or revert `3b1169e` if the ledger checkpoint is superseded.
 notes: The final hosted run covers the diagnostics implementation and its focused call-engine/runtime tests through the complete ordinary hosted suite. This checkpoint itself is documentation-only; no behavior or CI configuration changed. Larger capacity, extended property, multi-hour soak, and credentialed provider/live-call evidence remain scheduled/manual or approval-gated.
+~~~
+
+### CP-203 — Process restart handoff locally green
+
+~~~yaml
+checkpoint_id: CP-203
+recorded_at_utc: 2026-08-31T17:20:00Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Controlled process-restart handoff and Asterisk fallback
+scope: Add a bounded, transactional process-restart handoff across call-engine and call-runtime
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-67-process-restart
+branch: process-restart-handoff
+base_branch: call-diagnostics
+pr: pending
+head_sha: 9a7698463
+evidence: Commit `9a7698463` adds `RestartHandoff` and `CallEngine::prepare_restart_handoff` to stop admission, terminalize active calls exactly once, release signaling resources, retain terminal records, and return ordered lifecycle events while remaining draining. It adds `RuntimeRestartHandoff` and `CallRuntime::prepare_restart_handoff` to end retained bridges, clear provider-auth context, preserve transactional clone/commit behavior, and return ordered bridge events. Focused call-engine tests pass (34 tests) and call-runtime tests pass (47 tests), including idempotency, drain/readiness, event ordering, bridge termination, provider-context cleanup, resource reclamation, and resume behavior. `cargo test --workspace --locked`, `cargo fmt --all -- --check`, and `git diff --check` pass locally; workspace Clippy exits 0 with existing baseline documentation/pedantic warnings. Docker-backed SIPp success/busy/cancel scenarios, deterministic signaling/media/WebSocket/combined/short-soak reclamation smokes, and all six ASAN fuzz-target checks also pass locally.
+blockers: Commit/publication and hosted PR validation are pending; provider/runtime configuration, sanitized provider captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated.
+next_action: Push `process-restart-handoff`, create PR #67 against `call-diagnostics`, and verify exact local/origin/GitHub parity plus the complete ordinary hosted suite.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #67 or revert its commit if the handoff contract is superseded.
+notes: The handoff report intentionally excludes SIP bodies, network addresses, and credentials. Repeated handoffs emit no duplicate terminal call or bridge events; `resume` remains available if a planned restart is cancelled.
+~~~
+
+### CP-204 — PR #67 hosted validation green
+
+~~~yaml
+checkpoint_id: CP-204
+recorded_at_utc: 2026-08-31T17:28:45Z
+status: hosted_green
+phase: Phase 1 — Rust media engine
+milestone: Controlled process-restart handoff and Asterisk fallback
+scope: Verify the complete ordinary hosted Rust quality suite on PR #67's publication head
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-67-process-restart
+branch: process-restart-handoff
+base_branch: call-diagnostics
+pr: https://github.com/W3Mirror/asterisk/pull/67
+head_sha: 025c195d35b578e8bddcc893ed00d9616d82fc35
+evidence: Hosted Rust quality run `33419415264` passed Workspace checks `99577845224` (formatting, complete locked workspace tests, three pinned Docker-backed SIPp scenarios, deterministic signaling/media/WebSocket/combined/short-soak reclamation smokes, and workspace Clippy), Protocol fuzz checks `99577845356` (all six address-sanitizer targets), and Dependency audit `99577845087`. Schedule/manual-only Signaling capacity matrix `99577847498` and Two-hour lifecycle soak `99577846701` correctly skipped for the pull-request event. PR #67 is OPEN, non-draft, CLEAN, and MERGEABLE against `call-diagnostics` at `495af2985`.
+blockers: This remains provider-neutral offline evidence. Production configuration, sanitized provider captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated.
+next_action: Reconcile the final PR #67 head after this ledger update, then continue the next bounded offline acceptance slice without enabling Rust traffic.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #67 or revert `025c195d` if the handoff contract is superseded.
+notes: The hosted ordinary suite includes the focused call-engine/runtime restart-handoff regressions through the complete workspace test invocation. Larger capacity, extended property, multi-hour soak, and credentialed provider/live-call evidence remain scheduled/manual or approval-gated.
+~~~
+
+### CP-205 — PR #67 final hosted head validated
+
+~~~yaml
+checkpoint_id: CP-205
+recorded_at_utc: 2026-08-31T17:33:53Z
+status: hosted_green
+phase: Phase 1 — Rust media engine
+milestone: Controlled process-restart handoff and Asterisk fallback
+scope: Reconcile the final hosted validation and parity for PR #67's ledger head
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-67-process-restart
+branch: process-restart-handoff
+base_branch: call-diagnostics
+pr: https://github.com/W3Mirror/asterisk/pull/67
+head_sha: fcbe0e7f14b6d388458ee94cbbe8c99e13a5c823
+evidence: Local HEAD, `origin/process-restart-handoff`, and `gh pr view 67 --json headRefOid` report `fcbe0e7f14b6d388458ee94cbbe8c99e13a5c823` before this ledger-only checkpoint. Hosted Rust quality run `33419898988` passed Workspace checks `99579445582` (formatting, complete locked workspace tests, three pinned Docker-backed SIPp scenarios, deterministic signaling/media/WebSocket/combined/short-soak reclamation smokes, and workspace Clippy), Protocol fuzz checks `99579445632` (all six address-sanitizer targets), and Dependency audit `99579445544`. Schedule/manual-only Signaling capacity matrix `99579446502` and Two-hour lifecycle soak `99579446903` correctly skipped for the pull-request event. PR #67 is OPEN, non-draft, CLEAN, and MERGEABLE against `call-diagnostics` at `495af2985`.
+blockers: This remains provider-neutral offline evidence. Production configuration, sanitized provider captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated.
+next_action: Continue the next bounded offline acceptance slice without enabling Rust traffic; retain Asterisk as the fallback until external interoperability and rollout gates are approved.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #67 or revert `fcbe0e7` if the handoff contract is superseded.
+notes: This checkpoint records the final hosted result for the implementation and prior ledger head; the checkpoint commit itself only updates this ledger. Focused restart-handoff tests remain in the complete hosted ordinary suite. Larger capacity, extended property, multi-hour soak, and credentialed provider/live-call evidence remain scheduled/manual or approval-gated.
+~~~
+
+### CP-206 — PR #67 final hosted head reconciliation validated
+
+~~~yaml
+checkpoint_id: CP-206
+recorded_at_utc: 2026-08-31T17:42:23Z
+status: hosted_green
+phase: Phase 1 — Rust media engine
+milestone: Controlled process-restart handoff and Asterisk fallback
+scope: Reconcile the PR #67 stack row and final hosted result with the synchronized ledger head
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-67-process-restart
+branch: process-restart-handoff
+base_branch: call-diagnostics
+pr: https://github.com/W3Mirror/asterisk/pull/67
+head_sha: c1944645e5766a7515d23ed314c91f5fc1fa175a
+evidence: Local HEAD, `origin/process-restart-handoff`, and `gh pr view 67 --json headRefOid` report `c1944645e5766a7515d23ed314c91f5fc1fa175a`. Hosted Rust quality run `33420380060` passed Workspace checks `99581012361` (formatting, complete locked workspace tests, pinned SIPp scenarios, deterministic signaling/media/WebSocket/combined/short-soak reclamation smokes, and workspace Clippy), Protocol fuzz checks `99581012542` (all address-sanitizer targets), and Dependency audit `99581012466`; schedule/manual-only Signaling capacity matrix `99581013569` and Two-hour lifecycle soak `99581013502` correctly skipped for the pull-request event. PR #67 is OPEN, non-draft, CLEAN, and MERGEABLE against `call-diagnostics` at `495af2985`.
+blockers: This remains provider-neutral offline evidence. Production configuration, sanitized provider captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated.
+next_action: Continue the next bounded offline acceptance slice without enabling Rust traffic; retain Asterisk as the fallback until external interoperability and rollout gates are approved.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #67 or revert the ledger reconciliation if the handoff contract is superseded.
+notes: This checkpoint is documentation-only and reconciles the stack row after the hosted run on the final synchronized head. Focused restart-handoff tests remain in the complete hosted ordinary suite. Larger capacity, extended property, multi-hour soak, and credentialed provider/live-call evidence remain scheduled/manual or approval-gated.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints

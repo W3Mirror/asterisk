@@ -257,6 +257,46 @@ pub struct EngineMetrics {
     pub draining: bool,
 }
 
+/// Bounded result of preparing an engine for a controlled process restart.
+///
+/// The handoff is deliberately terminal rather than serializing live SIP
+/// transactions: a replacement process cannot safely resume those dialogs
+/// without transport-specific state that is owned by the old process. The
+/// report gives the outer supervisor the terminal application events and call
+/// identities it must persist before replacing the process.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RestartHandoff {
+    terminated_calls: Vec<CallId>,
+    events: Vec<LifecycleEvent>,
+    health: EngineHealth,
+}
+
+impl RestartHandoff {
+    /// Returns application calls that were active when the handoff started.
+    #[must_use]
+    pub fn terminated_calls(&self) -> &[CallId] {
+        &self.terminated_calls
+    }
+
+    /// Returns ordered lifecycle events that must be delivered or persisted.
+    #[must_use]
+    pub fn events(&self) -> &[LifecycleEvent] {
+        &self.events
+    }
+
+    /// Returns the engine health after terminalization.
+    #[must_use]
+    pub const fn health(&self) -> EngineHealth {
+        self.health
+    }
+
+    /// Returns whether no active calls required terminalization.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.terminated_calls.is_empty()
+    }
+}
+
 /// Redaction-safe diagnostics for one retained call.
 ///
 /// This view intentionally contains the application call identifier and
@@ -1678,6 +1718,43 @@ impl CallEngine {
         let output = working.fail_active_calls_inner()?;
         *self = working;
         Ok(output)
+    }
+
+    /// Prepares the engine for replacement by draining admission and
+    /// terminalizing every call that is still in progress.
+    ///
+    /// The returned report is the bounded handoff contract for a supervisor:
+    /// persist or deliver its lifecycle events and call identities before
+    /// dropping this engine. Existing terminal records remain available for
+    /// diagnostics and explicit reclamation. No SIP action is generated, and
+    /// the engine remains draining until [`Self::resume`] is called.
+    ///
+    /// The operation is transactional. If a bounded state transition fails,
+    /// neither the drain flag nor any call state is changed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] when the bounded registry cannot list calls or
+    /// terminalization cannot be completed atomically.
+    pub fn prepare_restart_handoff(&mut self) -> Result<RestartHandoff, EngineError> {
+        let mut working = self.clone();
+        working.begin_drain();
+        let snapshots = working
+            .registry
+            .list(working.config.call_registry.max_calls)?;
+        let terminated_calls = snapshots
+            .iter()
+            .filter(|snapshot| !matches!(snapshot.state, CallState::Ended | CallState::Failed))
+            .map(|snapshot| snapshot.id.clone())
+            .collect::<Vec<_>>();
+        let output = working.fail_active_calls_inner()?;
+        let health = working.health();
+        *self = working;
+        Ok(RestartHandoff {
+            terminated_calls,
+            events: output.events,
+            health,
+        })
     }
 
     fn fail_active_calls_inner(&mut self) -> Result<EngineOutput, EngineError> {
@@ -3154,6 +3231,53 @@ mod tests {
         assert!(engine.fail_active_calls().unwrap().events().is_empty());
         engine.reclaim_terminal_call(&outbound_id).unwrap();
         engine.reclaim_terminal_call(&inbound_id).unwrap();
+        assert_eq!(engine.metrics().calls.calls_retained, 0);
+    }
+
+    #[test]
+    fn restart_handoff_drains_admission_and_is_idempotent() {
+        let mut engine = CallEngine::new(EngineConfig::default()).unwrap();
+        let (call_id, _) = engine
+            .originate(
+                invite(
+                    "restart-handoff-branch",
+                    "restart-handoff-call",
+                    "Bob <sip:bob@example.com>",
+                    "1 INVITE",
+                ),
+                address(5060),
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+
+        let handoff = engine.prepare_restart_handoff().unwrap();
+        assert_eq!(handoff.terminated_calls(), std::slice::from_ref(&call_id));
+        assert_eq!(
+            handoff
+                .events()
+                .iter()
+                .map(|event| event.kind)
+                .collect::<Vec<_>>(),
+            vec![CallEventKind::Failed, CallEventKind::Ended]
+        );
+        assert!(handoff.health().draining);
+        assert!(!handoff.health().ready);
+        assert_eq!(handoff.health().retained_calls, 1);
+        assert_eq!(handoff.health().active_transactions, 0);
+        assert_eq!(handoff.health().pending_events, 0);
+        assert_eq!(engine.snapshot(&call_id).unwrap().state, CallState::Ended);
+        assert_eq!(engine.metrics().active_dialogs, 0);
+        assert!(engine.is_draining());
+
+        let repeated = engine.prepare_restart_handoff().unwrap();
+        assert!(repeated.is_empty());
+        assert!(repeated.events().is_empty());
+        assert_eq!(repeated.health(), handoff.health());
+
+        engine.resume();
+        assert!(engine.health().ready);
+        engine.reclaim_terminal_call(&call_id).unwrap();
         assert_eq!(engine.metrics().calls.calls_retained, 0);
     }
 

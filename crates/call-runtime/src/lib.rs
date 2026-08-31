@@ -25,7 +25,8 @@ use call_api::{AuditRecord, AuthenticatedPrincipal, CallCommand};
 use call_bridge::{BridgeError, BridgeEvent, BridgeRegistry, BridgeState};
 use call_core::{BridgeId, CallEventKind, CallId, CommandId, LegId, LifecycleEvent};
 use call_engine::{
-    CallDiagnostics, CallEngine, EngineError, EngineHealth, EngineMetrics, EngineOutput, SendAction,
+    CallDiagnostics, CallEngine, EngineError, EngineHealth, EngineMetrics, EngineOutput,
+    RestartHandoff as EngineRestartHandoff, SendAction,
 };
 use provider_routing::{
     AuthenticationPolicy, EngineTarget, ProviderRouteTable, RouteMatch, SignalingTransport,
@@ -324,6 +325,50 @@ impl RuntimeOutput {
         let (actions, events) = output.into_parts();
         self.actions.extend(actions);
         self.events.extend(events);
+    }
+}
+
+/// Bounded result of preparing a runtime for a controlled process restart.
+///
+/// The report contains only application call and lifecycle identifiers plus
+/// bridge events. SIP message bodies, network addresses, and credentials are
+/// intentionally excluded so it can be persisted by a restart supervisor.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeRestartHandoff {
+    engine: EngineRestartHandoff,
+    bridge_events: Vec<BridgeEvent>,
+}
+
+impl RuntimeRestartHandoff {
+    /// Returns application calls that were active when the handoff started.
+    #[must_use]
+    pub fn terminated_calls(&self) -> &[CallId] {
+        self.engine.terminated_calls()
+    }
+
+    /// Returns ordered call lifecycle events that must be delivered or
+    /// persisted before replacing the process.
+    #[must_use]
+    pub fn events(&self) -> &[LifecycleEvent] {
+        self.engine.events()
+    }
+
+    /// Returns ordered bridge events emitted while ending bridge forwarding.
+    #[must_use]
+    pub fn bridge_events(&self) -> &[BridgeEvent] {
+        &self.bridge_events
+    }
+
+    /// Returns runtime health after the handoff has terminalized calls.
+    #[must_use]
+    pub const fn health(&self) -> EngineHealth {
+        self.engine.health()
+    }
+
+    /// Returns whether no active calls required terminalization.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.engine.is_empty()
     }
 }
 
@@ -994,6 +1039,49 @@ impl CallRuntime {
         self.commit_runtime_output(working_engine, output)
     }
 
+    /// Prepares this runtime for a controlled process replacement.
+    ///
+    /// New call admission is stopped, active calls are terminalized without
+    /// attempting unavailable wire actions, provider-auth contexts are
+    /// removed, and every retained bridge is ended. The returned bounded
+    /// report is the supervisor's handoff payload; persist or deliver it before
+    /// dropping this runtime. The runtime remains draining until [`Self::resume`]
+    /// is called, which is useful when a restart is cancelled.
+    ///
+    /// The operation is transactional. A bridge/event-bound failure leaves the
+    /// runtime, engine, bridge registry, and provider contexts unchanged.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RuntimeError`] when call terminalization, bridge event
+    /// synchronization, or bridge cleanup cannot be completed atomically.
+    pub fn prepare_restart_handoff(&mut self) -> Result<RuntimeRestartHandoff, RuntimeError> {
+        let mut working_engine = self.engine.clone();
+        let engine_handoff = working_engine.prepare_restart_handoff()?;
+        let mut working_bridges = self.bridges.clone();
+        let mut bridge_events = Vec::new();
+        if let Some(bridges) = working_bridges.as_mut() {
+            bridge_events.extend(bridges.drain_events(usize::MAX)?);
+            for event in engine_handoff.events() {
+                synchronize_bridge_lifecycle(bridges, std::slice::from_ref(event))?;
+                bridge_events.extend(bridges.drain_events(usize::MAX)?);
+            }
+            end_all_bridges(bridges, &mut bridge_events)?;
+        }
+        let mut working_provider_authentication = self.provider_authentication.clone();
+        // A replacement process cannot safely resume any in-flight Digest
+        // exchange. Clear every retained context, including stale entries
+        // that may not have emitted a terminal lifecycle event in this pass.
+        working_provider_authentication.clear();
+        self.engine = working_engine;
+        self.bridges = working_bridges;
+        self.provider_authentication = working_provider_authentication;
+        Ok(RuntimeRestartHandoff {
+            engine: engine_handoff,
+            bridge_events,
+        })
+    }
+
     /// Polls call-engine timers and delivers any retransmissions or failures.
     ///
     /// # Errors
@@ -1096,6 +1184,21 @@ fn synchronize_provider_authentication(
             contexts.retain(|_, (call_id, _)| call_id != &event.call_id);
         }
     }
+}
+
+fn end_all_bridges(
+    bridges: &mut BridgeRegistry,
+    events: &mut Vec<BridgeEvent>,
+) -> Result<(), BridgeError> {
+    let snapshots = bridges.list(bridges.config().max_bridges)?;
+    for snapshot in snapshots {
+        if snapshot.state == BridgeState::Ended {
+            continue;
+        }
+        let _ = bridges.end(&snapshot.id)?;
+        events.extend(bridges.drain_events(usize::MAX)?);
+    }
+    Ok(())
 }
 
 fn provider_transport_matches(
@@ -2371,6 +2474,104 @@ mod tests {
         runtime
             .engine_mut()
             .reclaim_terminal_call(&call_id)
+            .unwrap();
+        assert_eq!(runtime.metrics().calls.calls_retained, 0);
+    }
+
+    #[test]
+    fn restart_handoff_ends_bridges_and_reclaims_runtime_contexts() {
+        let (mut runtime, bridge_id, caller_id) = runtime_with_inbound_bridge();
+        let (human_call, originated) = runtime
+            .originate_human_leg(
+                &bridge_id,
+                LegId::from_sequence(2),
+                invite(),
+                "127.0.0.1:5090".parse().unwrap(),
+                Duration::ZERO,
+            )
+            .unwrap();
+        assert_eq!(originated.actions().len(), 1);
+        assert_eq!(
+            runtime
+                .bridge_registry()
+                .unwrap()
+                .snapshot(&bridge_id)
+                .unwrap()
+                .state,
+            BridgeState::ConnectingHuman
+        );
+        runtime.provider_authentication.insert(
+            "restart-handoff-sip-call".to_owned(),
+            (human_call.clone(), AuthenticationPolicy::None),
+        );
+        assert_eq!(runtime.provider_authentication.len(), 1);
+
+        let handoff = runtime.prepare_restart_handoff().unwrap();
+        assert_eq!(
+            handoff.terminated_calls(),
+            &[caller_id.clone(), human_call.clone()]
+        );
+        assert_eq!(
+            handoff
+                .events()
+                .iter()
+                .map(|event| (event.call_id.clone(), event.kind))
+                .collect::<Vec<_>>(),
+            vec![
+                (caller_id.clone(), CallEventKind::Failed),
+                (caller_id.clone(), CallEventKind::Ended),
+                (human_call.clone(), CallEventKind::Failed),
+                (human_call.clone(), CallEventKind::Ended),
+            ]
+        );
+        assert_eq!(
+            handoff
+                .bridge_events()
+                .iter()
+                .map(|event| event.kind)
+                .collect::<Vec<_>>(),
+            vec![BridgeEventKind::HumanFailed, BridgeEventKind::Ended]
+        );
+        assert!(handoff.health().draining);
+        assert_eq!(
+            runtime
+                .bridge_registry()
+                .unwrap()
+                .snapshot(&bridge_id)
+                .unwrap()
+                .state,
+            BridgeState::Ended
+        );
+        assert_eq!(runtime.metrics().calls.calls_active, 0);
+        assert_eq!(runtime.metrics().active_transactions, 0);
+        assert_eq!(runtime.metrics().active_dialogs, 0);
+        assert!(runtime.provider_authentication.is_empty());
+
+        runtime.provider_authentication.insert(
+            "stale-after-handoff".to_owned(),
+            (caller_id.clone(), AuthenticationPolicy::None),
+        );
+        let repeated = runtime.prepare_restart_handoff().unwrap();
+        assert!(repeated.is_empty());
+        assert!(repeated.events().is_empty());
+        assert!(repeated.bridge_events().is_empty());
+        assert_eq!(repeated.health(), handoff.health());
+        assert!(runtime.provider_authentication.is_empty());
+
+        runtime.resume();
+        assert!(runtime.health().ready);
+        runtime
+            .engine_mut()
+            .reclaim_terminal_call(&caller_id)
+            .unwrap();
+        runtime
+            .engine_mut()
+            .reclaim_terminal_call(&human_call)
+            .unwrap();
+        runtime
+            .bridge_registry_mut()
+            .unwrap()
+            .remove_terminal(&bridge_id)
             .unwrap();
         assert_eq!(runtime.metrics().calls.calls_retained, 0);
     }
