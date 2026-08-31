@@ -28,7 +28,8 @@ event loop, or set them non-blocking through the mutable socket accessors:
 1. call `receive_rtp` or `receive_rtcp` with the caller's monotonic arrival
    timestamp;
 2. when jitter buffering is configured, schedule `playout_audio` from
-   `next_playout_deadline`, then drain the session's AI and DTMF outputs;
+   `next_playout_deadline`, propagate its `Result` to the runtime boundary,
+   then drain the session's AI and DTMF outputs;
 3. call `send_audio`, `send_dtmf`, or `send_rtcp` when a destination is
    configured or learned;
 4. poll `send_sender_report_if_due` with the current monotonic time and its
@@ -50,4 +51,5 @@ time; the owning event loop supplies both clocks.
 The runtime deliberately has no async-runtime, TLS/DTLS, SRTP, provider, call
 routing, or Asterisk dependency. DTLS-SRTP and live provider interoperability
 remain separate evidence-gated slices; existing call routing continues to use
-the Asterisk fallback.
+the Asterisk fallback. A recorder invariant is surfaced as a
+`MediaRuntimeError::Media` rather than causing a process panic.

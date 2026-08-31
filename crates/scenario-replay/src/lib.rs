@@ -607,7 +607,7 @@ impl ReplayRunner {
             }
             ScenarioStep::PlayoutAudio { at } => {
                 let media = self.media.as_mut().ok_or(StepError::MediaNotConfigured)?;
-                Ok(StepOutcome::MediaPlayout(media.playout_audio(*at)))
+                Ok(StepOutcome::MediaPlayout(media.playout_audio(*at)?))
             }
             ScenarioStep::ReceiveRtcp { at, source, wire } => {
                 let media = self.media.as_mut().ok_or(StepError::MediaNotConfigured)?;

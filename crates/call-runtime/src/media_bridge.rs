@@ -592,7 +592,7 @@ fn playout_one(
 ) -> Result<Option<HumanAudioPlayout>, HumanMediaBridgeError> {
     let Some(ReceivedMedia::Audio {
         queued, timestamp, ..
-    }) = source.playout_audio(now)
+    }) = source.playout_audio(now)?
     else {
         return Ok(None);
     };
