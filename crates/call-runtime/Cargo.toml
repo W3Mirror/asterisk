@@ -22,7 +22,9 @@ sip-types = { path = "../sip-types" }
 sip-security = { path = "../sip-security" }
 
 [dev-dependencies]
+rcgen = "0.13.2"
 rtp = { path = "../rtp" }
+rustls = "0.23.31"
 sip-parser = { path = "../sip-parser" }
 
 [lints]
