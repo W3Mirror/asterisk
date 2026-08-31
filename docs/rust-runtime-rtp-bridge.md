@@ -27,9 +27,15 @@ Accepted audio takes the bounded media path in both directions:
 4. the destination UDP runtime sends the new RTP datagram.
 
 Both inbound and outbound `PushOutcome` values are returned so drop-oldest or
-drop-newest backpressure is observable. Telephone-event packets remain in the
-source session's bounded DTMF notification path and are reported but are not
-forwarded by this first audio bridge slice.
+drop-newest backpressure is observable.
+
+Validated RFC 4733 telephone-event packets also relay in both directions while
+the exact bridge endpoints remain active. Every accepted packet, including end
+retransmissions, is re-encoded with the destination leg's payload type, SSRC,
+and sequence number while retaining the source marker bit and event fields.
+The source session still deduplicates application notifications independently,
+so relay reliability does not create duplicate start/end events for consumers.
+Packets belonging to one relayed event use a stable destination RTP timestamp.
 
 Run the focused verification with:
 
@@ -38,8 +44,9 @@ cargo test -p call-runtime --locked
 cargo clippy -p call-runtime --all-targets --no-deps --locked -- -D warnings
 ```
 
-This localhost composition is not jitter playout, RTCP relay, DTMF relay,
-transcoding beyond the existing negotiated G.711 session behavior, provider
-authentication, Asterisk/carrier interoperability, or load/soak evidence.
-Production traffic remains on Asterisk until the later compatibility,
+This localhost composition does not yet advance the destination RTP timeline
+from a DTMF event into subsequent audio. It is also not jitter playout, RTCP
+relay, transcoding beyond the existing negotiated G.711 session behavior,
+provider authentication, Asterisk/carrier interoperability, or load/soak
+evidence. Production traffic remains on Asterisk until the later compatibility,
 reliability, and rollback gates pass.
