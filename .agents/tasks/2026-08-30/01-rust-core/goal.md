@@ -1,12 +1,12 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-214 — Bridge-control authorization locally green
-**Last checkpoint (UTC):** 2026-08-31T19:10:00Z
+**Current checkpoint:** CP-215 — PR #70 hosted validation green
+**Last checkpoint (UTC):** 2026-08-31T19:14:00Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Configuration-level route activation/rollback and Asterisk fallback<br>
-**Next resume action:** Commit and publish PR #70 against `route-config-reload`, then verify hosted checks without enabling Rust traffic
-**Active PR:** #70 — `bridge-control-auth` targets `route-config-reload` (local validation green; publication pending)
+**Next resume action:** Reconcile the final PR #70 head after this ledger update, then continue the next bounded offline acceptance slice without enabling Rust traffic
+**Active PR:** #70 — `bridge-control-auth` targets `route-config-reload` (hosted validation green; open and mergeable)
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-70-bridge-control-auth`
 **Primary language:** Rust  
@@ -2802,7 +2802,7 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 67 | [#67](https://github.com/W3Mirror/asterisk/pull/67) | `process-restart-handoff` | `call-diagnostics` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-67-process-restart` | Controlled process-restart handoff: drain admission, terminalize active calls, end bridges, clear provider-auth context, return ordered bounded events, and preserve idempotent resource cleanup | hosted green | `1b73a9234e8fa1fbdc5208ade461497925fb5d7b` | CP-203–CP-206; focused call-engine (34 tests) and call-runtime (47 tests), complete locked workspace tests, formatting, diff checks, SIPp, reclamation smokes, short soak, and six ASAN fuzz-target checks pass locally. PR #67 is OPEN/non-draft/CLEAN/MERGEABLE against `call-diagnostics`; hosted run `33421690723` passed Workspace checks `99585355391`, Protocol fuzz checks `99585355057`, and Dependency audit `99585355346`; schedule/manual-only Signaling capacity matrix `99585356975` and Two-hour lifecycle soak `99585356882` correctly skipped for the pull-request event | Use this exact head as the base for PR #68 without enabling Rust traffic |
 | 68 | [#68](https://github.com/W3Mirror/asterisk/pull/68) | `route-rollback` | `process-restart-handoff` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-68-route-rollback` | Configuration-level deployment route controller: fail-closed Asterisk startup, generation-checked Rust activation, idempotent Asterisk rollback, unmatched-route safety, and atomic runtime origination gate | hosted green | `f77ff30734908c3570e87d56813f42d71e78b525` | CP-207–CP-209; focused provider-routing (9) and call-runtime (48) tests, 303 locked workspace tests, formatting, diff checks, Clippy, three pinned Docker-backed SIPp scenarios, deterministic signaling/media/WebSocket/combined/short-soak reclamation smokes pass locally. Final hosted Rust quality run `33423543322` passed Workspace checks `99591499873`, Protocol fuzz checks `99591499471`, and Dependency audit `99591499761`; schedule/manual-only Signaling capacity matrix `99591501102` and Two-hour lifecycle soak `99591500544` correctly skipped. PR #68 is OPEN/non-draft/CLEAN/MERGEABLE with local/origin/GitHub head parity | Continue the next bounded offline acceptance slice without enabling Rust traffic; retain Asterisk as the fallback |
 | 69 | [#69](https://github.com/W3Mirror/asterisk/pull/69) | `route-config-reload` | `route-rollback` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-69-route-config-reload` | Atomic generation-checked provider-route reload that fails closed to Asterisk until explicit Rust reactivation | hosted green | `f1a1a77a2` | CP-210–CP-213; PR #69 is OPEN/non-draft/CLEAN/MERGEABLE against `route-rollback`; final synchronized head `f1a1a77a2` has hosted ordinary Rust quality, protocol fuzz, and dependency-audit evidence; focused provider-routing and call-runtime reload tests are included in the complete hosted workspace suite | Use exact `f1a1a77a2` as the base for PR #70 and retain Asterisk fallback |
-| 70 | pending | `bridge-control-auth` | `route-config-reload` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-70-bridge-control-auth` | Authorization-aware human-leg bridge controls with authorization-before-lookup, transactional state transitions, and focused denial/atomicity coverage | in_progress | `f1a1a77a2` base plus uncommitted implementation/tests/docs/ledger | CP-214; 50 focused call-runtime tests and 303 locked workspace tests pass locally; formatting, standard workspace Clippy, SIPp, deterministic signaling/media/WebSocket/combined smokes, and short reclamation soak pass; publication and hosted validation pending | Commit and publish PR #70 against `route-config-reload`, then verify exact local/origin/GitHub parity and hosted checks |
+| 70 | [#70](https://github.com/W3Mirror/asterisk/pull/70) | `bridge-control-auth` | `route-config-reload` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-70-bridge-control-auth` | Authorization-aware human-leg bridge controls with authorization-before-lookup, transactional state transitions, and focused denial/atomicity coverage | hosted green | `388cb2fafc2c69b30e846bb23086ca019b38acfb` | CP-214–CP-215; PR #70 is OPEN/non-draft/CLEAN/MERGEABLE against `route-config-reload` at `f1a1a77a2`; hosted Rust quality run `33429009547` passed Workspace checks `99609497640` (formatting, 303 locked workspace tests, pinned Docker-backed SIPp scenarios, deterministic signaling/media/WebSocket/combined/short reclamation smokes, and workspace Clippy), Protocol fuzz checks `99609497749` (all address-sanitizer targets), and Dependency audit `99609497228`; schedule/manual-only Signaling capacity matrix `99609498455` and Two-hour lifecycle soak `99609530198` correctly skipped for the pull-request event | Reconcile the final PR #70 head after the ledger update, then continue the next bounded offline acceptance slice without enabling Rust traffic |
 
 ### CP-026 — PR10 published and stacked remote parity verified
 
@@ -6771,6 +6771,27 @@ blockers: Commit/publication, hosted validation, bridge-specific audit records, 
 next_action: Commit the bridge-control implementation/tests/docs/ledger normally, push `bridge-control-auth`, open PR #70 against `route-config-reload`, and verify exact local/origin/GitHub parity plus the complete ordinary hosted suite.
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #70 or revert the bridge-control slice if its authorization contract is superseded.
 notes: Every implementation slice includes focused tests for each affected crate/module; hosted PR and `aistack/main` push events run the complete ordinary workspace suite, not a changed-module-only subset. Larger capacity, extended property, multi-hour soak, and credentialed provider/live-call evidence remain scheduled/manual or approval-gated. All workflow runners remain hosted `ubuntu-latest`; Docker is limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-215 — PR #70 hosted validation green
+
+~~~yaml
+checkpoint_id: CP-215
+recorded_at_utc: 2026-08-31T19:14:00Z
+status: hosted_green
+phase: Phase 1 — Rust media engine
+milestone: Authenticated bridge control and Asterisk fallback
+scope: Verify the complete ordinary hosted Rust quality suite on PR #70's publication head
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-70-bridge-control-auth
+branch: bridge-control-auth
+base_branch: route-config-reload
+pr: https://github.com/W3Mirror/asterisk/pull/70
+head_sha: 388cb2fafc2c69b30e846bb23086ca019b38acfb
+evidence: PR #70 is OPEN/non-draft/CLEAN/MERGEABLE against `route-config-reload` at `f1a1a77a2`. Hosted Rust quality run `33429009547` passed Workspace checks `99609497640` (formatting, 303 locked workspace tests, pinned Docker-backed SIPp scenarios, deterministic signaling/media/WebSocket/combined/short reclamation smokes, and workspace Clippy), Protocol fuzz checks `99609497749` (all address-sanitizer targets), and Dependency audit `99609497228`; schedule/manual-only Signaling capacity matrix `99609498455` and Two-hour lifecycle soak `99609530198` correctly skipped for the pull-request event.
+blockers: The ledger update itself will change the PR head and requires one final hosted-head reconciliation. This remains provider-neutral offline evidence; bridge-specific audit records, explicit SIP hangup/terminalization coupling for an active human leg, production configuration, sanitized provider captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated. Asterisk remains the fallback.
+next_action: Commit this hosted-validation checkpoint, push `bridge-control-auth`, then reconcile the final PR #70 head and hosted results before continuing the next bounded offline acceptance slice.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #70 or revert the bridge-control slice if its authorization contract is superseded.
+notes: The hosted ordinary suite exercises focused bridge authorization/atomicity tests through the complete workspace invocation; it does not select an affected-module-only subset. Every push to `aistack/main` repeats that complete ordinary hosted workspace suite. Larger capacity, extended property, multi-hour soak, and credentialed provider/live-call evidence remain scheduled/manual or approval-gated. All workflow runners remain hosted `ubuntu-latest`; Docker remains limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
