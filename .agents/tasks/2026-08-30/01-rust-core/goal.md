@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: Proposed**  
-**Current checkpoint:** CP-000 — goal captured; implementation not started  
-**Last checkpoint (UTC):** 2026-08-30  
+**Current checkpoint:** CP-001 — non-real-time acceptance and CI test contract recorded
+**Last checkpoint (UTC):** 2026-08-31
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
 **Active milestone:** Milestone 1 — Scope Baseline  
 **Next resume action:** Inventory production call flows, providers, and the current Asterisk surface  
@@ -1642,6 +1642,33 @@ Version 1 is considered complete when the engine can reliably:
 19. pass defined load and soak tests;
 20. support immediate fallback to Asterisk.
 
+These real-time call capabilities are only one part of the acceptance bar. The
+following non-real-time behavior is also in scope and must be proven before a
+provider canary or other live traffic is enabled:
+
+21. finalize the post-call lifecycle exactly once, including durable terminal
+    events, idempotent retries, and reclamation of terminal resources;
+22. recover from provider timeouts, network failures, downstream AI disconnects,
+    malformed input, and process restarts without leaks or duplicate effects;
+23. enforce control-plane authentication, authorization, replay/idempotency, and
+    rate limits while redacting secrets and call/SIP identifiers from logs and
+    telemetry;
+24. expose actionable metrics, traces, health/readiness state, and auditable
+    lifecycle signals with bounded cardinality;
+25. pass deterministic packet-capture/replay fixtures and understood differential
+    comparisons against Asterisk;
+26. demonstrate bounded capacity, queue limits, resource reclamation, load
+    behavior, and stable memory after long-running soak tests;
+27. validate deployment and configuration before accepting traffic and exercise
+    a routing/configuration rollback to Asterisk; and
+28. keep this non-real-time acceptance suite green as a prerequisite for any
+    real-time provider end-to-end test or canary.
+
+The live provider and real-time end-to-end checks remain a separate gated
+evidence tier. They require controlled credentials, test numbers, traffic
+approval, and an explicit rollback plan; passing offline tests alone does not
+authorize production routing.
+
 ---
 
 # 50. Reliability Targets
@@ -1678,28 +1705,40 @@ Before production:
 
 # 52. CI Requirements
 
-Every pull request should run:
+Every implementation pull request must include focused tests for each affected
+crate/module, and every pull request event (`opened`, `reopened`, or
+`synchronize`) must run the hosted ordinary suite on `ubuntu-latest` whenever
+the stack layer contains a Rust workspace:
 
 ```text
 cargo fmt --check
 cargo clippy
-cargo test
+cargo test --workspace --locked
 ```
 
-Additionally:
+The ordinary suite also includes the parser, state-machine, integration,
+protocol-fixture, and deterministic offline smoke tests that exist on that stack
+layer. Focused tests are required in the same PR as the implementation; they
+are picked up by the full workspace invocation. The current workflow does not
+detect changed files or run only an affected module, so a PR does **not** get a
+module-only test shortcut.
 
-- parser unit tests;
-- state-machine tests;
-- integration tests;
-- protocol fixture tests.
+Every push to `aistack/main` runs that same complete ordinary hosted suite
+against the integrated stack whenever a Rust workspace is present. “All tests”
+here means the complete ordinary Rust workspace and its offline checks, not
+every long-running or credentialed test.
 
-Scheduled or dedicated CI should run:
+Scheduled or manually dispatched workflows provide the extended gates:
 
-- fuzzing;
-- SIPp interoperability;
-- load tests;
-- long-duration soak tests;
-- dependency/security audits.
+- fuzzing and dependency/security audits (when their workspaces exist);
+- SIPp interoperability and other deterministic fixture replay;
+- large capacity matrices and high-case property tests;
+- long-duration soak and memory-reclamation tests; and
+- credentialed provider/live real-time end-to-end tests under an approved
+  canary plan.
+
+All CI jobs use hosted runners. Docker is permitted only for the pinned local
+SIPp integration dependency; it does not change the runner requirement.
 
 ---
 
@@ -1944,6 +1983,26 @@ evidence: goal.md created; no implementation work recorded
 blockers: none
 next_action: Inventory production call flows, providers, and the current Asterisk surface
 rollback: not_applicable
+```
+
+### CP-001 — Expanded acceptance scope and CI test contract
+
+```yaml
+checkpoint_id: CP-001
+recorded_at_utc: 2026-08-31T11:48:40Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 1 — Scope Baseline
+scope: Add non-real-time acceptance criteria and make the PR, main-push, and extended test tiers explicit
+worktree: /home/ashutosh/PROJECTS/w3mirror/asterisk
+branch: aistack/main
+base_branch: aistack/main
+pr: none
+head_sha: pending documentation commit
+evidence: goal.md now covers post-call finalization, failure/recovery, security and authorization, redacted observability, health/readiness, audit signals, bounded capacity and reclamation, replay/differential fixtures, deployment/configuration validation, and tested Asterisk rollback. It records that each PR must ship focused affected-module tests, while the current hosted workflow runs the complete ordinary workspace suite (when a Rust workspace exists) on every pull_request event and every push to aistack/main; extended capacity, property, soak, and credentialed live-provider tiers remain scheduled/manual or explicitly gated.
+blockers: none
+next_action: Inventory production call flows, providers, and the current Asterisk surface
+rollback: not_applicable; this checkpoint changes documentation only
 ```
 
 ### Checkpoint template
