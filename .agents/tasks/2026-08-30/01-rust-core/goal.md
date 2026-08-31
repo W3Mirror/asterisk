@@ -2342,7 +2342,7 @@ worktree: /home/ashutosh/PROJECTS/w3mirror/asterisk
 branch: aistack/main
 base_branch: aistack/main
 pr: none
-head_sha: 00915d04d5dd2e3fda54e16ec1a55ac9f9b3459f
+head_sha: cab5fd8b46b993aa04cb7ef0213897764cf9c8ab
 evidence: goal.md now states the exact event semantics: pull_request opened/reopened/synchronize events run the hosted ordinary workspace suite when a Rust workspace exists; focused affected-module tests are required PR content but are not selected automatically; pushes to aistack/main repeat the complete ordinary offline suite; extended, long-running, credentialed, and live-provider checks remain scheduled/manual gates.
 blockers: none
 next_action: Confirm the production deployment and obtain sanitized inbound/outbound provider call-flow captures
