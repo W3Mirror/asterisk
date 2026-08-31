@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: Proposed**  
-**Current checkpoint:** CP-003 — hosted ordinary suite green on aistack/main
-**Last checkpoint (UTC):** 2026-08-31T12:20:14Z
+**Current checkpoint:** CP-004 — hosted CI behavior reconciled for the pre-Rust stack layer
+**Last checkpoint (UTC):** 2026-08-31T12:21:30Z
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
 **Active milestone:** Milestone 1 — Scope Baseline  
 **Next resume action:** Inventory production call flows, providers, and the current Asterisk surface  
@@ -2072,6 +2072,26 @@ evidence: GitHub Actions Rust quality run 33391217409 (https://github.com/W3Mirr
 blockers: none
 next_action: Inventory production call flows, providers, and the current Asterisk surface
 rollback: not_applicable; this checkpoint records documentation and CI evidence only
+```
+
+### CP-004 — Hosted CI behavior reconciled for the pre-Rust stack layer
+
+```yaml
+checkpoint_id: CP-004
+recorded_at_utc: 2026-08-31T12:21:30Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 1 — Scope Baseline
+scope: Reconcile hosted CI results with the current aistack/main contents
+worktree: /home/ashutosh/PROJECTS/w3mirror/asterisk
+branch: aistack/main
+base_branch: aistack/main
+pr: none
+head_sha: f0ffeae5ca3c2aea33d68d31ee5d75bd860d2b38
+evidence: Run 33391295279 (https://github.com/W3Mirror/asterisk/actions/runs/33391295279) completed success on hosted runners. Because this stack layer currently has no Cargo.toml, fuzz/Cargo.toml, or Cargo.lock, its workspace tests, fuzz checks, and dependency audit were correctly skipped by detection; later Rust-bearing PR layers will execute those checks. This confirms trigger and runner behavior, not Rust test execution on the pre-Rust base.
+blockers: none
+next_action: Inventory production call flows, providers, and the current Asterisk surface
+rollback: not_applicable; this checkpoint records CI behavior only
 ```
 
 ### Checkpoint template
