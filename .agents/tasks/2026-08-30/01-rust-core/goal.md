@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-165 — PR #55 hosted validation green
-**Last checkpoint (UTC):** 2026-08-31T10:10:51Z
+**Current checkpoint:** CP-166 — PR #55 final publication head hosted validation green
+**Last checkpoint (UTC):** 2026-08-31T10:15:37Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Idempotent control-plane commands and Asterisk fallback<br>
-**Next resume action:** Reconcile the final documentation head for PR #55, then continue the next bounded control-plane or interoperability gap while preserving the non-real-time acceptance targets, provider evidence gate, and verified Asterisk rollback
+**Next resume action:** Continue the next bounded control-plane or interoperability gap while preserving the non-real-time acceptance targets, provider evidence gate, and verified Asterisk rollback
 **Active PR:** #55 — `command-idempotency` targets `lifecycle-event-replay`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-55-command-idempotency`
@@ -5694,6 +5694,27 @@ blockers: This remains provider-neutral offline control-plane evidence. It does 
 next_action: Record the hosted result on the final documentation head, then continue the next bounded control-plane, interoperability, or transport gap while preserving the expanded non-real-time acceptance targets, provider evidence gate, and verified Asterisk rollback
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #55 or revert `4f3e8d21e` if the command-idempotency contract is superseded
 notes: Relevant API, call-core, engine, runtime, and cross-crate property tests ship with the idempotency behavior. Every pull request event and push to `aistack/main` runs the complete ordinary hosted suite rather than affected-module-only selection; focused tests are included in the full locked workspace run. Schedule/manual jobs add larger capacity, property, and soak tiers. All workflow runners remain hosted `ubuntu-latest`, and Docker remains limited to pinned SIPp inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-166 — PR #55 final publication head hosted validation green
+
+~~~yaml
+checkpoint_id: CP-166
+recorded_at_utc: 2026-08-31T10:15:37Z
+status: hosted_green
+phase: Phase 1 — Rust media engine
+milestone: Idempotent control-plane commands and Asterisk fallback
+scope: Reconcile the complete ordinary hosted Rust quality suite on PR #55's final publication head after the CP-165 ledger update
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-55-command-idempotency
+branch: command-idempotency
+base_branch: lifecycle-event-replay
+pr: https://github.com/W3Mirror/asterisk/pull/55
+head_sha: ef16a3c87dc387a0f779aeed2ce9834c5da7973f
+evidence: Hosted Rust quality run `33381300103` passed on `ef16a3c87`: Workspace checks `99454031375` passed in 1 minute 41 seconds, Protocol fuzz checks `99454031459` passed in 43 seconds, and Dependency audit `99454031559` passed in 3 minutes 5 seconds. Workspace checks included formatting, all 256 locked workspace tests, all three pinned Docker-backed SIPp scenarios, deterministic signaling/RTP-media/WebSocket-media/combined/short-soak reclamation smokes, and workspace Clippy across all targets. The schedule/manual-only Signaling capacity matrix `99454032755` and Two-hour lifecycle soak `99454032607` correctly skipped for the pull-request event. Local, origin, and GitHub all report `ef16a3c87dc387a0f779aeed2ce9834c5da7973f` as the PR head, and PR #55 remains OPEN, non-draft, CLEAN, and MERGEABLE against `lifecycle-event-replay`.
+blockers: This remains provider-neutral offline control-plane evidence. It does not prove real Asterisk/provider interoperability, provider credentials, live traffic, route failover, production rollout/rollback execution, or safe Rust traffic enablement. Rust traffic stays disabled and Asterisk remains the fallback. The broader lifecycle/post-call, failure/recovery, observability/security, and deployment/rollback acceptance targets remain future bounded implementation/evidence slices.
+next_action: Continue the next bounded control-plane, interoperability, or transport gap while preserving the expanded non-real-time acceptance targets, provider evidence gate, and verified Asterisk rollback
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #55 or revert the command-idempotency implementation if its contract is superseded
+notes: This is a documentation-only ledger reconciliation; the executable command-idempotency implementation and its relevant API, call-core, engine, runtime, and cross-crate property tests remain unchanged. Every pull request event and push to `aistack/main` runs the complete ordinary hosted suite rather than affected-module-only selection; scheduled/manual jobs add deeper capacity, property, and soak tiers. All workflow runners remain hosted `ubuntu-latest`, and Docker remains limited to pinned SIPp inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
