@@ -16,8 +16,8 @@ use std::{
 };
 
 use call_api::{
-    ApiError, AuthenticatedPrincipal, CallCommand, CallRegistry, CallRegistryConfig, CallSnapshot,
-    NegotiatedAudio,
+    ApiError, AuthenticatedPrincipal, CallCommand, CallMetrics, CallRegistry, CallRegistryConfig,
+    CallSnapshot, NegotiatedAudio,
 };
 use call_core::{CallId, CallState, CommandId, LifecycleEvent};
 use sip_auth::{DigestAuthorization, DigestChallenge, DigestCredentials, DigestError};
@@ -224,6 +224,83 @@ pub struct EngineOutput {
     events: Vec<LifecycleEvent>,
 }
 
+/// Bounded, cardinality-safe metrics for one call engine.
+///
+/// The snapshot contains only aggregate counters and gauges. It deliberately
+/// omits call IDs, SIP Call-IDs, phone numbers, provider names, principals,
+/// and credentials so callers can export it without unbounded labels or
+/// sensitive values.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct EngineMetrics {
+    /// Aggregate call-registry counters and gauges.
+    pub calls: CallMetrics,
+    /// Number of active client and server transactions.
+    pub active_transactions: usize,
+    /// Number of retained SIP dialogs.
+    pub active_dialogs: usize,
+    /// Number of final INVITE responses retained for retransmission.
+    pub pending_final_invites: usize,
+    /// Number of reliable provisional responses awaiting PRACK.
+    pub pending_reliable_provisionals: usize,
+}
+
+impl EngineMetrics {
+    /// Renders a label-free Prometheus text exposition snapshot.
+    #[must_use]
+    pub fn prometheus(self) -> String {
+        use std::fmt::Write as _;
+
+        let mut output = String::with_capacity(640);
+        let calls = self.calls;
+        let _ = writeln!(output, "calls_started_total {}", calls.calls_started_total);
+        let _ = writeln!(
+            output,
+            "calls_answered_total {}",
+            calls.calls_answered_total
+        );
+        let _ = writeln!(output, "calls_failed_total {}", calls.calls_failed_total);
+        let _ = writeln!(
+            output,
+            "calls_completed_total {}",
+            calls.calls_completed_total
+        );
+        let _ = writeln!(output, "calls_active {}", calls.calls_active);
+        let _ = writeln!(
+            output,
+            "call_lifecycle_events_total {}",
+            calls.lifecycle_events_total
+        );
+        let _ = writeln!(output, "call_event_queue_depth {}", calls.pending_events);
+        let _ = writeln!(
+            output,
+            "call_event_history_retained {}",
+            calls.retained_event_history
+        );
+        let _ = writeln!(
+            output,
+            "call_idempotency_keys_retained {}",
+            calls.retained_command_keys
+        );
+        let _ = writeln!(
+            output,
+            "sip_active_transactions {}",
+            self.active_transactions
+        );
+        let _ = writeln!(output, "sip_active_dialogs {}", self.active_dialogs);
+        let _ = writeln!(
+            output,
+            "sip_pending_final_invites {}",
+            self.pending_final_invites
+        );
+        let _ = writeln!(
+            output,
+            "sip_pending_reliable_provisionals {}",
+            self.pending_reliable_provisionals
+        );
+        output
+    }
+}
+
 impl EngineOutput {
     /// Returns outbound messages in emission order.
     #[must_use]
@@ -334,6 +411,18 @@ impl CallEngine {
     #[must_use]
     pub fn config(&self) -> EngineConfig {
         self.config
+    }
+
+    /// Returns aggregate call, signaling, and retransmission metrics.
+    #[must_use]
+    pub fn metrics(&self) -> EngineMetrics {
+        EngineMetrics {
+            calls: self.registry.metrics(),
+            active_transactions: self.transaction_count(),
+            active_dialogs: self.dialog_count(),
+            pending_final_invites: self.final_invites.len() + self.final_server_invites.len(),
+            pending_reliable_provisionals: self.reliable_provisionals.len(),
+        }
     }
 
     /// Returns the number of active client and server transactions.
@@ -2211,6 +2300,59 @@ mod tests {
     fn principal(permissions: &[ControlPermission]) -> AuthenticatedPrincipal {
         AuthenticatedPrincipal::from_verified_claims("voice-app", permissions.iter().copied())
             .unwrap()
+    }
+
+    #[test]
+    fn engine_metrics_export_aggregate_lifecycle_and_signaling_state_only() {
+        let mut engine = CallEngine::new(EngineConfig::default()).unwrap();
+        let (call_id, _) = engine
+            .originate(
+                invite(
+                    "metrics-branch",
+                    "metrics-call",
+                    "<sip:bob@example.com>",
+                    "1 INVITE",
+                ),
+                address(5060),
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+
+        let started = engine.metrics();
+        assert_eq!(started.calls.calls_started_total, 1);
+        assert_eq!(started.calls.calls_active, 1);
+        assert_eq!(started.active_transactions, 1);
+        assert_eq!(started.active_dialogs, 1);
+        assert_eq!(started.pending_final_invites, 0);
+        assert_eq!(started.pending_reliable_provisionals, 0);
+
+        engine
+            .apply_call_command(&call_id, CallCommand::Answer)
+            .unwrap();
+        engine
+            .apply_call_command(&call_id, CallCommand::Hangup)
+            .unwrap();
+        engine
+            .apply_call_command(&call_id, CallCommand::End)
+            .unwrap();
+        let terminal = engine.metrics();
+        assert_eq!(terminal.calls.calls_answered_total, 1);
+        assert_eq!(terminal.calls.calls_completed_total, 1);
+        assert_eq!(terminal.calls.calls_active, 0);
+
+        let exposition = terminal.prometheus();
+        assert!(exposition.contains("calls_started_total 1\n"));
+        assert!(exposition.contains("calls_answered_total 1\n"));
+        assert!(exposition.contains("calls_completed_total 1\n"));
+        assert!(!exposition.contains("metrics-call"));
+        assert!(!exposition.contains("metrics-branch"));
+
+        engine.reclaim_terminal_call(&call_id).unwrap();
+        let reclaimed = engine.metrics();
+        assert_eq!(reclaimed.active_transactions, 0);
+        assert_eq!(reclaimed.active_dialogs, 0);
+        assert_eq!(reclaimed.calls.calls_active, 0);
     }
 
     fn invite(branch: &str, call_id: &str, to: &str, cseq: &str) -> SipRequest {
