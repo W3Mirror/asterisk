@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: Proposed**  
-**Current checkpoint:** CP-008 — Test event execution matrix recorded
-**Last checkpoint (UTC):** 2026-08-31T14:14:59Z
+**Current checkpoint:** CP-009 — Expanded offline acceptance and per-slice test contract
+**Last checkpoint (UTC):** 2026-08-31T16:27:09Z
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
 **Active milestone:** Milestone 1 — Scope Baseline  
 **Next resume action:** Confirm the production deployment and obtain sanitized inbound/outbound provider call-flow captures
@@ -58,6 +58,38 @@ SIP Carrier / PSTN / PBX
 The project is **not** intended to be a complete Rust rewrite of Asterisk.
 
 It should implement only the telephony primitives required by AI voice applications and expose them through simple programmable interfaces.
+
+### Scope beyond real-time call completion
+
+A successful live call is necessary, but it is not sufficient for this goal.
+The engine must also provide the surrounding control-plane and operational
+contracts that make calls safe to automate, diagnose, replay, and recover:
+
+- **Control-plane correctness:** versioned, authenticated, and authorized call
+  commands (originate, answer, hang up, transfer, bridge, and media changes)
+  with validation, idempotency, bounded retries, and clear error semantics.
+- **Lifecycle and event delivery:** stable correlation IDs, ordered lifecycle
+  events, duplicate-safe delivery, replay/backfill where supported, and an
+  explicit contract for terminal events.
+- **Offline and post-call workflows:** deterministic SIP/SDP/RTP/RTCP/DTMF
+  replay, Asterisk differential comparison, recording finalization, call
+  metadata/diagnostics export, and cleanup that remains correct after every
+  terminal outcome.
+- **Failure and recovery behavior:** bounded handling of provider/network
+  timeouts, authentication failures, malformed input, AI disconnects,
+  backpressure, cancellation races, process restart, and partial transfer or
+  bridge failure without orphaned calls or resources.
+- **Observability and security:** redacted structured logs, metrics, traces,
+  health/readiness, audit signals, configuration validation, secret references,
+  rate limits, TLS review, dependency auditing, and parser fuzz coverage.
+- **Deployment and migration safety:** graceful drain/restart, capacity and
+  resource-limit evidence, explicit Asterisk fallback, configuration-level
+  rollback, and a verified route state before and after each rollout.
+
+These are product acceptance targets, not evidence that the current stack has
+already implemented every item. Each target must enter the phase ledger with
+its own deterministic tests or replay evidence before it can be treated as
+complete; live Asterisk/provider calls remain a later interoperability gate.
 
 ---
 
@@ -1111,6 +1143,24 @@ Expected transaction/dialog/call state
 
 This should allow previously observed provider behavior to become permanent regression coverage.
 
+Provider access is not a prerequisite for the replay foundation. Begin with a
+deterministic, sanitized synthetic scenario format that can drive SIP messages,
+timer advancement, RTP/RTCP/DTMF packets, media faults, and expected
+state/event assertions. Later Asterisk and provider captures must be convertible
+into the same format so they extend the corpus instead of creating a separate
+test path.
+
+The first offline replay suite should cover:
+
+- successful inbound and outbound calls;
+- busy, decline, timeout, cancellation, and authentication failure;
+- provisional responses and early media;
+- retransmissions, duplicate messages, late ACK, and CANCEL/200/487 races;
+- re-INVITE, BYE, DTMF, bridging, and transfer state transitions;
+- malformed or unsupported SDP and codec negotiation failure;
+- RTP loss, duplication, reordering, jitter, and downstream backpressure; and
+- deterministic cleanup and resource reclamation after every terminal outcome.
+
 ---
 
 # 37. Fuzzing
@@ -1156,6 +1206,13 @@ Other properties:
 - duplicate SIP retransmissions do not create duplicate calls;
 - duplicate DTMF packets do not generate duplicate logical events.
 
+Add a Rust property-testing harness, using `proptest`, `quickcheck`, or an
+equivalent repository-appropriate library, for parser/serializer round trips,
+bounded allocation/queue invariants, transaction and dialog state-machine
+invariants, timer ordering, rollover behavior, duplicate suppression, and
+terminal resource reclamation. Counterexamples must be retained as regression
+fixtures.
+
 ---
 
 # 39. Integration Testing
@@ -1168,6 +1225,22 @@ Automated tests should cover interoperability with:
 - our AI media service.
 
 SIPp should be used for deterministic protocol scenarios and load generation.
+
+Offline integration work must proceed before live-provider access is available.
+It should include:
+
+- local SIPp scenarios for normal and failure signaling paths;
+- API request/response and lifecycle-event contract tests;
+- call-engine/runtime tests that assert transaction, dialog, and call state
+  together rather than testing those layers only in isolation;
+- bridging and transfer state-machine tests, including partial-leg failures and
+  cleanup;
+- RTP/RTCP/DTMF fault injection for packet loss, duplication, reordering,
+  jitter, malformed packets, queue saturation, and slow AI-media consumers; and
+- a deterministic fake AI media peer for WebSocket and backpressure tests.
+
+Tests relevant to an implementation slice must be added in the same PR as the
+code. A change is not complete merely because existing tests continue to pass.
 
 ---
 
@@ -1196,6 +1269,13 @@ Compare:
 
 Differences should be understood rather than automatically considered bugs.
 
+Build the comparison runner offline using synthetic fixtures first. It must
+normalize nondeterministic identifiers, addresses, and timing before comparing
+responses, state, negotiated media, events, and cleanup. When sanitized Asterisk
+or provider captures become available, they should be ingestible without
+redesigning the runner. Live/provider evidence remains mandatory before Rust
+traffic is enabled, but it does not block construction of this tooling.
+
 ---
 
 # 41. Load Testing
@@ -1219,6 +1299,12 @@ Test scenarios should include:
 
 Actual production targets should be based on expected deployment sizes.
 
+Provide reproducible local and CI harnesses for signaling-only, media-only, and
+combined call loads. Record call completion/failure counts, latency percentiles,
+packet-processing throughput, queue saturation/drops, CPU, file descriptors,
+and memory. Start with small deterministic smoke loads in ordinary CI; run the
+larger capacity matrix in scheduled or dedicated CI.
+
 ---
 
 # 42. Memory Testing
@@ -1235,6 +1321,12 @@ Measure:
 - memory after repeated connect/disconnect cycles.
 
 Long-running soak tests must confirm memory returns to a stable baseline.
+
+The soak harness must repeatedly create, connect, fail, disconnect, and reclaim
+calls while checking that registries, transactions, dialogs, media queues,
+sockets, tasks/threads, and file descriptors return to a stable bound. Short
+reclamation checks belong in PR CI; multi-hour soak runs belong in scheduled or
+dedicated CI.
 
 ---
 
@@ -1724,6 +1816,17 @@ the behavior it changes:
 - deployment/configuration validation plus a tested routing rollback to
   Asterisk when the change affects operations.
 
+Every implementation slice carries its relevant tests in the same change:
+
+| Change surface | Required tests shipped with the change |
+| --- | --- |
+| Parser, header, or codec behavior | Focused unit tests, malformed/adversarial cases, and a protocol fixture or fuzz target when the parser is network-facing |
+| Dialog, transaction, or call state | State-machine transitions, duplicate/out-of-order messages, sequence validation, and atomic failure/recovery tests |
+| Runtime or cross-crate behavior | Focused module tests plus dependent-module/API-event contract tests and a deterministic integration scenario |
+| RTP, RTCP, DTMF, WebSocket, or AI-media behavior | Direction/format/bounds tests, backpressure or loss cases, and reclamation assertions |
+| Lifecycle, capacity, or resource behavior | Deterministic load/reclamation tests and a short soak; larger capacity and multi-hour soak runs remain scheduled or manually dispatched |
+| Provider/Asterisk interoperability | Sanitized replay/fixture coverage first; real provider calls and rollback evidence are a separate pre-traffic gate |
+
 The test layer must match the risk of the change: focused tests directly cover
 the affected crate/module, while cross-cutting changes also require the
 appropriate integration, resilience, security, or operational evidence. A
@@ -1731,8 +1834,9 @@ green workflow without the applicable test addition is not sufficient
 acceptance.
 
 Every implementation pull request must include focused tests for each affected
-crate/module, and every pull request event (`opened`, `reopened`, or
-`synchronize`) must run the hosted ordinary suite on `ubuntu-latest` whenever
+crate/module. The repository workflow (`.github/workflows/rust-quality.yml`)
+uses GitHub's default `pull_request` activity types (`opened`, `reopened`, and
+`synchronize`) and runs the hosted ordinary suite on `ubuntu-latest` whenever
 the stack layer contains a Rust workspace:
 
 ```text
@@ -1740,6 +1844,12 @@ cargo fmt --check
 cargo clippy
 cargo test --workspace --locked
 ```
+
+This is not a changed-module-only job. The focused affected-module tests must
+be added in the PR, and they run as part of the complete workspace invocation.
+If impact-aware selection is introduced later, it must fail safe to the full
+workspace suite when the affected dependency/dependent closure cannot be
+determined confidently.
 
 The ordinary suite also includes the parser, state-machine, integration,
 protocol-fixture, and deterministic offline smoke tests that exist on that stack
@@ -2185,6 +2295,26 @@ base_branch: aistack/main
 pr: none
 head_sha: 7dcd74873
 evidence: goal.md now includes an event-to-test matrix. Pull request opened, reopened, and synchronize events require focused tests for every affected crate/module and run the complete ordinary hosted workspace suite when a Rust workspace exists; pushes to aistack/main run that same integrated suite. Scheduled/manual runs remain the place for extended, long-running, environment-dependent, credentialed, and live-provider checks. The matrix records that the current workflow does not select only changed modules.
+blockers: none
+next_action: Confirm the production deployment and obtain sanitized inbound/outbound provider call-flow captures
+rollback: not_applicable; this checkpoint changes documentation only
+```
+
+### CP-009 — Expanded offline acceptance and per-slice test contract
+
+```yaml
+checkpoint_id: CP-009
+recorded_at_utc: 2026-08-31T16:27:09Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 1 — Scope Baseline
+scope: Add non-real-time product acceptance targets, deterministic offline test layers, and per-slice test obligations
+worktree: /home/ashutosh/PROJECTS/w3mirror/asterisk
+branch: aistack/main
+base_branch: aistack/main
+pr: none
+head_sha: pending
+evidence: goal.md now covers control-plane correctness, lifecycle/event delivery, post-call metadata and diagnostics, failure/recovery, observability/security, deployment rollback, deterministic replay, property testing, offline integration, differential comparison, load, memory reclamation, and a change-surface test matrix. It records that every implementation PR must ship focused affected-module tests; pull_request events run the complete ordinary hosted workspace suite, and pushes to aistack/main repeat that same ordinary offline suite. The current workflow has no changed-module-only selector; scheduled/manual tiers remain for extended, long-running, environment-dependent, and credentialed live-provider checks.
 blockers: none
 next_action: Confirm the production deployment and obtain sanitized inbound/outbound provider call-flow captures
 rollback: not_applicable; this checkpoint changes documentation only
