@@ -24,7 +24,9 @@ use call_api::CallCommand;
 use call_bridge::{BridgeError, BridgeEvent, BridgeRegistry, BridgeState};
 use call_core::{BridgeId, CallEventKind, CallId, LegId, LifecycleEvent};
 use call_engine::{CallEngine, EngineError, EngineOutput, SendAction};
-use provider_routing::AuthenticationPolicy;
+use provider_routing::{
+    AuthenticationPolicy, EngineTarget, ProviderRouteTable, RouteMatch, SignalingTransport,
+};
 use sip_auth::DigestCredentials;
 use sip_security::SourceIpPolicy;
 use sip_transaction::TransportReliability;
@@ -135,6 +137,26 @@ where
     }
 }
 
+/// Resolves a provider signaling host at the moment an outbound call is
+/// originated.
+///
+/// The runtime deliberately leaves DNS, service discovery, and address
+/// caching to the embedding application. A resolver is called only after the
+/// route selects the Rust engine and the transport is compatible.
+pub trait ProviderAddressResolver {
+    /// Returns one destination address for a provider signaling endpoint.
+    fn resolve(&mut self, host: &str, port: u16) -> Option<SocketAddr>;
+}
+
+impl<F> ProviderAddressResolver for F
+where
+    F: FnMut(&str, u16) -> Option<SocketAddr>,
+{
+    fn resolve(&mut self, host: &str, port: u16) -> Option<SocketAddr> {
+        self(host, port)
+    }
+}
+
 /// Errors raised while driving transport I/O and call-engine state.
 #[derive(Debug)]
 pub enum RuntimeError {
@@ -165,6 +187,15 @@ pub enum RuntimeError {
     },
     /// A local-address query was made for a TCP endpoint.
     NotDatagram,
+    /// Provider routing selected the mandatory Asterisk fallback.
+    ProviderRouteFallback {
+        /// Why the route was selected.
+        matched_by: RouteMatch,
+    },
+    /// The selected provider profile is not supported by this transport.
+    ProviderTransportUnsupported,
+    /// The provider signaling endpoint could not be resolved.
+    ProviderAddressUnavailable,
 }
 
 impl Display for RuntimeError {
@@ -187,6 +218,18 @@ impl Display for RuntimeError {
                 write!(formatter, "source address {source} is not allowed")
             }
             Self::NotDatagram => formatter.write_str("endpoint does not expose a UDP address"),
+            Self::ProviderRouteFallback { matched_by } => {
+                write!(
+                    formatter,
+                    "provider route selected Asterisk fallback ({matched_by:?})"
+                )
+            }
+            Self::ProviderTransportUnsupported => {
+                formatter.write_str("provider signaling transport is not supported by this runtime")
+            }
+            Self::ProviderAddressUnavailable => {
+                formatter.write_str("provider signaling address is unavailable")
+            }
         }
     }
 }
@@ -374,6 +417,55 @@ impl CallRuntime {
             working_engine.originate(request, destination, now, self.transport.reliability())?;
         let runtime_output = self.commit_engine_output(working_engine, output)?;
         Ok((call_id, runtime_output))
+    }
+
+    /// Starts an outbound call only when the provider route explicitly
+    /// selects the Rust engine.
+    ///
+    /// The route table's default and fallback targets are fail-closed: this
+    /// method never originates a Rust call for an Asterisk route. Address
+    /// resolution is deferred until after that gate and after checking that
+    /// this blocking runtime supports the profile's signaling transport.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when routing selects Asterisk, the provider transport
+    /// is unsupported, address resolution fails, or ordinary origination or
+    /// delivery fails. No engine state or wire action is committed on error.
+    pub fn originate_with_provider_route<R>(
+        &mut self,
+        routes: &ProviderRouteTable,
+        provider_id: &str,
+        request: SipRequest,
+        resolver: &mut R,
+        now: Duration,
+    ) -> Result<(CallId, RuntimeOutput), RuntimeError>
+    where
+        R: ProviderAddressResolver + ?Sized,
+    {
+        let decision = routes.route_outbound(provider_id);
+        if decision.target() != EngineTarget::Rust {
+            return Err(RuntimeError::ProviderRouteFallback {
+                matched_by: decision.matched_by(),
+            });
+        }
+        let profile_id = decision
+            .profile_id()
+            .ok_or(RuntimeError::ProviderRouteFallback {
+                matched_by: decision.matched_by(),
+            })?;
+        let profile = routes
+            .profile(profile_id)
+            .ok_or(RuntimeError::ProviderRouteFallback {
+                matched_by: decision.matched_by(),
+            })?;
+        if !provider_transport_matches(&self.transport, profile.signaling_transport()) {
+            return Err(RuntimeError::ProviderTransportUnsupported);
+        }
+        let destination = resolver
+            .resolve(profile.signaling_host(), profile.signaling_port())
+            .ok_or(RuntimeError::ProviderAddressUnavailable)?;
+        self.originate(request, destination, now)
     }
 
     /// Starts an outbound human INVITE and atomically marks a bridge as
@@ -668,12 +760,24 @@ fn human_bridge_for_call(
         .map(|bridge| (bridge.id, bridge.state)))
 }
 
+fn provider_transport_matches(
+    transport: &RuntimeTransport,
+    signaling_transport: SignalingTransport,
+) -> bool {
+    matches!(
+        (transport, signaling_transport),
+        (RuntimeTransport::Udp(_), SignalingTransport::Udp)
+            | (RuntimeTransport::Tcp { .. }, SignalingTransport::Tcp)
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use call_bridge::{BridgeEventKind, BridgeRegistryConfig};
     use call_core::{CallState, StreamId};
     use call_engine::EngineConfig;
+    use provider_routing::{ProviderProfile, RoutingConfig};
     use sip_auth::{DigestAlgorithm, DigestAuthorization, DigestChallenge};
     use sip_transport::{TcpTransport, UdpTransport};
     use sip_types::{Headers, SipMethod, SipRequest, SipResponse};
@@ -990,6 +1094,150 @@ mod tests {
             RuntimeError::SourceAddressDenied { source }
                 if source.ip() == "127.0.0.1".parse::<std::net::IpAddr>().unwrap()
         ));
+        assert!(runtime.engine().list(10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn provider_route_gates_rust_origination_and_resolves_address_lazily() {
+        let peer = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 2_048).unwrap();
+        let runtime_transport = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 2_048).unwrap();
+        let mut runtime = CallRuntime::udp(
+            CallEngine::new(EngineConfig::default()).unwrap(),
+            runtime_transport,
+        );
+        let resolver_calls = std::cell::Cell::new(0);
+        let mut resolver = |host: &str, port: u16| {
+            resolver_calls.set(resolver_calls.get() + 1);
+            assert_eq!(host, "sip.provider.invalid");
+            assert_eq!(port, 5060);
+            Some(peer.local_addr().unwrap())
+        };
+
+        let mut routes = ProviderRouteTable::new(RoutingConfig::default()).unwrap();
+        let asterisk_profile = ProviderProfile::new(
+            "asterisk-provider",
+            "sip.provider.invalid",
+            5060,
+            SignalingTransport::Udp,
+        )
+        .unwrap();
+        routes.insert(asterisk_profile).unwrap();
+        let fallback = runtime
+            .originate_with_provider_route(
+                &routes,
+                "asterisk-provider",
+                invite(),
+                &mut resolver,
+                Duration::ZERO,
+            )
+            .unwrap_err();
+        assert!(matches!(
+            fallback,
+            RuntimeError::ProviderRouteFallback {
+                matched_by: RouteMatch::OutboundProvider
+            }
+        ));
+        assert_eq!(resolver_calls.get(), 0);
+        assert!(runtime.engine().list(10).unwrap().is_empty());
+
+        let mut rust_routes = ProviderRouteTable::new(RoutingConfig::default()).unwrap();
+        let rust_profile = ProviderProfile::new(
+            "rust-provider",
+            "sip.provider.invalid",
+            5060,
+            SignalingTransport::Udp,
+        )
+        .unwrap()
+        .with_targets(EngineTarget::Rust, EngineTarget::Asterisk);
+        rust_routes.insert(rust_profile).unwrap();
+        let (call_id, output) = runtime
+            .originate_with_provider_route(
+                &rust_routes,
+                "rust-provider",
+                invite(),
+                &mut resolver,
+                Duration::ZERO,
+            )
+            .unwrap();
+        assert_eq!(resolver_calls.get(), 1);
+        assert_eq!(output.actions().len(), 1);
+        assert_eq!(
+            runtime.engine().snapshot(&call_id).unwrap().state,
+            CallState::Inviting
+        );
+        let (message, _) = peer.recv().unwrap();
+        assert!(matches!(
+            message,
+            SipMessage::Request(SipRequest {
+                method: SipMethod::Invite,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn provider_route_rejects_unsupported_or_unresolved_destinations_atomically() {
+        let mut routes = ProviderRouteTable::new(RoutingConfig::default()).unwrap();
+        let tls_profile = ProviderProfile::new(
+            "tls-provider",
+            "tls.provider.invalid",
+            5061,
+            SignalingTransport::Tls,
+        )
+        .unwrap()
+        .with_targets(EngineTarget::Rust, EngineTarget::Asterisk);
+        routes.insert(tls_profile).unwrap();
+
+        let runtime_transport = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 2_048).unwrap();
+        let mut runtime = CallRuntime::udp(
+            CallEngine::new(EngineConfig::default()).unwrap(),
+            runtime_transport,
+        );
+        let resolver_calls = std::cell::Cell::new(0);
+        let mut resolver = |host: &str, _: u16| {
+            resolver_calls.set(resolver_calls.get() + 1);
+            assert_eq!(host, "udp.provider.invalid");
+            None
+        };
+        let unsupported = runtime
+            .originate_with_provider_route(
+                &routes,
+                "tls-provider",
+                invite(),
+                &mut resolver,
+                Duration::ZERO,
+            )
+            .unwrap_err();
+        assert!(matches!(
+            unsupported,
+            RuntimeError::ProviderTransportUnsupported
+        ));
+        assert_eq!(resolver_calls.get(), 0);
+        assert!(runtime.engine().list(10).unwrap().is_empty());
+
+        let udp_profile = ProviderProfile::new(
+            "udp-provider",
+            "udp.provider.invalid",
+            5060,
+            SignalingTransport::Udp,
+        )
+        .unwrap()
+        .with_targets(EngineTarget::Rust, EngineTarget::Asterisk);
+        routes.insert(udp_profile).unwrap();
+        let unresolved = runtime
+            .originate_with_provider_route(
+                &routes,
+                "udp-provider",
+                invite(),
+                &mut resolver,
+                Duration::ZERO,
+            )
+            .unwrap_err();
+        assert!(matches!(
+            unresolved,
+            RuntimeError::ProviderAddressUnavailable
+        ));
+        assert_eq!(resolver_calls.get(), 1);
         assert!(runtime.engine().list(10).unwrap().is_empty());
     }
 
