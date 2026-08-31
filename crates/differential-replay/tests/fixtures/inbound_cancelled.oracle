@@ -9,6 +9,7 @@ fact	event 1 call-1 created
 fact	event 2 call-1 invite-received
 fact	event 3 call-1 ringing
 fact	event 4 call-1 failed
+fact	event 5 call-1 ended
 fact	call call-1 reclaimed ended dialog=true codec=PCMU/8000/1:fmtp=false->PCMU/8000/1:fmtp=false direction=sendrecv remote-address=true remote-port=true
 fact	media none
 fact	cleanup calls=0 bridges=0 transactions=0 to-ai=na from-ai=na dtmf=na
