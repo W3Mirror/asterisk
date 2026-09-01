@@ -2,10 +2,10 @@
 
 **Status: in_progress**
 **Current checkpoint:** CP-094 — PR #34 final ledger head hosted validation confirmed
-**Last checkpoint (UTC):** 2026-09-01T21:22:34Z
+**Last checkpoint (UTC):** 2026-09-01T21:26:44Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Runtime human-leg SIP and bridge composition<br>
-**Next resume action:** Commit the rebased runtime-human-leg implementation, publish PR #34 against `synthetic-differential-replay`, then verify all hosted Rust quality gates
+**Next resume action:** Reconcile the next bounded RTP-to-RTP caller/human forwarding slice onto PR #34's validated head, adding focused media/bridge tests before publication
 **Active PR:** [#34](https://github.com/W3Mirror/asterisk/pull/34); branch `runtime-human-leg-bridge` targets `synthetic-differential-replay`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-34`
@@ -5747,6 +5747,27 @@ blockers: Runtime human-leg signaling and bridge lifecycle are covered, but RTP-
 next_action: Reconcile the next bounded RTP-to-RTP caller/human forwarding slice onto PR #34's validated head, adding focused media/bridge tests before publication.
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; restore `backup/runtime-human-leg-bridge-before-restack-20260901-2109` if this restack must be abandoned.
 notes: Focused affected-module tests remain mandatory implementation content. Hosted pull_request and `aistack/main` push events run the complete ordinary locked workspace suite; extended load/property, differential replay, capacity, soak, credentialed-provider, and real-time checks remain separate scheduled, manual, or approval-gated tiers. Docker is limited to the pinned SIPp dependency.
+~~~
+
+### CP-095 — Runtime PR handoff header reconciled
+
+~~~yaml
+checkpoint_id: CP-095
+recorded_at_utc: 2026-09-01T21:26:44Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Runtime human-leg SIP and bridge composition
+scope: Reconcile the goal header and next action with the published, hosted-green PR #34 state
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-34
+branch: runtime-human-leg-bridge
+base_branch: synthetic-differential-replay
+pr: "#34 https://github.com/W3Mirror/asterisk/pull/34"
+head_sha: pending publication of this ledger reconciliation
+evidence: PR #34 implementation head `9573d656687b251fb8cc0868b290772e7057002b` is hosted-green and OPEN/CLEAN/MERGEABLE; the header now records the next bounded RTP-to-RTP caller/human forwarding slice and preserves the full PR/main test contract at lines 1836-1912.
+blockers: This documentation-only reconciliation will trigger the ordinary hosted PR workflow on its new head. RTP-to-RTP forwarding, provider interoperability, capacity/soak evidence, sanitized captures, and rollback proof remain active goal work.
+next_action: Publish the ledger reconciliation, verify the ordinary hosted workflow on its exact head, then begin the bounded RTP-to-RTP slice with focused media/bridge tests.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; restore `backup/runtime-human-leg-bridge-before-restack-20260901-2109` if the ledger reconciliation must be abandoned.
+notes: No runtime routing, credentials, provider configuration, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
