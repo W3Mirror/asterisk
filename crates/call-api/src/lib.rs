@@ -7,6 +7,7 @@ use std::{
 };
 
 use call_core::{Call, CallEventKind, CallId, CallState, EventId, LifecycleEvent};
+use sdp::{Codec, Direction, SessionDescription};
 use sip_dialog::DialogId;
 
 const DEFAULT_MAX_CALLS: usize = 4_096;
@@ -73,6 +74,23 @@ pub struct CallSnapshot {
     pub state: CallState,
     /// Optional tag-qualified SIP dialog identity.
     pub dialog_id: Option<DialogId>,
+    /// Current negotiated audio media, if an offer/answer has completed.
+    pub media: Option<NegotiatedAudio>,
+}
+
+/// The bounded audio offer/answer result retained for a call.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NegotiatedAudio {
+    /// Codec selected from the local description.
+    pub local_codec: Codec,
+    /// Matching codec selected from the remote description.
+    pub remote_codec: Codec,
+    /// Direction of the resulting local media stream.
+    pub direction: Direction,
+    /// Remote connection attribute, when one was advertised.
+    pub remote_connection: Option<String>,
+    /// Remote RTP port advertised by the negotiated audio section.
+    pub remote_port: u16,
 }
 
 /// Errors exposed by the internal call-control API.
@@ -101,6 +119,12 @@ pub enum ApiError {
     IdentifierExhausted,
     /// A call already has a bound SIP dialog.
     DialogAlreadyBound,
+    /// Neither SDP description contains an audio media section.
+    NoAudioMedia,
+    /// The descriptions do not share a usable audio codec.
+    NoCommonCodec,
+    /// The remote description rejected its audio media section.
+    MediaRejected,
 }
 
 impl ApiError {
@@ -117,6 +141,9 @@ impl ApiError {
             Self::InvalidCommand { .. } => "invalid_command",
             Self::IdentifierExhausted => "identifier_exhausted",
             Self::DialogAlreadyBound => "dialog_already_bound",
+            Self::NoAudioMedia => "no_audio_media",
+            Self::NoCommonCodec => "no_common_codec",
+            Self::MediaRejected => "media_rejected",
         }
     }
 }
@@ -140,6 +167,11 @@ impl Display for ApiError {
                 formatter.write_str("call or event identifier sequence exhausted")
             }
             Self::DialogAlreadyBound => formatter.write_str("call already has a SIP dialog bound"),
+            Self::NoAudioMedia => formatter.write_str("SDP descriptions contain no audio media"),
+            Self::NoCommonCodec => {
+                formatter.write_str("SDP descriptions have no common audio codec")
+            }
+            Self::MediaRejected => formatter.write_str("remote SDP rejected its audio media"),
         }
     }
 }
@@ -150,6 +182,7 @@ impl Error for ApiError {}
 struct CallEntry {
     call: Call,
     dialog_id: Option<DialogId>,
+    media: Option<NegotiatedAudio>,
 }
 
 /// A bounded registry that composes call state, SIP dialogs, and lifecycle
@@ -217,6 +250,7 @@ impl CallRegistry {
             CallEntry {
                 call: Call::new(id),
                 dialog_id: None,
+                media: None,
             },
         );
     }
@@ -258,6 +292,86 @@ impl CallRegistry {
         Ok(())
     }
 
+    /// Negotiates and retains one bounded audio offer/answer result.
+    ///
+    /// A later invocation replaces the prior result, which allows callers to
+    /// represent an SDP update such as a re-INVITE without creating another
+    /// application call record.
+    pub fn negotiate_audio(
+        &mut self,
+        id: &CallId,
+        local: &SessionDescription,
+        remote: &SessionDescription,
+    ) -> Result<NegotiatedAudio, ApiError> {
+        self.calls.get(id).ok_or(ApiError::UnknownCall)?;
+        let local_media = local
+            .media
+            .iter()
+            .find(|media| media.media.eq_ignore_ascii_case("audio"))
+            .ok_or(ApiError::NoAudioMedia)?;
+        let remote_media = remote
+            .media
+            .iter()
+            .find(|media| media.media.eq_ignore_ascii_case("audio"))
+            .ok_or(ApiError::NoAudioMedia)?;
+        if remote_media.port == 0 {
+            return Err(ApiError::MediaRejected);
+        }
+        let local_codec = local_media
+            .codecs
+            .iter()
+            .find(|candidate| {
+                local_media.formats.contains(&candidate.payload_type)
+                    && !candidate.is_telephone_event()
+                    && remote_media.codecs.iter().any(|remote_codec| {
+                        remote_media.formats.contains(&remote_codec.payload_type)
+                            && candidate.name.eq_ignore_ascii_case(&remote_codec.name)
+                            && candidate.clock_rate == remote_codec.clock_rate
+                            && candidate.channels == remote_codec.channels
+                    })
+            })
+            .cloned()
+            .ok_or(ApiError::NoCommonCodec)?;
+        let remote_codec = remote_media
+            .codecs
+            .iter()
+            .find(|candidate| {
+                remote_media.formats.contains(&candidate.payload_type)
+                    && local_media.formats.contains(&local_codec.payload_type)
+                    && candidate.name.eq_ignore_ascii_case(&local_codec.name)
+                    && candidate.clock_rate == local_codec.clock_rate
+                    && candidate.channels == local_codec.channels
+            })
+            .cloned()
+            .ok_or(ApiError::NoCommonCodec)?;
+        let direction = Direction::negotiate(
+            local_media.effective_direction(local.direction),
+            remote_media.effective_direction(remote.direction),
+        );
+        let negotiated = NegotiatedAudio {
+            local_codec,
+            remote_codec,
+            direction,
+            remote_connection: remote_media
+                .connection
+                .clone()
+                .or_else(|| remote.connection.clone()),
+            remote_port: remote_media.port,
+        };
+        self.calls.get_mut(id).ok_or(ApiError::UnknownCall)?.media = Some(negotiated.clone());
+        Ok(negotiated)
+    }
+
+    /// Returns the retained audio negotiation for one call, if present.
+    pub fn media(&self, id: &CallId) -> Result<Option<NegotiatedAudio>, ApiError> {
+        Ok(self
+            .calls
+            .get(id)
+            .ok_or(ApiError::UnknownCall)?
+            .media
+            .clone())
+    }
+
     /// Returns a stable snapshot of one call.
     pub fn snapshot(&self, id: &CallId) -> Result<CallSnapshot, ApiError> {
         let entry = self.calls.get(id).ok_or(ApiError::UnknownCall)?;
@@ -265,6 +379,7 @@ impl CallRegistry {
             id: entry.call.id.clone(),
             state: entry.call.state,
             dialog_id: entry.dialog_id.clone(),
+            media: entry.media.clone(),
         })
     }
 
@@ -280,6 +395,7 @@ impl CallRegistry {
                 id: entry.call.id.clone(),
                 state: entry.call.state,
                 dialog_id: entry.dialog_id.clone(),
+                media: entry.media.clone(),
             })
             .collect::<Vec<_>>();
         snapshots.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
@@ -465,5 +581,61 @@ mod tests {
         assert_eq!(registry.create(), Err(ApiError::EventQueueFull));
         registry.drain_events(1).unwrap();
         assert_eq!(registry.create().unwrap().as_str(), "call_2");
+    }
+
+    #[test]
+    fn audio_negotiation_retains_codec_direction_and_remote_endpoint() {
+        let mut registry = CallRegistry::new(CallRegistryConfig::default()).unwrap();
+        let id = registry.create().unwrap();
+        let local =
+            SessionDescription::new_audio("- 2 2 IN IP4 192.0.2.20", "IN IP4 192.0.2.20", 5000);
+        let remote = sdp::parse(
+            b"v=0\r\no=- 1 1 IN IP4 192.0.2.10\r\ns=-\r\nc=IN IP4 192.0.2.10\r\nt=0 0\r\na=sendonly\r\nm=audio 4000 RTP/AVP 96\r\na=rtpmap:96 PCMU/8000\r\n",
+        )
+        .unwrap();
+
+        let negotiated = registry.negotiate_audio(&id, &local, &remote).unwrap();
+        assert_eq!(negotiated.local_codec.payload_type, 0);
+        assert_eq!(negotiated.remote_codec.payload_type, 96);
+        assert_eq!(negotiated.direction, Direction::RecvOnly);
+        assert_eq!(
+            negotiated.remote_connection.as_deref(),
+            Some("IN IP4 192.0.2.10")
+        );
+        assert_eq!(negotiated.remote_port, 4000);
+        assert_eq!(registry.media(&id).unwrap(), Some(negotiated.clone()));
+        assert_eq!(registry.snapshot(&id).unwrap().media, Some(negotiated));
+    }
+
+    #[test]
+    fn failed_audio_negotiation_does_not_replace_existing_binding() {
+        let mut registry = CallRegistry::new(CallRegistryConfig::default()).unwrap();
+        let id = registry.create().unwrap();
+        let local =
+            SessionDescription::new_audio("- 2 2 IN IP4 192.0.2.20", "IN IP4 192.0.2.20", 5000);
+        let good = sdp::parse(
+            b"v=0\r\no=- 1 1 IN IP4 192.0.2.10\r\ns=-\r\nc=IN IP4 192.0.2.10\r\nt=0 0\r\na=sendonly\r\nm=audio 4000 RTP/AVP 96\r\na=rtpmap:96 PCMU/8000\r\n",
+        )
+        .unwrap();
+        let expected = registry.negotiate_audio(&id, &local, &good).unwrap();
+        let remote = sdp::parse(
+            b"v=0\r\no=- 1 1 IN IP4 192.0.2.10\r\ns=-\r\nc=IN IP4 192.0.2.10\r\nt=0 0\r\nm=audio 4000 RTP/AVP 9\r\na=rtpmap:9 G722/8000\r\n",
+        )
+        .unwrap();
+        assert_eq!(
+            registry.negotiate_audio(&id, &local, &remote),
+            Err(ApiError::NoCommonCodec)
+        );
+        assert_eq!(registry.media(&id).unwrap(), Some(expected.clone()));
+
+        let rejected = sdp::parse(
+            b"v=0\r\no=- 1 1 IN IP4 192.0.2.10\r\ns=-\r\nt=0 0\r\nm=audio 0 RTP/AVP 0\r\n",
+        )
+        .unwrap();
+        assert_eq!(
+            registry.negotiate_audio(&id, &local, &rejected),
+            Err(ApiError::MediaRejected)
+        );
+        assert_eq!(registry.media(&id).unwrap(), Some(expected));
     }
 }
