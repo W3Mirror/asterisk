@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-084 — PR #32 hosted validation confirmed
-**Last checkpoint (UTC):** 2026-09-01T09:12:12Z
+**Current checkpoint:** CP-085 — non-real-time scope and test execution contract reaffirmed
+**Last checkpoint (UTC):** 2026-09-01T20:33:50Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Deterministic signaling load and terminal reclamation<br>
 **Next resume action:** Reconcile the next bounded offline differential or media-load slice onto the validated PR #32 head
@@ -5496,6 +5496,27 @@ blockers: This deterministic harness proves logical signaling correctness and bo
 next_action: Reconcile the next bounded offline differential or media-load slice onto the validated PR #32 head
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #32 or remove its load workflow steps if the harness contract is superseded
 notes: Every implementation PR ships focused tests for each affected crate/module. Hosted pull_request and `aistack/main` push events run the complete ordinary locked workspace suite rather than automatically selecting changed modules; extended load/property, differential replay, capacity, soak, credentialed-provider, and real-time checks remain scheduled, manually dispatched, or approval-gated. Docker is limited to the pinned SIPp dependency.
+~~~
+
+### CP-085 — Non-real-time scope and test execution contract reaffirmed
+
+~~~yaml
+checkpoint_id: CP-085
+recorded_at_utc: 2026-09-01T20:33:50Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Deterministic signaling load and terminal reclamation
+scope: Record that the goal includes operational and offline acceptance beyond real-time end-to-end calls, and make the implementation-test and hosted-event contract explicit
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-32
+branch: rust-load-reclamation-smoke
+base_branch: sipp-local-integration
+pr: "#32 https://github.com/W3Mirror/asterisk/pull/32"
+head_sha: 1c93c2b09833c528cacc381563766c90293db28c
+evidence: `goal.md` now explicitly treats control-plane validation, lifecycle/event delivery, deterministic replay and post-call cleanup, failure/recovery, observability/security, capacity and reclamation, deployment/configuration validation, Asterisk differential evidence, and rollback proof as acceptance targets in addition to live call completion. Every implementation PR must ship focused tests for each affected crate/module plus the applicable contract, integration, resilience, security, resource, differential, deployment, and rollback coverage. On `pull_request`, hosted `ubuntu-latest` jobs run the complete ordinary locked workspace suite (`cargo fmt --all -- --check`, `cargo test --workspace --locked`, local deterministic fixtures/smokes, and workspace Clippy) rather than a changed-module-only subset. A push to `aistack/main` repeats that complete ordinary hosted suite for the integrated branch.
+blockers: Extended fuzz campaigns, large capacity/property matrices, SIPp expansion, differential replay, long-duration soak/memory checks, credentialed provider checks, and real-time calls remain scheduled, manually dispatched, or approval-gated; Docker remains limited to the pinned SIPp dependency and Rust traffic remains disabled behind the Asterisk fallback.
+next_action: Reconcile the next bounded offline differential or media-load slice onto the validated PR #32 head
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #32 or remove its load workflow steps if the harness contract is superseded
+notes: “All tests” on a `aistack/main` push means all ordinary offline workspace tests available on that branch, not every long-running or credentialed test. Focused affected-module tests remain mandatory PR content and are exercised by the full workspace invocation.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
