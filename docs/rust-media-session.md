@@ -6,6 +6,11 @@ negotiated G.711 RTP/RTCP stream and an AI application. It owns one bounded
 bounded DTMF notification queue. Socket ownership, WebSocket framing,
 persistence, and call routing stay outside the crate.
 
+The bounded plain-text Asterisk `chan_websocket` adapter is documented in
+[`rust-media-websocket.md`](rust-media-websocket.md). It supplies raw PCMU/PCMA
+chunks to and from this session without changing the session's RTP/RTCP or
+queue ownership.
+
 ## Receive path
 
 For socket-backed ingress, call `receive_rtp_from` with the observed
