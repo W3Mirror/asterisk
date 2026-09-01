@@ -5,8 +5,9 @@ use std::{
     time::Duration,
 };
 
+use call_api::{ApiError, CallCommand, CallRegistryConfig};
 use call_core::{CallEventKind, CallId, CallState};
-use call_engine::{CallEngine, EngineConfig};
+use call_engine::{CallEngine, EngineConfig, EngineError};
 use dtmf::{DtmfDigit, DtmfEvent, Notification, encode as encode_dtmf};
 use media_core::{
     AudioCodec, AudioFrame, MediaSession, MediaSessionConfig, PushOutcome, ReceivedMedia,
@@ -234,6 +235,175 @@ fn replay_fixture_covers_retransmission_cancel_failure_and_timer_reclamation() {
             .collect::<Vec<_>>(),
         vec![100, 100, 200, 487, 487]
     );
+}
+
+#[test]
+fn replays_transfer_lifecycle_and_reclaims_the_terminal_call() {
+    let peer = address(5060);
+    let call_id = CallId::from_sequence(1);
+    let scenario = Scenario::new(
+        "transfer-and-terminal-reclamation",
+        vec![
+            ScenarioStep::ReceiveSip {
+                at: Duration::ZERO,
+                source: peer,
+                reliability: TransportReliability::Unreliable,
+                wire: sip_fixture(include_str!("fixtures/inbound_answered/invite.sip")),
+            },
+            ScenarioStep::RespondToInvite {
+                at: Duration::from_millis(10),
+                call_id: call_id.clone(),
+                status_code: 200,
+                reason: "OK".to_owned(),
+                body: Vec::new(),
+            },
+            ScenarioStep::ReceiveSip {
+                at: Duration::from_millis(20),
+                source: peer,
+                reliability: TransportReliability::Unreliable,
+                wire: sip_fixture(include_str!("fixtures/inbound_answered/ack.sip")),
+            },
+            ScenarioStep::ApplyCallCommand {
+                call_id: call_id.clone(),
+                command: CallCommand::MediaStarted,
+            },
+            ScenarioStep::ApplyCallCommand {
+                call_id: call_id.clone(),
+                command: CallCommand::BeginTransfer,
+            },
+            ScenarioStep::ApplyCallCommand {
+                call_id: call_id.clone(),
+                command: CallCommand::CompleteTransfer,
+            },
+            ScenarioStep::ApplyCallCommand {
+                call_id: call_id.clone(),
+                command: CallCommand::Hangup,
+            },
+            ScenarioStep::ApplyCallCommand {
+                call_id: call_id.clone(),
+                command: CallCommand::End,
+            },
+            ScenarioStep::ReclaimTerminalCall { call_id },
+        ],
+    );
+
+    let report = runner().run(&scenario).unwrap();
+
+    assert!(report.calls.is_empty());
+    assert_eq!(report.transaction_count, 0);
+    assert!(matches!(
+        report.steps[8].outcome,
+        StepOutcome::CallReclaimed(ref snapshot) if snapshot.state == CallState::Ended
+    ));
+    assert_eq!(
+        report
+            .events()
+            .into_iter()
+            .map(|event| event.kind)
+            .collect::<Vec<_>>(),
+        vec![
+            CallEventKind::Created,
+            CallEventKind::InviteReceived,
+            CallEventKind::Answered,
+            CallEventKind::MediaStarted,
+            CallEventKind::Transferring,
+            CallEventKind::Transferred,
+            CallEventKind::Hangup,
+        ]
+    );
+}
+
+#[test]
+fn terminal_reclamation_releases_call_and_transaction_capacity_for_reuse() {
+    let peer = address(5060);
+    let invite = sip_fixture(include_str!("fixtures/inbound_cancelled/invite.sip"));
+    let scenario = Scenario::new(
+        "reclaim-and-reuse-capacity",
+        vec![
+            ScenarioStep::ReceiveSip {
+                at: Duration::ZERO,
+                source: peer,
+                reliability: TransportReliability::Unreliable,
+                wire: invite.clone(),
+            },
+            ScenarioStep::ReceiveSip {
+                at: Duration::from_millis(1),
+                source: peer,
+                reliability: TransportReliability::Unreliable,
+                wire: sip_fixture(include_str!("fixtures/inbound_cancelled/cancel.sip")),
+            },
+            ScenarioStep::ReclaimTerminalCall {
+                call_id: CallId::from_sequence(1),
+            },
+            ScenarioStep::ReceiveSip {
+                at: Duration::from_millis(2),
+                source: peer,
+                reliability: TransportReliability::Unreliable,
+                wire: invite,
+            },
+        ],
+    );
+    let engine = CallEngine::new(EngineConfig {
+        call_registry: CallRegistryConfig {
+            max_calls: 1,
+            ..CallRegistryConfig::default()
+        },
+        max_transactions: 2,
+        ..EngineConfig::default()
+    })
+    .unwrap();
+    let mut replay = ReplayRunner::new(ReplayConfig::default(), engine).unwrap();
+
+    let report = replay.run(&scenario).unwrap();
+
+    assert_eq!(report.calls.len(), 1);
+    assert_eq!(report.calls[0].id, CallId::from_sequence(2));
+    assert_eq!(report.calls[0].state, CallState::Inviting);
+    assert_eq!(report.transaction_count, 1);
+}
+
+#[test]
+fn rejected_active_call_reclamation_is_indexed_and_atomic() {
+    let peer = address(5060);
+    let invite = sip_fixture(include_str!("fixtures/inbound_answered/invite.sip"));
+    let invalid = Scenario::new(
+        "reject-active-reclamation",
+        vec![
+            ScenarioStep::ReceiveSip {
+                at: Duration::ZERO,
+                source: peer,
+                reliability: TransportReliability::Unreliable,
+                wire: invite.clone(),
+            },
+            ScenarioStep::ReclaimTerminalCall {
+                call_id: CallId::from_sequence(1),
+            },
+        ],
+    );
+    let corrected = Scenario::new(
+        "after-rejected-reclamation",
+        vec![ScenarioStep::ReceiveSip {
+            at: Duration::ZERO,
+            source: peer,
+            reliability: TransportReliability::Unreliable,
+            wire: invite,
+        }],
+    );
+    let mut replay = runner();
+
+    assert_eq!(
+        replay.run(&invalid),
+        Err(ReplayError::Step {
+            index: 1,
+            source: StepError::Engine(EngineError::CallApi(ApiError::InvalidCommand {
+                state: CallState::Inviting,
+                command: CallCommand::End,
+            })),
+        })
+    );
+    let report = replay.run(&corrected).unwrap();
+    assert_eq!(report.calls[0].id, CallId::from_sequence(1));
+    assert_eq!(report.transaction_count, 1);
 }
 
 fn media_runner() -> ReplayRunner {
