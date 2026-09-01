@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**  
-**Current checkpoint:** CP-020 — PR #3 hosted validation and mergeability confirmed
-**Last checkpoint (UTC):** 2026-08-31T19:56:28Z
+**Current checkpoint:** CP-021 — Reconcile PR #3 with the current PR #2 head
+**Last checkpoint (UTC):** 2026-09-01T13:21:00Z
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
 **Active milestone:** Milestone 1 — Scope Baseline  
 **Next resume action:** Update PR #4's base branch in stack order, run its focused dialog tests and hosted checks, and record the resulting head and mergeability
@@ -2119,7 +2119,7 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 | --- | --- | --- | --- | --- |
 | Phase 0 — current Asterisk surface | in_progress | CP-015; PR #1 hosted run 33431290927 passed and GitHub reports CLEAN/MERGEABLE at `8dbd0082823b9444e72a6ceebee27328bd0f506d` | #1 | Keep the verified Asterisk inventory and production-evidence gate in force |
 | Phase 1 — Rust media engine | in_progress | CP-018; PR #2 hosted run 33432577814 passed and GitHub reports CLEAN/MERGEABLE at `ddb50f1b4adaca8e3a099578ef053294a5958cc0` | [#2](https://github.com/W3Mirror/asterisk/pull/2) | Keep the verified Rust foundation contract in force |
-| Phase 2 — SIP edge shadow mode | in_progress | CP-020; PR #3 hosted run 33432999749 passed and GitHub reports CLEAN/MERGEABLE at `6cbc88fad2a0d0ab019ab1c0ff787ef55e94a58a` | [#3](https://github.com/W3Mirror/asterisk/pull/3) | Update PR #4's base branch in stack order and validate its dialog slice |
+| Phase 2 — SIP edge shadow mode | in_progress | CP-021; PR #3 rebased onto PR #2 head `81d631b83` and local focused/full tests pass; hosted recheck pending publication | [#3](https://github.com/W3Mirror/asterisk/pull/3) | Publish the reconciled PR #3 head and verify hosted checks plus GitHub mergeability |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
 | Phase 4 — expanded provider coverage | not_started | — | — | Add one provider compatibility suite per rollout target |
 | Phase 5 — Rust primary engine | not_started | — | — | Confirm production SLO, telemetry, and rollback gates |
@@ -2682,6 +2682,27 @@ blockers: Production deployment identity, effective configuration, provider cred
 next_action: Update PR #4's base branch in stack order, run its focused dialog tests and hosted checks, and record the resulting head and mergeability
 rollback: Asterisk remains the active/fallback engine; no routing was changed
 notes: The SIP transaction slice is validated offline; no live provider or Asterisk route was enabled.
+```
+
+### CP-021 — Reconcile PR #3 with the current PR #2 head
+
+```yaml
+checkpoint_id: CP-021
+recorded_at_utc: 2026-09-01T13:21:00Z
+status: in_progress
+phase: Phase 2 — SIP edge shadow mode
+milestone: Milestone 3 — SIP Parser + Transactions
+scope: Merge the current PR #2 head into PR #3 and verify focused transaction coverage before publication
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-3-sip-transactions
+branch: sip-transaction-core
+base_branch: rust-core-foundation
+pr: "#3 https://github.com/W3Mirror/asterisk/pull/3"
+head_sha: 2051d5326
+evidence: Merged origin/rust-core-foundation at `81d631b83` into PR #3; the SIP transaction and bounded transport implementation remains present. Focused `cargo test -p sip-transaction -p sip-transport --locked`, full `cargo test --workspace --locked`, `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --locked`, and `git diff --check` all passed locally. Hosted validation is pending publication of this reconciled head.
+blockers: Production deployment identity, effective configuration, provider credentials, and sanitized inbound/outbound captures remain unavailable; hosted PR #3 validation is pending
+next_action: Publish the reconciled PR #3 head and verify hosted checks plus GitHub mergeability
+rollback: Asterisk remains the active/fallback engine; no routing was changed
+notes: This merge preserves PR #3's implementation history while bringing its stack base to the validated PR #2 head.
 ```
 
 ### Checkpoint template
