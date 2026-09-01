@@ -17,10 +17,11 @@ use media_core::{
 use rtcp::{ReceiverReport, RtcpPacket, serialize as serialize_rtcp};
 use rtp::{RtpPacket, RtpSessionConfig, serialize as serialize_rtp};
 use scenario_replay::{
-    ReplayConfig, ReplayError, ReplayRunner, Scenario, ScenarioStep, StepError, StepOutcome,
+    ReplayConfig, ReplayError, ReplayReport, ReplayRunner, Scenario, ScenarioStep, StepError,
+    StepOutcome,
 };
 use sip_transaction::TransportReliability;
-use sip_types::{SipMessage, SipResponse};
+use sip_types::{Headers, SipMessage, SipMethod, SipRequest, SipResponse};
 
 fn address(port: u16) -> SocketAddr {
     SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)
@@ -36,6 +37,290 @@ fn runner() -> ReplayRunner {
         CallEngine::new(EngineConfig::default()).unwrap(),
     )
     .unwrap()
+}
+
+fn confirm_inbound_dialog(replay: &mut ReplayRunner) -> CallId {
+    let call_id = CallId::from_sequence(1);
+    let peer = address(5060);
+    let report = replay
+        .run(&Scenario::new(
+            "confirmed-inbound-dialog",
+            vec![
+                ScenarioStep::ReceiveSip {
+                    at: Duration::ZERO,
+                    source: peer,
+                    reliability: TransportReliability::Unreliable,
+                    wire: sip_fixture(include_str!("fixtures/inbound_answered/invite.sip")),
+                },
+                ScenarioStep::RespondToInvite {
+                    at: Duration::from_millis(10),
+                    call_id: call_id.clone(),
+                    status_code: 200,
+                    reason: "OK".to_owned(),
+                    body: Vec::new(),
+                },
+                ScenarioStep::ReceiveSip {
+                    at: Duration::from_millis(20),
+                    source: peer,
+                    reliability: TransportReliability::Unreliable,
+                    wire: sip_fixture(include_str!("fixtures/inbound_answered/ack.sip")),
+                },
+            ],
+        ))
+        .unwrap();
+    assert_eq!(report.calls[0].id, call_id);
+    assert_eq!(report.calls[0].state, CallState::Answered);
+    assert_eq!(report.transaction_count, 0);
+    call_id
+}
+
+fn response_wire_for_request(request: &SipRequest) -> Vec<u8> {
+    let mut headers = Headers::new();
+    for name in ["Via", "From", "To", "Call-ID", "CSeq"] {
+        headers.push(name, request.headers.get(name).unwrap());
+    }
+    sip_parser::serialize(&SipMessage::Response(SipResponse {
+        version: "SIP/2.0".to_owned(),
+        status_code: 200,
+        reason: "OK".to_owned(),
+        headers,
+        body: Vec::new(),
+    }))
+}
+
+fn request_from_report(report: &ReplayReport) -> SipRequest {
+    let StepOutcome::Engine { actions, .. } = &report.steps[0].outcome else {
+        panic!("expected engine output");
+    };
+    let SipMessage::Request(request) = &actions[0].message else {
+        panic!("expected outbound SIP request");
+    };
+    request.clone()
+}
+
+#[test]
+fn replays_all_outbound_in_dialog_methods_with_dynamic_responses_and_timer_k_reclamation() {
+    let mut replay = runner();
+    let call_id = confirm_inbound_dialog(&mut replay);
+    let methods = [
+        (
+            SipMethod::Info,
+            "info",
+            [("Info-Package", "dtmf")],
+            b"info-body".to_vec(),
+        ),
+        (
+            SipMethod::Update,
+            "update",
+            [("Supported", "timer")],
+            b"update-body".to_vec(),
+        ),
+        (
+            SipMethod::Refer,
+            "refer",
+            [("Refer-To", "<sip:carol@example.com>")],
+            b"refer-body".to_vec(),
+        ),
+        (
+            SipMethod::Notify,
+            "notify",
+            [("Event", "refer")],
+            b"notify-body".to_vec(),
+        ),
+    ];
+
+    for (index, (method, branch_label, extra, body)) in methods.into_iter().enumerate() {
+        let at = Duration::from_secs(1 + index as u64 * 10);
+        let mut extra_headers = Headers::new();
+        for (name, value) in extra {
+            extra_headers.push(name, value);
+        }
+        let send_report = replay
+            .run(&Scenario::new(
+                format!("send-{branch_label}"),
+                vec![ScenarioStep::SendInDialogRequest {
+                    at,
+                    call_id: call_id.clone(),
+                    method: method.clone(),
+                    extra_headers: extra_headers.clone(),
+                    body: body.clone(),
+                    reliability: TransportReliability::Unreliable,
+                }],
+            ))
+            .unwrap();
+        let request = request_from_report(&send_report);
+
+        assert_eq!(request.method, method);
+        assert_eq!(request.request_uri, "sip:alice@127.0.0.1:5060");
+        assert_eq!(
+            request.headers.get("From"),
+            Some("Bob <sip:bob@example.com>;tag=rust-1")
+        );
+        assert_eq!(
+            request.headers.get("To"),
+            Some("Alice <sip:alice@example.com>;tag=alice-1")
+        );
+        assert_eq!(request.headers.get("Call-ID"), Some("fixture-call-1"));
+        let expected_cseq = format!("{} {}", index + 1, method.as_str());
+        assert_eq!(request.headers.get("CSeq"), Some(expected_cseq.as_str()));
+        assert!(request.headers.get("Via").is_some_and(|via| {
+            via.contains(&format!("branch=z9hG4bKrust-{branch_label}-{}", index + 1))
+        }));
+        for header in extra_headers.iter() {
+            assert_eq!(
+                request.headers.get(&header.name),
+                Some(header.value.as_str())
+            );
+        }
+        assert_eq!(request.body, body);
+        assert_eq!(send_report.transaction_count, 1);
+
+        let response_report = replay
+            .run(&Scenario::new(
+                format!("complete-{branch_label}"),
+                vec![
+                    ScenarioStep::ReceiveSip {
+                        at: at + Duration::from_secs(1),
+                        source: address(5060),
+                        reliability: TransportReliability::Unreliable,
+                        wire: response_wire_for_request(&request),
+                    },
+                    ScenarioStep::Poll {
+                        at: at + Duration::from_secs(6),
+                    },
+                ],
+            ))
+            .unwrap();
+        assert!(matches!(
+            response_report.steps[0].outcome,
+            StepOutcome::Engine {
+                ref actions,
+                ref events,
+                ..
+            } if actions.is_empty() && events.is_empty()
+        ));
+        assert_eq!(response_report.transaction_count, 0);
+        assert_eq!(response_report.calls[0].state, CallState::Answered);
+    }
+}
+
+#[test]
+fn rejects_unsupported_and_protected_replay_requests_atomically() {
+    let mut replay = runner();
+    let call_id = confirm_inbound_dialog(&mut replay);
+
+    assert_eq!(
+        replay.run(&Scenario::new(
+            "unsupported-outbound-method",
+            vec![ScenarioStep::SendInDialogRequest {
+                at: Duration::from_secs(1),
+                call_id: call_id.clone(),
+                method: SipMethod::Register,
+                extra_headers: Headers::new(),
+                body: Vec::new(),
+                reliability: TransportReliability::Unreliable,
+            }],
+        )),
+        Err(ReplayError::Step {
+            index: 0,
+            source: StepError::Engine(EngineError::UnsupportedInDialogMethod),
+        })
+    );
+
+    let mut protected = Headers::new();
+    protected.push("Via", "SIP/2.0/UDP attacker.invalid;branch=override");
+    assert_eq!(
+        replay.run(&Scenario::new(
+            "protected-outbound-header",
+            vec![ScenarioStep::SendInDialogRequest {
+                at: Duration::from_secs(2),
+                call_id: call_id.clone(),
+                method: SipMethod::Info,
+                extra_headers: protected,
+                body: Vec::new(),
+                reliability: TransportReliability::Unreliable,
+            }],
+        )),
+        Err(ReplayError::Step {
+            index: 0,
+            source: StepError::Engine(EngineError::ProtectedHeader("Via")),
+        })
+    );
+
+    let valid = replay
+        .run(&Scenario::new(
+            "valid-after-rejections",
+            vec![ScenarioStep::SendInDialogRequest {
+                at: Duration::from_secs(3),
+                call_id,
+                method: SipMethod::Info,
+                extra_headers: Headers::new(),
+                body: Vec::new(),
+                reliability: TransportReliability::Unreliable,
+            }],
+        ))
+        .unwrap();
+    let request = request_from_report(&valid);
+    assert_eq!(request.headers.get("CSeq"), Some("1 INFO"));
+    assert!(
+        request
+            .headers
+            .get("Via")
+            .is_some_and(|via| via.contains("branch=z9hG4bKrust-info-1"))
+    );
+    assert_eq!(valid.transaction_count, 1);
+}
+
+#[test]
+fn rejects_oversized_outbound_in_dialog_fixture_before_mutating_replay_state() {
+    let invite = sip_fixture(include_str!("fixtures/inbound_answered/invite.sip"));
+    let maximum = invite.len();
+    let mut replay = ReplayRunner::new(
+        ReplayConfig {
+            max_wire_bytes: maximum,
+            ..ReplayConfig::default()
+        },
+        CallEngine::new(EngineConfig::default()).unwrap(),
+    )
+    .unwrap();
+    let call_id = confirm_inbound_dialog(&mut replay);
+    let oversized_body = vec![b'x'; maximum];
+    assert_eq!(
+        replay.run(&Scenario::new(
+            "oversized-outbound-request",
+            vec![ScenarioStep::SendInDialogRequest {
+                at: Duration::from_secs(1),
+                call_id: call_id.clone(),
+                method: SipMethod::Info,
+                extra_headers: Headers::new(),
+                body: oversized_body,
+                reliability: TransportReliability::Unreliable,
+            }],
+        )),
+        Err(ReplayError::FixtureTooLarge {
+            index: 0,
+            actual: maximum + SipMethod::Info.as_str().len(),
+            maximum,
+        })
+    );
+
+    let valid = replay
+        .run(&Scenario::new(
+            "valid-after-size-rejection",
+            vec![ScenarioStep::SendInDialogRequest {
+                at: Duration::from_secs(2),
+                call_id,
+                method: SipMethod::Info,
+                extra_headers: Headers::new(),
+                body: Vec::new(),
+                reliability: TransportReliability::Unreliable,
+            }],
+        ))
+        .unwrap();
+    assert_eq!(
+        request_from_report(&valid).headers.get("CSeq"),
+        Some("1 INFO")
+    );
 }
 
 #[test]

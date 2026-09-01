@@ -25,7 +25,7 @@ use rtcp::RtcpPacket;
 use sdp::SdpError;
 use sip_parser::ParseError;
 use sip_transaction::TransportReliability;
-use sip_types::SipMessage;
+use sip_types::{Headers, SipMessage, SipMethod};
 
 const DEFAULT_MAX_STEPS: usize = 4_096;
 const DEFAULT_MAX_WIRE_BYTES: usize = 65_535;
@@ -107,6 +107,22 @@ pub enum ScenarioStep {
         reason: String,
         /// Optional response body, normally SDP.
         body: Vec<u8>,
+    },
+    /// Construct and emit one application-controlled request inside a
+    /// confirmed SIP dialog.
+    SendInDialogRequest {
+        /// Explicit monotonic scenario time.
+        at: Duration,
+        /// Stable application call identifier.
+        call_id: CallId,
+        /// Supported outbound in-dialog method.
+        method: SipMethod,
+        /// Method-specific headers; dialog-managed headers are rejected.
+        extra_headers: Headers,
+        /// Optional method body.
+        body: Vec<u8>,
+        /// Transport reliability used by transaction timers.
+        reliability: TransportReliability,
     },
     /// Apply a provider-neutral call-control operation.
     ApplyCallCommand {
@@ -218,6 +234,7 @@ impl ScenarioStep {
             Self::ReceiveSip { at, .. }
             | Self::OriginateSip { at, .. }
             | Self::RespondToInvite { at, .. }
+            | Self::SendInDialogRequest { at, .. }
             | Self::Poll { at }
             | Self::ReceiveRtp { at, .. }
             | Self::PlayoutAudio { at }
@@ -245,6 +262,24 @@ impl ScenarioStep {
             | Self::ReceiveRtcp { wire, .. } => Some(wire.len()),
             Self::RespondToInvite { reason, body, .. } => {
                 reason.len().checked_add(body.len()).or(Some(usize::MAX))
+            }
+            Self::SendInDialogRequest {
+                method,
+                extra_headers,
+                body,
+                ..
+            } => {
+                let header_bytes = extra_headers.iter().try_fold(0_usize, |total, header| {
+                    total
+                        .checked_add(header.name.len())?
+                        .checked_add(header.value.len())
+                });
+                method
+                    .as_str()
+                    .len()
+                    .checked_add(body.len())
+                    .and_then(|total| total.checked_add(header_bytes?))
+                    .or(Some(usize::MAX))
             }
             Self::PushAiAudio { frame } => frame
                 .samples
@@ -563,6 +598,24 @@ impl ReplayRunner {
                     reason.clone(),
                     body.clone(),
                     *at,
+                )?,
+            )),
+            ScenarioStep::SendInDialogRequest {
+                at,
+                call_id,
+                method,
+                extra_headers,
+                body,
+                reliability,
+            } => Ok(engine_outcome(
+                None,
+                self.engine.send_in_dialog_request(
+                    call_id,
+                    method.clone(),
+                    extra_headers.clone(),
+                    body.clone(),
+                    *at,
+                    *reliability,
                 )?,
             )),
             ScenarioStep::ApplyCallCommand { call_id, command } => Ok(engine_outcome(
