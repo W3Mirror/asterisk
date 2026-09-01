@@ -21,12 +21,15 @@ use call_bridge::{BridgeEventKind, BridgeSnapshot, BridgeState};
 use call_core::{BridgeId, CallEventKind, CallId, CallState};
 use scenario_replay::{ReplayReport, StepOutcome};
 use sdp::{Codec, Direction, SessionDescription};
+use sip_parser::{ParseConfig, ParseError};
 use sip_types::{Headers, SipMessage};
 
 const DEFAULT_MAX_FACTS: usize = 16_384;
 const DEFAULT_MAX_FACT_BYTES: usize = 4_096;
 const DEFAULT_MAX_FIXTURE_BYTES: usize = 4 * 1024 * 1024;
 const DEFAULT_MAX_DIFFERENCES: usize = 64;
+const DEFAULT_MAX_CAPTURE_MESSAGES: usize = 16_384;
+const DEFAULT_MAX_CAPTURE_MESSAGE_BYTES: usize = 65_535;
 
 /// Bounds applied while converting one replay report into semantic facts.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -42,6 +45,52 @@ impl Default for NormalizationConfig {
         Self {
             max_facts: DEFAULT_MAX_FACTS,
             max_fact_bytes: DEFAULT_MAX_FACT_BYTES,
+        }
+    }
+}
+
+/// Direction of one message in a sanitized SIP capture.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CaptureDirection {
+    /// A message received by the Rust/Asterisk endpoint from its peer.
+    Received,
+    /// A message sent by the Rust/Asterisk endpoint to its peer.
+    Sent,
+}
+
+/// One bounded raw SIP message from a sanitized capture.
+///
+/// The wire bytes are parsed and normalized immediately; they are not retained
+/// by the resulting [`NormalizedObservation`]. Callers must sanitize captures
+/// before handing them to this adapter, while the normalizer independently
+/// removes identifiers, addresses, and bodies from its output.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CapturedSip {
+    /// Whether the endpoint received or sent this message.
+    pub direction: CaptureDirection,
+    /// Peer address observed for this message.
+    pub peer: SocketAddr,
+    /// Complete SIP wire message, including the header delimiter and body.
+    pub wire: Vec<u8>,
+}
+
+/// Bounds applied while converting a sanitized raw-SIP capture.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CaptureConfig {
+    /// Maximum messages accepted in one capture.
+    pub max_messages: usize,
+    /// Maximum bytes accepted for one SIP message.
+    pub max_message_bytes: usize,
+    /// Bounds applied to the normalized semantic output.
+    pub normalization: NormalizationConfig,
+}
+
+impl Default for CaptureConfig {
+    fn default() -> Self {
+        Self {
+            max_messages: DEFAULT_MAX_CAPTURE_MESSAGES,
+            max_message_bytes: DEFAULT_MAX_CAPTURE_MESSAGE_BYTES,
+            normalization: NormalizationConfig::default(),
         }
     }
 }
@@ -100,6 +149,26 @@ impl NormalizedObservation {
     #[must_use]
     pub fn facts(&self) -> &[String] {
         &self.facts
+    }
+
+    /// Returns a projection containing only ordered SIP traffic facts.
+    ///
+    /// A raw Asterisk/provider capture can establish wire-level behavior but
+    /// cannot provide Rust lifecycle, media, or cleanup facts. Comparing this
+    /// projection against a replay report therefore gives capture conversion
+    /// a precise, source-independent boundary without weakening the complete
+    /// report comparison used by richer fixtures.
+    #[must_use]
+    pub fn sip_traffic(&self) -> Self {
+        Self {
+            scenario: self.scenario.clone(),
+            facts: self
+                .facts
+                .iter()
+                .filter(|fact| fact.starts_with("sip "))
+                .cloned()
+                .collect(),
+        }
     }
 
     /// Serializes the observation into the bounded oracle fixture format.
@@ -181,6 +250,29 @@ pub enum DifferentialError {
         /// Stable reason suitable for diagnostics.
         reason: &'static str,
     },
+    /// The raw capture exceeded its message-count bound.
+    TooManyCapturedMessages {
+        /// Observed message count.
+        actual: usize,
+        /// Configured maximum.
+        maximum: usize,
+    },
+    /// One raw capture message exceeded its byte bound.
+    CapturedMessageTooLarge {
+        /// Zero-based message index.
+        index: usize,
+        /// Observed message size.
+        actual: usize,
+        /// Configured maximum.
+        maximum: usize,
+    },
+    /// One raw capture message could not be parsed as bounded SIP.
+    CapturedMessageParse {
+        /// Zero-based message index.
+        index: usize,
+        /// Parser failure from the bounded SIP adapter.
+        error: ParseError,
+    },
 }
 
 impl Display for DifferentialError {
@@ -213,6 +305,21 @@ impl Display for DifferentialError {
             Self::InvalidFixture { line, reason } => {
                 write!(formatter, "oracle fixture line {line} is invalid: {reason}")
             }
+            Self::TooManyCapturedMessages { actual, maximum } => write!(
+                formatter,
+                "capture has {actual} messages, maximum is {maximum}"
+            ),
+            Self::CapturedMessageTooLarge {
+                index,
+                actual,
+                maximum,
+            } => write!(
+                formatter,
+                "capture message {index} is {actual} bytes, maximum is {maximum}"
+            ),
+            Self::CapturedMessageParse { index, error } => {
+                write!(formatter, "capture message {index} is invalid SIP: {error}")
+            }
         }
     }
 }
@@ -242,6 +349,60 @@ pub fn normalize_replay(
     normalizer.add_cleanup(report)?;
     Ok(NormalizedObservation {
         scenario: report.scenario.clone(),
+        facts: normalizer.facts,
+    })
+}
+
+/// Normalizes a bounded sanitized raw-SIP capture into the shared fixture
+/// format.
+///
+/// This adapter is intentionally limited to ordered SIP traffic. Use
+/// [`NormalizedObservation::sip_traffic`] on a replay report when comparing
+/// it with a capture projection; richer replay facts remain available through
+/// [`normalize_replay`].
+///
+/// # Errors
+///
+/// Returns an error when a bound, scenario, message count, message size, or
+/// SIP parse operation is invalid.
+pub fn normalize_capture(
+    scenario: &str,
+    captures: &[CapturedSip],
+    config: CaptureConfig,
+) -> Result<NormalizedObservation, DifferentialError> {
+    if config.max_messages == 0 || config.max_message_bytes == 0 {
+        return Err(DifferentialError::InvalidConfig);
+    }
+    validate_normalization(config.normalization)?;
+    validate_scenario(scenario)?;
+    if captures.len() > config.max_messages {
+        return Err(DifferentialError::TooManyCapturedMessages {
+            actual: captures.len(),
+            maximum: config.max_messages,
+        });
+    }
+
+    let parser_config = ParseConfig {
+        max_message_bytes: config.max_message_bytes,
+        ..ParseConfig::default()
+    };
+    let mut normalizer = Normalizer::new(config.normalization);
+    normalizer.push("timing order-only".to_owned())?;
+    for (index, capture) in captures.iter().enumerate() {
+        if capture.wire.len() > config.max_message_bytes {
+            return Err(DifferentialError::CapturedMessageTooLarge {
+                index,
+                actual: capture.wire.len(),
+                maximum: config.max_message_bytes,
+            });
+        }
+        let message = sip_parser::parse_with_config(&capture.wire, parser_config)
+            .map_err(|error| DifferentialError::CapturedMessageParse { index, error })?;
+        normalizer.add_captured_sip(index, capture.direction, capture.peer, &message)?;
+    }
+
+    Ok(NormalizedObservation {
+        scenario: scenario.to_owned(),
         facts: normalizer.facts,
     })
 }
@@ -440,6 +601,26 @@ impl Normalizer {
         Ok(())
     }
 
+    fn add_captured_sip(
+        &mut self,
+        index: usize,
+        direction: CaptureDirection,
+        peer: SocketAddr,
+        message: &SipMessage,
+    ) -> Result<(), DifferentialError> {
+        let endpoint = self.endpoints.alias(&peer);
+        let direction = match direction {
+            CaptureDirection::Received => "received",
+            CaptureDirection::Sent => "sent",
+        };
+        let message = self.normalize_sip(message);
+        self.push(format!(
+            "sip {} endpoint-{endpoint} {direction} {}",
+            index + 1,
+            message
+        ))
+    }
+
     fn add_sip_traffic(&mut self, report: &ReplayReport) -> Result<(), DifferentialError> {
         let mut index = 0;
         for step in &report.steps {
@@ -451,18 +632,22 @@ impl Normalizer {
             };
 
             if let Some(received) = received {
+                self.add_captured_sip(
+                    index,
+                    CaptureDirection::Received,
+                    received.source,
+                    &received.message,
+                )?;
                 index += 1;
-                let endpoint = self.endpoints.alias(&received.source);
-                let message = self.normalize_sip(&received.message);
-                self.push(format!(
-                    "sip {index} endpoint-{endpoint} received {message}"
-                ))?;
             }
             for action in actions {
+                self.add_captured_sip(
+                    index,
+                    CaptureDirection::Sent,
+                    action.destination,
+                    &action.message,
+                )?;
                 index += 1;
-                let endpoint = self.endpoints.alias(&action.destination);
-                let message = self.normalize_sip(&action.message);
-                self.push(format!("sip {index} endpoint-{endpoint} sent {message}"))?;
             }
         }
         Ok(())
@@ -789,7 +974,7 @@ mod tests {
 
     use call_core::CallId;
     use call_engine::{CallEngine, EngineConfig};
-    use scenario_replay::{ReplayConfig, ReplayRunner, Scenario, ScenarioStep};
+    use scenario_replay::{ReplayConfig, ReplayRunner, Scenario, ScenarioStep, StepOutcome};
     use sip_transaction::TransportReliability;
     use sip_types::{Headers, SipMessage, SipMethod, SipRequest, SipResponse};
 
@@ -856,6 +1041,31 @@ mod tests {
             headers,
             body: Vec::new(),
         }))
+    }
+
+    fn captured_sip(report: &ReplayReport) -> Vec<CapturedSip> {
+        let mut captures = Vec::new();
+        for step in &report.steps {
+            let StepOutcome::Engine {
+                received, actions, ..
+            } = &step.outcome
+            else {
+                continue;
+            };
+            if let Some(received) = received {
+                captures.push(CapturedSip {
+                    direction: CaptureDirection::Received,
+                    peer: received.source,
+                    wire: sip_parser::serialize(&received.message),
+                });
+            }
+            captures.extend(actions.iter().map(|action| CapturedSip {
+                direction: CaptureDirection::Sent,
+                peer: action.destination,
+                wire: sip_parser::serialize(&action.message),
+            }));
+        }
+        captures
     }
 
     fn outbound_in_dialog_report() -> ReplayReport {
@@ -1081,5 +1291,74 @@ mod tests {
 
         assert!(comparison.matched, "differential mismatch: {comparison:?}");
         assert_eq!(comparison.total_differences, 0);
+    }
+
+    #[test]
+    fn sanitized_capture_matches_replay_sip_traffic_projection() {
+        let report = report();
+        let replay = normalize_replay(&report, NormalizationConfig::default())
+            .unwrap()
+            .sip_traffic();
+        let capture = normalize_capture(
+            "inbound-cancelled-differential",
+            &captured_sip(&report),
+            CaptureConfig::default(),
+        )
+        .unwrap()
+        .sip_traffic();
+        let comparison = compare(&replay, &capture, ComparisonConfig::default()).unwrap();
+
+        assert!(comparison.matched, "capture mismatch: {comparison:?}");
+        assert_eq!(comparison.total_differences, 0);
+        assert_eq!(capture.facts().len(), 6);
+    }
+
+    #[test]
+    fn capture_normalization_rejects_malformed_and_oversized_messages_atomically() {
+        let peer = "192.0.2.10:5060".parse::<SocketAddr>().unwrap();
+        let malformed = [CapturedSip {
+            direction: CaptureDirection::Received,
+            peer,
+            wire: b"not SIP".to_vec(),
+        }];
+        assert_eq!(
+            normalize_capture("capture", &malformed, CaptureConfig::default()),
+            Err(DifferentialError::CapturedMessageParse {
+                index: 0,
+                error: ParseError::MissingHeaderDelimiter,
+            })
+        );
+
+        let oversized = [CapturedSip {
+            direction: CaptureDirection::Sent,
+            peer,
+            wire: vec![0; 4],
+        }];
+        assert_eq!(
+            normalize_capture(
+                "capture",
+                &oversized,
+                CaptureConfig {
+                    max_message_bytes: 3,
+                    ..CaptureConfig::default()
+                },
+            ),
+            Err(DifferentialError::CapturedMessageTooLarge {
+                index: 0,
+                actual: 4,
+                maximum: 3,
+            })
+        );
+        assert_eq!(
+            normalize_capture(
+                "capture",
+                &[],
+                CaptureConfig {
+                    max_messages: 0,
+                    ..CaptureConfig::default()
+                },
+            ),
+            Err(DifferentialError::InvalidConfig)
+        );
     }
 }

@@ -13,10 +13,10 @@ media-core = { path = "../media-core" }
 scenario-replay = { path = "../scenario-replay" }
 sdp = { path = "../sdp" }
 sip-types = { path = "../sip-types" }
+sip-parser = { path = "../sip-parser" }
 
 [dev-dependencies]
 call-engine = { path = "../call-engine" }
-sip-parser = { path = "../sip-parser" }
 sip-transaction = { path = "../sip-transaction" }
 
 [lints]
