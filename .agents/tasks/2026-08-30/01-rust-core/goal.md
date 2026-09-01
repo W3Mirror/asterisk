@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**
-**Current checkpoint:** CP-073 — PR #30 hosted validation confirmed
-**Last checkpoint (UTC):** 2026-09-01T08:38:56Z
+**Current checkpoint:** CP-077 — PR #30 rebased and locally validated
+**Last checkpoint (UTC):** 2026-09-01T19:56:46Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Property-based protocol, state-machine, and bounded-resource verification<br>
-**Next resume action:** Reconcile PR #31 onto the validated PR #30 head and run focused local SIPp integration checks
-**Active PR:** [#30](https://github.com/W3Mirror/asterisk/pull/30) branch `rust-property-invariants` targets `call-bridge-scenario-replay`
+**Next resume action:** Publish the rebased PR #30 head with an exact SHA-pinned force-with-lease and verify hosted checks plus mergeability
+**Active PR:** [#30](https://github.com/W3Mirror/asterisk/pull/30) branch `rust-property-invariants` targets `call-bridge-scenario-replay`; hosted validation is pending for the rebased head
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-29`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-30`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -5286,6 +5286,27 @@ blockers: Runtime human SIP origination and RTP-to-RTP bridge composition remain
 next_action: Reconcile PR #31 onto the validated PR #30 head and run focused local SIPp integration checks
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the property-invariants PR if the testing contract is superseded
 notes: Relevant tests and documentation ship together. Every pull request and every push to `aistack/main` runs the complete ordinary workspace suite, including these properties; scheduled/manual jobs provide the extended 4,096-case property run, SIPp/interoperability, capacity, differential replay, soak, credentialed-provider, and real-time checks. CI remains on hosted `ubuntu-latest`; Docker is limited to the pinned local SIPp dependency.
+```
+
+### CP-077 — PR #30 rebased and locally validated
+
+```yaml
+checkpoint_id: CP-077
+recorded_at_utc: 2026-09-01T19:56:46Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Property-based protocol, state-machine, and bounded-resource verification
+scope: Reconcile the property-invariant implementation onto the published PR #29 head and re-run focused and full offline checks
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-30
+branch: rust-property-invariants
+base_branch: call-bridge-scenario-replay
+pr: "#30 https://github.com/W3Mirror/asterisk/pull/30"
+head_sha: 1dfdd2baffeb903e5d09656c443cf80b2f3774f8
+evidence: Rebased PR #30 onto PR #29 head `d26d06008dd5715759613d400a959f42e3dabff7`, preserving the property implementation and ledger history. Focused `cargo test -p property-tests --locked` (13 passed), `PROPTEST_CASES=4096 cargo test -p property-tests --locked` (13 passed), full `cargo test --workspace --locked` (160 passed), formatting, strict property-crate Clippy, workspace Clippy, and `git diff --check` pass. The property workflow remains hosted and the ordinary PR/main suite exercises the focused tests.
+blockers: Hosted validation has not yet run for this rebased head; runtime human SIP origination and RTP-to-RTP bridge composition, local SIPp, differential replay, load, soak, sanitized real captures, provider interoperability, and rollback proof remain active goal work. Asterisk remains the fallback.
+next_action: Publish PR #30 with an exact SHA-pinned force-with-lease against the verified remote head, then verify hosted checks and OPEN/CLEAN/MERGEABLE state
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the property-invariants PR if the testing contract is superseded
+notes: Relevant tests and documentation ship together. Every implementation PR must include focused tests for each affected crate/module; hosted pull requests and pushes to `aistack/main` run the complete ordinary workspace suite, while extended property cases and environment-dependent gates remain scheduled or manually dispatched.
 ```
 
 ## 59.4 Stacked-PR Checkpoints
