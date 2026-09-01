@@ -1,12 +1,12 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**
-**Current checkpoint:** CP-077 — PR #30 rebased and locally validated
-**Last checkpoint (UTC):** 2026-09-01T19:56:46Z
+**Current checkpoint:** CP-078 — PR #30 hosted validation confirmed after restack
+**Last checkpoint (UTC):** 2026-09-01T20:02:26Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Property-based protocol, state-machine, and bounded-resource verification<br>
-**Next resume action:** Publish the rebased PR #30 head with an exact SHA-pinned force-with-lease and verify hosted checks plus mergeability
-**Active PR:** [#30](https://github.com/W3Mirror/asterisk/pull/30) branch `rust-property-invariants` targets `call-bridge-scenario-replay`; hosted validation is pending for the rebased head
+**Next resume action:** Reconcile PR #31 onto the validated PR #30 head and run focused local SIPp integration checks
+**Active PR:** [#30](https://github.com/W3Mirror/asterisk/pull/30) branch `rust-property-invariants` targets `call-bridge-scenario-replay`; hosted validation is green for the published head
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-30`
 **Primary language:** Rust  
@@ -2140,9 +2140,9 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 | Workstream | Status | Evidence / checkpoint | PR | Next action |
 | --- | --- | --- | --- | --- |
 | Phase 0 — current Asterisk surface | in_progress | CP-015; PR #1 hosted run 33431290927 passed and GitHub reports CLEAN/MERGEABLE at `8dbd0082823b9444e72a6ceebee27328bd0f506d` | #1 | Keep the verified Asterisk inventory and production-evidence gate in force |
-| Phase 1 — Rust media engine | in_progress | CP-018/CP-026/CP-047/CP-049/CP-050/CP-054/CP-056/CP-058/CP-059/CP-060/CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067/CP-068/CP-069/CP-070/CP-071/CP-072/CP-073; PR #2 foundation, PR #8 media/DTMF/recording, PR #18 bounded WebSocket adapter, PR #19 bounded stream driver, PR #20 UDP runtime, PR #21 parser fuzz harnesses, PR #22 hosted CI/offline verification contract, PR #25 deterministic SIP scenario replay, PR #26 deterministic fault corpus, PR #27 transfer/reclamation tests, PR #28 call-bridge state model, PR #29 bridge scenario replay, and PR #30 cross-crate property invariants; focused and full offline workspace tests pass and PR #28/#29/#30 hosted checks are green | [#30](https://github.com/W3Mirror/asterisk/pull/30) | Reconcile PR #31 onto the validated PR #30 head, then implement the next local SIPp/integration slice |
-| Offline deterministic verification | in_progress | CP-058/CP-059/CP-060/CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067/CP-068/CP-069/CP-070/CP-071/CP-072/CP-073 define focused per-module tests, synthetic SIP replay, property invariants, API/event contracts, media fault injection, bridge/transfer state tests, differential tooling, load/soak/reclamation tiers, and hosted PR/main-push execution semantics | [#30](https://github.com/W3Mirror/asterisk/pull/30) | Reconcile PR #31 and add focused local SIPp integration tests |
-| Synthetic SIP scenario replay | in_progress | CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067/CP-068/CP-069/CP-070/CP-071/CP-072/CP-073; PR #25 provides bounded atomic normal-call replay, PR #26 adds signaling/media faults, PR #27 adds transfer-command and terminal-reclamation replay, PR #28 adds a bounded AI-to-human bridge state model with five focused bridge tests, PR #29 adds bridge transition replay with three focused scenarios, and PR #30 adds 13 cross-crate property tests; local full workspace (160 tests) passes, ordinary workspace Clippy is green, and hosted PR #30 checks pass | [#30](https://github.com/W3Mirror/asterisk/pull/30) | Reconcile and validate PR #31's local SIPp integration coverage |
+| Phase 1 — Rust media engine | in_progress | CP-018/CP-026/CP-047/CP-049/CP-050/CP-054/CP-056/CP-058/CP-059/CP-060/CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067/CP-068/CP-069/CP-070/CP-071/CP-072/CP-073/CP-076/CP-077/CP-078; PR #2 foundation, PR #8 media/DTMF/recording, PR #18 bounded WebSocket adapter, PR #19 bounded stream driver, PR #20 UDP runtime, PR #21 parser fuzz harnesses, PR #22 hosted CI/offline verification contract, PR #25 deterministic SIP scenario replay, PR #26 deterministic fault corpus, PR #27 transfer/reclamation tests, PR #28 call-bridge state model, PR #29 bridge scenario replay, and PR #30 cross-crate property invariants; focused and full offline workspace tests pass and PR #28/#29/#30 hosted checks are green | [#30](https://github.com/W3Mirror/asterisk/pull/30) | Reconcile PR #31 onto the validated PR #30 head, then implement the next local SIPp/integration slice |
+| Offline deterministic verification | in_progress | CP-058/CP-059/CP-060/CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067/CP-068/CP-069/CP-070/CP-071/CP-072/CP-073/CP-076/CP-077/CP-078 define focused per-module tests, synthetic SIP replay, property invariants, API/event contracts, media fault injection, bridge/transfer state tests, differential tooling, load/soak/reclamation tiers, and hosted PR/main-push execution semantics | [#30](https://github.com/W3Mirror/asterisk/pull/30) | Reconcile PR #31 and add focused local SIPp integration tests |
+| Synthetic SIP scenario replay | in_progress | CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067/CP-068/CP-069/CP-070/CP-071/CP-072/CP-073/CP-076/CP-077/CP-078; PR #25 provides bounded atomic normal-call replay, PR #26 adds signaling/media faults, PR #27 adds transfer-command and terminal-reclamation replay, PR #28 adds a bounded AI-to-human bridge state model with five focused bridge tests, PR #29 adds bridge transition replay with three focused scenarios, and PR #30 adds 13 cross-crate property tests; local full workspace (160 tests) passes, ordinary workspace Clippy is green, and hosted PR #30 checks pass | [#30](https://github.com/W3Mirror/asterisk/pull/30) | Reconcile and validate PR #31's local SIPp integration coverage |
 | Call bridge state model | in_progress | CP-067/CP-068; PR #28 adds provider-neutral bounded bridge ownership, AI/human routing transitions, failure fail-back, event backpressure atomicity, endpoint reclamation, and five focused tests; hosted validation is green | [#28](https://github.com/W3Mirror/asterisk/pull/28) | Integrate the bridge state model with call/runtime signaling and media |
 | Phase 2 — SIP edge shadow mode | in_progress | CP-026; PR #7 hosted run 33436951454 passed and GitHub reports CLEAN/MERGEABLE at `fe87301a5322e278a8fb39404d675c6372d87ad9` | [#7](https://github.com/W3Mirror/asterisk/pull/7) | Publish and validate PR #8's media-session slice |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
@@ -5307,6 +5307,27 @@ blockers: Hosted validation has not yet run for this rebased head; runtime human
 next_action: Publish PR #30 with an exact SHA-pinned force-with-lease against the verified remote head, then verify hosted checks and OPEN/CLEAN/MERGEABLE state
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the property-invariants PR if the testing contract is superseded
 notes: Relevant tests and documentation ship together. Every implementation PR must include focused tests for each affected crate/module; hosted pull requests and pushes to `aistack/main` run the complete ordinary workspace suite, while extended property cases and environment-dependent gates remain scheduled or manually dispatched.
+```
+
+### CP-078 — PR #30 hosted validation confirmed after restack
+
+```yaml
+checkpoint_id: CP-078
+recorded_at_utc: 2026-09-01T20:02:26Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Property-based protocol, state-machine, and bounded-resource verification
+scope: Publish and validate the rebased cross-crate property-invariant slice on hosted CI
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-30
+branch: rust-property-invariants
+base_branch: call-bridge-scenario-replay
+pr: "#30 https://github.com/W3Mirror/asterisk/pull/30"
+head_sha: 778b7ff7dfeb740a14a20da00d44d707c19324a1
+evidence: Published the rebased PR #30 head with an exact SHA-pinned force-with-lease replacing remote head `3ad913cb2aef2eb5315c31ad3b4b72600d34e3d3`. Hosted Rust quality run [33552613169](https://github.com/W3Mirror/asterisk/actions/runs/33552613169) completed successfully on hosted `ubuntu-latest`: Workspace checks, protocol fuzz checks, and dependency audit passed; the extended 4,096-case property step was correctly skipped for the pull_request event. GitHub reports PR #30 OPEN and CLEAN against `call-bridge-scenario-replay`; local and remote heads match.
+blockers: Runtime human SIP origination and RTP-to-RTP bridge composition remain incomplete; local SIPp, differential Asterisk-versus-Rust replay, load, soak, sanitized real captures, provider interoperability, and rollback proof remain active goal work. Asterisk remains the fallback.
+next_action: Reconcile PR #31 onto the validated PR #30 head and run focused local SIPp integration checks
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the property-invariants PR if the testing contract is superseded
+notes: Relevant tests and documentation ship together. Every implementation PR must include focused tests for each affected crate/module; pull requests and pushes to `aistack/main` run the complete ordinary workspace suite, while extended property cases and environment-dependent gates remain scheduled or manually dispatched.
 ```
 
 ## 59.4 Stacked-PR Checkpoints
