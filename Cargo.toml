@@ -22,6 +22,7 @@ members = [
   "crates/provider-routing",
   "crates/sip-security",
   "crates/scenario-replay",
+  "crates/property-tests",
 ]
 
 [workspace.package]
