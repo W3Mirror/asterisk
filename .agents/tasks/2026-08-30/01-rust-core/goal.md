@@ -1840,9 +1840,9 @@ uses GitHub's default `pull_request` activity types (`opened`, `reopened`, and
 the stack layer contains a Rust workspace:
 
 ```text
-cargo fmt --check
-cargo clippy
+cargo fmt --all -- --check
 cargo test --workspace --locked
+cargo clippy --workspace --all-targets --locked
 ```
 
 This is not a changed-module-only job. The focused affected-module tests must
