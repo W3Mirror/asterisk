@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**
-**Current checkpoint:** CP-036 — PR #12 hosted validation confirmed
-**Last checkpoint (UTC):** 2026-08-31T21:58:08Z
+**Current checkpoint:** CP-037 — PR #12 reconciled onto the final PR #11 head
+**Last checkpoint (UTC):** 2026-09-01T05:21:19Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Milestone 4 — Dialog + SDP + Basic Calls<br>
-**Next resume action:** Reconcile PR #12 onto the validated PR #11 head, run focused SIP-security checks, publish, and verify hosted CI and mergeability
+**Next resume action:** Publish PR #12 and verify hosted SIP-security validation and mergeability against the updated PR #11 base
 **Active PR:** [#12](https://github.com/W3Mirror/asterisk/pull/12); branch `sip-security-policy` targets `provider-routing`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-12-sip-security`
@@ -3398,7 +3398,7 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 8 | [#8](https://github.com/W3Mirror/asterisk/pull/8) | `media-session-core` | `call-engine-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-8-media-session` | Bounded RTP↔AI media session, RFC 4733 DTMF handling, and non-blocking PCM/WAV recording sink | in_progress | `22a395d433a5c75aac6093e54045e7017bc46fe2` | Hosted run [33470347293](https://github.com/W3Mirror/asterisk/actions/runs/33470347293) passed workspace checks, protocol fuzz detection, and dependency audit; GitHub reports CLEAN/MERGEABLE | Keep the verified offline/hosted test contract in force while adding the next bounded slice |
 | 9 | [#9](https://github.com/W3Mirror/asterisk/pull/9) | `sip-engine-runtime` | `media-session-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-9-sip-runtime` | Bounded blocking UDP/TCP SIP runtime dispatch into `CallEngine`, outbound origination, application response wrappers, and atomic delivery | in_progress | `ff2803f637922c6ac457777830277810daf026fb` | Hosted run [33471126106](https://github.com/W3Mirror/asterisk/actions/runs/33471126106) passed workspace checks, protocol fuzz detection, and dependency audit; GitHub reports CLEAN/MERGEABLE against `media-session-core`; local focused runtime fmt/test/clippy and diff checks passed | Reconcile PR #10 onto this validated head |
 
-| 12 | [#12](https://github.com/W3Mirror/asterisk/pull/12) | `sip-security-policy` | `provider-routing` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-12-sip-security` | Milestone 4 security primitive: bounded IPv4/IPv6 CIDR parsing and canonicalization, source allow/deny policy, deny precedence, and fail-closed configured allowlists | in_progress | `27c8c974dc0e2eca436d728e2b7d6c830999f22e` | Hosted run [33443721395](https://github.com/W3Mirror/asterisk/actions/runs/33443721395) passed workspace checks, protocol-fuzz detection, and dependency audit; GitHub reports CLEAN/MERGEABLE against `provider-routing`; local focused SIP-security and workspace tests pass | Reconcile PR #13 onto this validated head |
+| 12 | [#12](https://github.com/W3Mirror/asterisk/pull/12) | `sip-security-policy` | `provider-routing` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-12-sip-security` | Milestone 4 security primitive: bounded IPv4/IPv6 CIDR parsing and canonicalization, source allow/deny policy, deny precedence, and fail-closed configured allowlists | in_progress | `77e35a4d9b0cc3f4ba97d68a6a320bcd090bd6fc` | Reconciled onto PR #11 head `7b888508063de93fb36e1e5723f50ab9821b24b8`; local focused SIP-security fmt/test/clippy, workspace tests, and diff checks passed; hosted validation pending | Publish and verify PR #12 hosted SIP-security validation |
 | 11 | [#11](https://github.com/W3Mirror/asterisk/pull/11) | `provider-routing` | `sip-auth-routing` | /home/ashutosh/.worktrees/w3mirror/asterisk/pr-11-provider-routing | Milestone 4 provider abstraction: bounded provider profiles for signaling/media/auth/NAT policy plus deterministic inbound/outbound routing and mandatory Asterisk fallback | in_progress | `7b888508063de93fb36e1e5723f50ab9821b24b8` | Hosted run [33472792134](https://github.com/W3Mirror/asterisk/actions/runs/33472792134) passed workspace checks, protocol fuzz detection, and dependency audit; GitHub reports CLEAN/MERGEABLE against `sip-auth-routing`; local focused provider-routing fmt/test/clippy, workspace tests, and diff checks passed | Reconcile PR #12 onto this validated head |
 | 10 | [#10](https://github.com/W3Mirror/asterisk/pull/10) | `sip-auth-routing` | `sip-engine-runtime` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-10-sip-auth` | Milestone 4 security/provider primitive: bounded SIP Digest challenge/authorization parsing, RFC 2617 MD5 auth/auth-int responses, redacted credentials, constant-time verification, and bounded failure throttling | in_progress | `13bc89925a57f463ca681d3906f8ffcd751f11a1` | Hosted run [33472048574](https://github.com/W3Mirror/asterisk/actions/runs/33472048574) passed workspace checks, protocol-fuzz detection, and dependency audit; GitHub reports CLEAN/MERGEABLE against `sip-engine-runtime`; local focused auth and workspace tests pass | Verify PR #11 against this validated head |
 
@@ -3631,6 +3631,27 @@ blockers: Production deployment identity, effective configuration, provider cred
 next_action: Reconcile PR #13 onto the validated PR #12 head and run its focused runtime-security checks
 rollback: Asterisk remains the active/fallback engine; no routing was changed
 notes: Focused affected-module tests remain required in every implementation PR; hosted pull_request and aistack/main pushes run the complete ordinary offline workspace suite. Extended fuzz, SIPp, load/soak, credentialed, and live-provider tiers remain scheduled or manually gated.
+```
+
+### CP-037 — PR #12 reconciled onto the final PR #11 head
+
+```yaml
+checkpoint_id: CP-037
+recorded_at_utc: 2026-09-01T05:21:19Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Milestone 4 — Dialog + SDP + Basic Calls
+scope: Reconcile the SIP source-address security slice with the final hosted-green provider-routing head while preserving focused security coverage
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-12-sip-security
+branch: sip-security-policy
+base_branch: provider-routing
+pr: "#12 https://github.com/W3Mirror/asterisk/pull/12"
+head_sha: 77e35a4d9b0cc3f4ba97d68a6a320bcd090bd6fc
+evidence: Merged origin/provider-routing at final hosted-green PR #11 head `7b888508063de93fb36e1e5723f50ab9821b24b8` and resolved the conflict only in the shared goal ledger; SIP-security implementation history was preserved. Local `cargo fmt --all -- --check`, `cargo test -p sip-security --locked` (8 passed), `cargo test --workspace --locked`, `cargo clippy -p sip-security --all-targets --locked`, and `git diff --check origin/provider-routing...HEAD` passed. Focused SIP-security tests remain required PR content and are exercised by the complete hosted workspace invocation.
+blockers: Hosted PR #12 validation is pending publication of this reconciled head; production deployment identity, effective configuration, provider credentials, sanitized SIP/SDP/RTP fixtures, and live-provider calls remain unavailable; Asterisk routing remains the fallback
+next_action: Publish PR #12 and verify hosted SIP-security validation and mergeability against the updated PR #11 base
+rollback: Asterisk remains the active/fallback engine; do not enable Rust traffic
+notes: Pull-request and aistack/main push events run the complete ordinary hosted workspace/offline suite when manifests exist; extended fuzzing, SIPp/interoperability, capacity, property, soak, credentialed-provider, and live real-time-call gates remain scheduled or manually gated.
 ```
 
 ## 59.4 Stacked-PR Checkpoints
