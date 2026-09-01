@@ -1219,6 +1219,10 @@ impl CallEngine {
                 | SipMethod::Cancel
                 | SipMethod::Prack
                 | SipMethod::Options
+                | SipMethod::Info
+                | SipMethod::Update
+                | SipMethod::Refer
+                | SipMethod::Notify
         ) {
             return Err(EngineError::UnsupportedRequest);
         }
@@ -3543,6 +3547,49 @@ mod tests {
         }
     }
 
+    fn in_dialog_request(
+        method: SipMethod,
+        branch: &str,
+        sequence: u32,
+        initial: &SipRequest,
+        response: &SipResponse,
+    ) -> SipRequest {
+        let mut headers = Headers::new();
+        headers.push("Via", format!("SIP/2.0/UDP peer.invalid;branch={branch}"));
+        headers.push("From", initial.headers.get("From").unwrap());
+        headers.push("To", response.headers.get("To").unwrap());
+        headers.push("Call-ID", initial.headers.get("Call-ID").unwrap());
+        headers.push("CSeq", format!("{sequence} {method}"));
+        match &method {
+            SipMethod::Info => {
+                headers.push("Content-Type", "application/dtmf-relay");
+            }
+            SipMethod::Refer => {
+                headers.push("Refer-To", "<sip:carol@example.com>");
+            }
+            SipMethod::Notify => {
+                headers.push("Event", "refer");
+                headers.push("Subscription-State", "active");
+            }
+            SipMethod::Invite
+            | SipMethod::Ack
+            | SipMethod::Bye
+            | SipMethod::Cancel
+            | SipMethod::Options
+            | SipMethod::Register
+            | SipMethod::Update
+            | SipMethod::Prack
+            | SipMethod::Other(_) => {}
+        }
+        SipRequest {
+            method,
+            request_uri: "sip:bob@example.com".to_owned(),
+            version: "SIP/2.0".to_owned(),
+            headers,
+            body: Vec::new(),
+        }
+    }
+
     fn digest_challenge(
         request: &SipRequest,
         status_code: u16,
@@ -4115,6 +4162,145 @@ mod tests {
                 .is_empty()
         );
         assert_eq!(engine.transaction_count(), 0);
+    }
+
+    #[test]
+    fn confirmed_dialog_accepts_standard_in_dialog_request_methods() {
+        let mut engine = CallEngine::new(EngineConfig::default()).unwrap();
+        let initial = invite(
+            "in-dialog-methods",
+            "in-dialog-methods-call",
+            "Bob <sip:bob@example.com>",
+            "1 INVITE",
+        );
+        let source = address(5060);
+        let created = engine
+            .receive_request(
+                source,
+                initial.clone(),
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        let call_id = created.events()[0].call_id.clone();
+        let answered = engine
+            .respond_to_invite(&call_id, 200, "OK", Vec::new(), Duration::ZERO)
+            .unwrap();
+        let SipMessage::Response(response) = &answered.actions()[0].message else {
+            panic!("expected final INVITE response");
+        };
+        engine
+            .receive_request(
+                source,
+                ack_for(&initial, response, "in-dialog-ack"),
+                Duration::from_millis(1),
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+
+        for (offset, method) in [
+            SipMethod::Info,
+            SipMethod::Update,
+            SipMethod::Refer,
+            SipMethod::Notify,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let sequence = u32::try_from(offset + 2).unwrap();
+            let request = in_dialog_request(
+                method.clone(),
+                &format!("in-dialog-{offset}"),
+                sequence,
+                &initial,
+                response,
+            );
+            let output = engine
+                .receive_request(
+                    source,
+                    request.clone(),
+                    Duration::from_millis(u64::try_from(offset + 2).unwrap()),
+                    TransportReliability::Unreliable,
+                )
+                .unwrap();
+            assert!(output.events().is_empty());
+            assert_eq!(output.actions().len(), 1);
+            let SipMessage::Response(reply) = &output.actions()[0].message else {
+                panic!("expected in-dialog response");
+            };
+            assert_eq!(reply.status_code, 200);
+            assert_eq!(reply.headers.get("CSeq"), request.headers.get("CSeq"));
+            assert_eq!(reply.headers.get("Call-ID"), Some("in-dialog-methods-call"));
+            assert!(reply.headers.get("To").is_some_and(value_has_tag));
+        }
+
+        assert_eq!(
+            engine.snapshot(&call_id).unwrap().state,
+            CallState::Answered
+        );
+        assert_eq!(engine.dialog_count(), 1);
+    }
+
+    #[test]
+    fn unsupported_in_dialog_method_is_rejected_without_mutation() {
+        let mut engine = CallEngine::new(EngineConfig::default()).unwrap();
+        let initial = invite(
+            "in-dialog-unsupported",
+            "in-dialog-unsupported-call",
+            "Bob <sip:bob@example.com>",
+            "1 INVITE",
+        );
+        let source = address(5060);
+        let created = engine
+            .receive_request(
+                source,
+                initial.clone(),
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        let call_id = created.events()[0].call_id.clone();
+        let answered = engine
+            .respond_to_invite(&call_id, 200, "OK", Vec::new(), Duration::ZERO)
+            .unwrap();
+        let SipMessage::Response(response) = &answered.actions()[0].message else {
+            panic!("expected final INVITE response");
+        };
+        engine
+            .receive_request(
+                source,
+                ack_for(&initial, response, "in-dialog-unsupported-ack"),
+                Duration::from_millis(1),
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+
+        let request = in_dialog_request(
+            SipMethod::Register,
+            "in-dialog-register",
+            2,
+            &initial,
+            response,
+        );
+        let transaction_count = engine.transaction_count();
+        let dialog_count = engine.dialog_count();
+        assert_eq!(
+            engine
+                .receive_request(
+                    source,
+                    request,
+                    Duration::from_millis(2),
+                    TransportReliability::Unreliable,
+                )
+                .unwrap_err(),
+            EngineError::UnsupportedRequest
+        );
+        assert_eq!(engine.transaction_count(), transaction_count);
+        assert_eq!(engine.dialog_count(), dialog_count);
+        assert_eq!(
+            engine.snapshot(&call_id).unwrap().state,
+            CallState::Answered
+        );
     }
 
     #[test]
