@@ -29,6 +29,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "call-runtime"
+version = "0.1.0"
+dependencies = [
+ "call-api",
+ "call-core",
+ "call-engine",
+ "sip-parser",
+ "sip-transaction",
+ "sip-transport",
+ "sip-types",
+]
+
+[[package]]
 name = "dtmf"
 version = "0.1.0"
 

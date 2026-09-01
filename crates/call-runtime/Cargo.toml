@@ -1,0 +1,20 @@
+[package]
+name = "call-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+call-api = { path = "../call-api" }
+call-core = { path = "../call-core" }
+call-engine = { path = "../call-engine" }
+sip-transaction = { path = "../sip-transaction" }
+sip-transport = { path = "../sip-transport" }
+sip-types = { path = "../sip-types" }
+
+[dev-dependencies]
+sip-parser = { path = "../sip-parser" }
+
+[lints]
+workspace = true
