@@ -1,0 +1,469 @@
+//! Bounded internal call-control API and lifecycle event registry.
+
+use std::{
+    collections::{HashMap, VecDeque},
+    error::Error,
+    fmt::{Display, Formatter},
+};
+
+use call_core::{Call, CallEventKind, CallId, CallState, EventId, LifecycleEvent};
+use sip_dialog::DialogId;
+
+const DEFAULT_MAX_CALLS: usize = 4_096;
+const DEFAULT_MAX_PENDING_EVENTS: usize = 16_384;
+
+/// Limits for the in-memory call-control registry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CallRegistryConfig {
+    /// Maximum number of active call records retained at once.
+    pub max_calls: usize,
+    /// Maximum number of lifecycle events retained until drained.
+    pub max_pending_events: usize,
+}
+
+impl Default for CallRegistryConfig {
+    fn default() -> Self {
+        Self {
+            max_calls: DEFAULT_MAX_CALLS,
+            max_pending_events: DEFAULT_MAX_PENDING_EVENTS,
+        }
+    }
+}
+
+impl CallRegistryConfig {
+    fn validate(self) -> Result<Self, ApiError> {
+        if self.max_calls == 0 || self.max_pending_events == 0 {
+            return Err(ApiError::InvalidConfig);
+        }
+        Ok(self)
+    }
+}
+
+/// Internal call-control operations corresponding to the lifecycle contract.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CallCommand {
+    /// A new inbound or outbound INVITE is being attempted.
+    InviteReceived,
+    /// Early media became available.
+    EarlyMedia,
+    /// The remote side is ringing.
+    Ringing,
+    /// The call was answered.
+    Answer,
+    /// Media forwarding started.
+    MediaStarted,
+    /// A transfer was requested.
+    BeginTransfer,
+    /// A transfer completed and the active leg resumed.
+    CompleteTransfer,
+    /// Hang up and begin terminal cleanup.
+    Hangup,
+    /// Finish cleanup after hangup or failure.
+    End,
+    /// Mark the call as failed.
+    Fail,
+}
+
+/// A stable, read-only view of a registered call.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CallSnapshot {
+    /// Application-owned call identifier.
+    pub id: CallId,
+    /// Current high-level lifecycle state.
+    pub state: CallState,
+    /// Optional tag-qualified SIP dialog identity.
+    pub dialog_id: Option<DialogId>,
+}
+
+/// Errors exposed by the internal call-control API.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ApiError {
+    /// A registry bound was zero.
+    InvalidConfig,
+    /// The active-call bound was reached.
+    CallLimitReached,
+    /// A supplied call identifier is already registered.
+    DuplicateCall,
+    /// The requested call does not exist.
+    UnknownCall,
+    /// The pending event bound was reached.
+    EventQueueFull,
+    /// A caller supplied a zero event/list limit.
+    InvalidLimit,
+    /// The requested command is not valid in the current state.
+    InvalidCommand {
+        /// Current call state.
+        state: CallState,
+        /// Rejected lifecycle command.
+        command: CallCommand,
+    },
+    /// The generated identifier sequence cannot advance safely.
+    IdentifierExhausted,
+    /// A call already has a bound SIP dialog.
+    DialogAlreadyBound,
+}
+
+impl ApiError {
+    /// Returns a stable machine-readable error code.
+    #[must_use]
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::InvalidConfig => "invalid_config",
+            Self::CallLimitReached => "call_limit_reached",
+            Self::DuplicateCall => "duplicate_call",
+            Self::UnknownCall => "unknown_call",
+            Self::EventQueueFull => "event_queue_full",
+            Self::InvalidLimit => "invalid_limit",
+            Self::InvalidCommand { .. } => "invalid_command",
+            Self::IdentifierExhausted => "identifier_exhausted",
+            Self::DialogAlreadyBound => "dialog_already_bound",
+        }
+    }
+}
+
+impl Display for ApiError {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidConfig => formatter.write_str("call registry bounds must be non-zero"),
+            Self::CallLimitReached => formatter.write_str("call registry reached its call limit"),
+            Self::DuplicateCall => formatter.write_str("call identifier is already registered"),
+            Self::UnknownCall => formatter.write_str("call identifier is not registered"),
+            Self::EventQueueFull => formatter.write_str("call lifecycle event queue is full"),
+            Self::InvalidLimit => formatter.write_str("call API limit must be non-zero"),
+            Self::InvalidCommand { state, command } => {
+                write!(
+                    formatter,
+                    "command {command:?} is invalid in state {state:?}"
+                )
+            }
+            Self::IdentifierExhausted => {
+                formatter.write_str("call or event identifier sequence exhausted")
+            }
+            Self::DialogAlreadyBound => formatter.write_str("call already has a SIP dialog bound"),
+        }
+    }
+}
+
+impl Error for ApiError {}
+
+#[derive(Clone, Debug)]
+struct CallEntry {
+    call: Call,
+    dialog_id: Option<DialogId>,
+}
+
+/// A bounded registry that composes call state, SIP dialogs, and lifecycle
+/// events without owning sockets, transactions, or an async runtime.
+#[derive(Clone, Debug)]
+pub struct CallRegistry {
+    config: CallRegistryConfig,
+    calls: HashMap<CallId, CallEntry>,
+    events: VecDeque<LifecycleEvent>,
+    next_call_sequence: u64,
+    next_event_sequence: u64,
+}
+
+impl CallRegistry {
+    /// Creates an empty registry with validated resource bounds.
+    pub fn new(config: CallRegistryConfig) -> Result<Self, ApiError> {
+        Ok(Self {
+            config: config.validate()?,
+            calls: HashMap::new(),
+            events: VecDeque::new(),
+            next_call_sequence: 1,
+            next_event_sequence: 1,
+        })
+    }
+
+    /// Returns the configured resource bounds.
+    #[must_use]
+    pub fn config(&self) -> CallRegistryConfig {
+        self.config
+    }
+
+    /// Registers a generated application call identifier and emits `Created`.
+    pub fn create(&mut self) -> Result<CallId, ApiError> {
+        if self.calls.len() >= self.config.max_calls {
+            return Err(ApiError::CallLimitReached);
+        }
+        let event_id = self.reserve_event_id()?;
+        let id = self.allocate_call_id()?;
+        self.insert_created_call(id.clone());
+        self.commit_event(event_id, id.clone(), CallEventKind::Created);
+        Ok(id)
+    }
+
+    /// Registers a caller-supplied application identifier and emits `Created`.
+    pub fn create_with_id(&mut self, id: CallId) -> Result<CallId, ApiError> {
+        if self.calls.contains_key(&id) {
+            return Err(ApiError::DuplicateCall);
+        }
+        self.create_with_id_inner(id)
+    }
+
+    fn create_with_id_inner(&mut self, id: CallId) -> Result<CallId, ApiError> {
+        if self.calls.len() >= self.config.max_calls {
+            return Err(ApiError::CallLimitReached);
+        }
+        let event_id = self.reserve_event_id()?;
+        self.insert_created_call(id.clone());
+        self.commit_event(event_id, id.clone(), CallEventKind::Created);
+        Ok(id)
+    }
+
+    fn insert_created_call(&mut self, id: CallId) {
+        self.calls.insert(
+            id.clone(),
+            CallEntry {
+                call: Call::new(id),
+                dialog_id: None,
+            },
+        );
+    }
+
+    /// Applies one lifecycle command and emits its event, if it has one.
+    pub fn apply(
+        &mut self,
+        id: &CallId,
+        command: CallCommand,
+    ) -> Result<Option<LifecycleEvent>, ApiError> {
+        let state = self.calls.get(id).ok_or(ApiError::UnknownCall)?.call.state;
+        let (next_state, event_kind) = command_transition(state, command);
+        if next_state == state {
+            return Err(ApiError::InvalidCommand { state, command });
+        }
+        let event_id = event_kind.map(|_| self.reserve_event_id()).transpose()?;
+        let entry = self.calls.get_mut(id).ok_or(ApiError::UnknownCall)?;
+        entry
+            .call
+            .transition(next_state)
+            .map_err(|_| ApiError::InvalidCommand { state, command })?;
+        Ok(match event_kind {
+            Some(kind) => Some(self.commit_event(
+                event_id.ok_or(ApiError::IdentifierExhausted)?,
+                id.clone(),
+                kind,
+            )),
+            None => None,
+        })
+    }
+
+    /// Associates a tag-qualified SIP dialog with a call exactly once.
+    pub fn bind_dialog(&mut self, id: &CallId, dialog_id: DialogId) -> Result<(), ApiError> {
+        let entry = self.calls.get_mut(id).ok_or(ApiError::UnknownCall)?;
+        if entry.dialog_id.is_some() {
+            return Err(ApiError::DialogAlreadyBound);
+        }
+        entry.dialog_id = Some(dialog_id);
+        Ok(())
+    }
+
+    /// Returns a stable snapshot of one call.
+    pub fn snapshot(&self, id: &CallId) -> Result<CallSnapshot, ApiError> {
+        let entry = self.calls.get(id).ok_or(ApiError::UnknownCall)?;
+        Ok(CallSnapshot {
+            id: entry.call.id.clone(),
+            state: entry.call.state,
+            dialog_id: entry.dialog_id.clone(),
+        })
+    }
+
+    /// Returns up to `limit` snapshots in deterministic identifier order.
+    pub fn list(&self, limit: usize) -> Result<Vec<CallSnapshot>, ApiError> {
+        if limit == 0 {
+            return Err(ApiError::InvalidLimit);
+        }
+        let mut snapshots = self
+            .calls
+            .values()
+            .map(|entry| CallSnapshot {
+                id: entry.call.id.clone(),
+                state: entry.call.state,
+                dialog_id: entry.dialog_id.clone(),
+            })
+            .collect::<Vec<_>>();
+        snapshots.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
+        snapshots.truncate(limit);
+        Ok(snapshots)
+    }
+
+    /// Returns the number of events waiting to be delivered.
+    #[must_use]
+    pub fn pending_events(&self) -> usize {
+        self.events.len()
+    }
+
+    /// Drains up to `limit` lifecycle events in emission order.
+    pub fn drain_events(&mut self, limit: usize) -> Result<Vec<LifecycleEvent>, ApiError> {
+        if limit == 0 {
+            return Err(ApiError::InvalidLimit);
+        }
+        Ok(self.events.drain(..limit.min(self.events.len())).collect())
+    }
+
+    /// Removes a call only after it reached `Ended` or `Failed`.
+    pub fn remove_terminal(&mut self, id: &CallId) -> Result<CallSnapshot, ApiError> {
+        let snapshot = self.snapshot(id)?;
+        if !matches!(snapshot.state, CallState::Ended | CallState::Failed) {
+            return Err(ApiError::InvalidCommand {
+                state: snapshot.state,
+                command: CallCommand::End,
+            });
+        }
+        self.calls.remove(id);
+        Ok(snapshot)
+    }
+
+    fn allocate_call_id(&mut self) -> Result<CallId, ApiError> {
+        loop {
+            let sequence = self.next_call_sequence;
+            let next = sequence
+                .checked_add(1)
+                .ok_or(ApiError::IdentifierExhausted)?;
+            self.next_call_sequence = next;
+            let id = CallId::from_sequence(sequence);
+            if !self.calls.contains_key(&id) {
+                return Ok(id);
+            }
+        }
+    }
+
+    fn reserve_event_id(&self) -> Result<EventId, ApiError> {
+        if self.events.len() >= self.config.max_pending_events {
+            return Err(ApiError::EventQueueFull);
+        }
+        self.next_event_sequence
+            .checked_add(1)
+            .ok_or(ApiError::IdentifierExhausted)?;
+        Ok(EventId::from_sequence(self.next_event_sequence))
+    }
+
+    fn commit_event(
+        &mut self,
+        event_id: EventId,
+        call_id: CallId,
+        kind: CallEventKind,
+    ) -> LifecycleEvent {
+        self.next_event_sequence += 1;
+        let event = LifecycleEvent {
+            event_id,
+            call_id,
+            kind,
+        };
+        self.events.push_back(event.clone());
+        event
+    }
+}
+
+fn command_transition(
+    _state: CallState,
+    command: CallCommand,
+) -> (CallState, Option<CallEventKind>) {
+    match command {
+        CallCommand::InviteReceived => (CallState::Inviting, Some(CallEventKind::InviteReceived)),
+        CallCommand::EarlyMedia => (CallState::Early, Some(CallEventKind::EarlyMedia)),
+        CallCommand::Ringing => (CallState::Ringing, Some(CallEventKind::Ringing)),
+        CallCommand::Answer => (CallState::Answered, Some(CallEventKind::Answered)),
+        CallCommand::MediaStarted => (CallState::Active, Some(CallEventKind::MediaStarted)),
+        CallCommand::BeginTransfer => (CallState::Transferring, Some(CallEventKind::Transferring)),
+        CallCommand::CompleteTransfer => (CallState::Active, Some(CallEventKind::Transferred)),
+        CallCommand::Hangup => (CallState::Ending, Some(CallEventKind::Hangup)),
+        CallCommand::End => (CallState::Ended, None),
+        CallCommand::Fail => (CallState::Failed, Some(CallEventKind::Failed)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sip_dialog::{Dialog, DialogConfig};
+    use sip_types::{Headers, SipMethod, SipRequest};
+
+    fn invite_request() -> SipRequest {
+        let mut headers = Headers::new();
+        headers.push("Call-ID", "call-123@example.com");
+        headers.push("From", "Alice <sip:alice@example.com>;tag=remote-1");
+        headers.push("To", "Bob <sip:bob@example.com>");
+        headers.push("CSeq", "42 INVITE");
+        SipRequest {
+            method: SipMethod::Invite,
+            request_uri: "sip:bob@example.com".to_owned(),
+            version: "SIP/2.0".to_owned(),
+            headers,
+            body: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn bounded_registry_emits_stable_events_and_reclaims_terminal_calls() {
+        let mut registry = CallRegistry::new(CallRegistryConfig {
+            max_calls: 1,
+            max_pending_events: 4,
+        })
+        .unwrap();
+        let id = registry.create().unwrap();
+        assert_eq!(id.as_str(), "call_1");
+        assert_eq!(registry.pending_events(), 1);
+        assert_eq!(
+            registry
+                .apply(&id, CallCommand::InviteReceived)
+                .unwrap()
+                .unwrap()
+                .kind,
+            CallEventKind::InviteReceived
+        );
+        registry.apply(&id, CallCommand::Hangup).unwrap();
+        registry.apply(&id, CallCommand::End).unwrap();
+        assert_eq!(registry.snapshot(&id).unwrap().state, CallState::Ended);
+        registry.remove_terminal(&id).unwrap();
+        assert!(matches!(registry.create(), Ok(next) if next.as_str() == "call_2"));
+    }
+
+    #[test]
+    fn invalid_commands_do_not_mutate_state_and_error_codes_are_stable() {
+        let mut registry = CallRegistry::new(CallRegistryConfig::default()).unwrap();
+        let id = registry.create().unwrap();
+        let error = registry.apply(&id, CallCommand::MediaStarted).unwrap_err();
+        assert_eq!(error.code(), "invalid_command");
+        assert_eq!(registry.snapshot(&id).unwrap().state, CallState::Created);
+        assert_eq!(registry.drain_events(0), Err(ApiError::InvalidLimit));
+        assert_eq!(registry.list(0), Err(ApiError::InvalidLimit));
+    }
+
+    #[test]
+    fn dialog_binding_is_visible_without_using_sip_call_id_as_app_id() {
+        let mut registry = CallRegistry::new(CallRegistryConfig::default()).unwrap();
+        let id = registry.create().unwrap();
+        let dialog =
+            Dialog::from_uas_invite(&invite_request(), "local-1", DialogConfig::default()).unwrap();
+        registry.bind_dialog(&id, dialog.id()).unwrap();
+        let snapshot = registry.snapshot(&id).unwrap();
+        assert_eq!(snapshot.id.as_str(), "call_1");
+        assert_eq!(
+            snapshot.dialog_id.unwrap().call_id(),
+            "call-123@example.com"
+        );
+        assert_eq!(
+            registry.bind_dialog(&id, dialog.id()),
+            Err(ApiError::DialogAlreadyBound)
+        );
+    }
+
+    #[test]
+    fn limits_are_enforced_before_state_or_event_mutation() {
+        let mut registry = CallRegistry::new(CallRegistryConfig {
+            max_calls: 2,
+            max_pending_events: 1,
+        })
+        .unwrap();
+        let first = registry.create().unwrap();
+        assert_eq!(
+            registry.apply(&first, CallCommand::InviteReceived),
+            Err(ApiError::EventQueueFull)
+        );
+        assert_eq!(registry.snapshot(&first).unwrap().state, CallState::Created);
+        assert_eq!(registry.create(), Err(ApiError::EventQueueFull));
+        registry.drain_events(1).unwrap();
+        assert_eq!(registry.create().unwrap().as_str(), "call_2");
+    }
+}
