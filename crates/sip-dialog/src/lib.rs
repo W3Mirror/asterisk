@@ -560,9 +560,14 @@ impl Dialog {
                 optional_value(headers, &["To", "t"]),
             ),
             DialogRole::Uas => (
-                &["To", "t"][..],
-                "To",
-                optional_value(headers, &["From", "f"]),
+                // Responses to requests originated by a UAS still echo the
+                // request's From/To roles: the UAS local tag is in From and
+                // the remote tag is in To.  The initial inbound INVITE has
+                // the opposite wire direction, but it is handled by
+                // `receive_request`, not this response path.
+                &["From", "f"][..],
+                "From",
+                optional_value(headers, &["To", "t"]),
             ),
         };
         let local = required_value(headers, local_names, local_display_name)?;
@@ -1038,8 +1043,8 @@ mod tests {
         );
         let mut response_headers = Headers::new();
         response_headers.push("Call-ID", "call-123@example.com");
-        response_headers.push("From", "Alice <sip:alice@example.com>;tag=local-1");
-        response_headers.push("To", "Bob <sip:bob@example.com>;tag=server-1");
+        response_headers.push("From", "Bob <sip:bob@example.com>;tag=server-1");
+        response_headers.push("To", "Alice <sip:alice@example.com>;tag=local-1");
         response_headers.push("CSeq", "1 UPDATE");
         response_headers.push("Contact", "<sip:alice@192.0.2.11>");
         dialog
@@ -1057,8 +1062,8 @@ mod tests {
         assert_eq!(dialog.next_local_sequence_for(SipMethod::Bye).unwrap(), 2);
         let mut bye_response_headers = Headers::new();
         bye_response_headers.push("Call-ID", "call-123@example.com");
-        bye_response_headers.push("From", "Alice <sip:alice@example.com>;tag=local-1");
-        bye_response_headers.push("To", "Bob <sip:bob@example.com>;tag=server-1");
+        bye_response_headers.push("From", "Bob <sip:bob@example.com>;tag=server-1");
+        bye_response_headers.push("To", "Alice <sip:alice@example.com>;tag=local-1");
         bye_response_headers.push("CSeq", "2 BYE");
         dialog
             .receive_response(&SipResponse {

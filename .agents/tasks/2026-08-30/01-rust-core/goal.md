@@ -7026,6 +7026,27 @@ rollback: Keep all signaling, media, and call routing on Asterisk; do not enable
 notes: The complete ordinary hosted suite exercised the focused affected-module tests through the locked workspace invocation, along with formatting, SIPp/reclamation smokes, Clippy, fuzz checks, and dependency audit. Pull-request events and pushes to `aistack/main` run this ordinary hosted suite; scheduled/manual capacity, extended property, multi-hour soak, and credentialed provider/live-call checks remain separate gates. All workflow runners remain hosted `ubuntu-latest`; Docker remains limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
+### CP-227 — Generic outbound in-dialog requests locally green
+
+~~~yaml
+checkpoint_id: CP-227
+recorded_at_utc: 2026-09-01T01:42:59Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: In-dialog SIP request interoperability and Asterisk fallback
+scope: Add bounded generic outbound INFO, UPDATE, REFER, and NOTIFY request construction for confirmed UAC/UAS dialogs, transport delivery, response completion, and authorization/audit coverage
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-72-in-dialog-requests
+branch: in-dialog-requests
+base_branch: bridge-terminalization
+pr: https://github.com/W3Mirror/asterisk/pull/72
+head_sha: local uncommitted implementation/tests on `53fb6fabf14ecb43e54b1081f3e7f0c48e7ce08b`
+evidence: Added `AuditOperation::InDialogRequest`, transactional `CallEngine::send_in_dialog_request` and authorized variant, runtime transport wrappers, dialog-correct UAS response tag handling, and generated dialog-owned Via/From/To/Call-ID/CSeq/Route/request-URI/transaction state. The focused call-engine suite passes 44 tests covering UAC route/body/method-header construction, UAS role-oriented tags, non-INVITE response completion and Timer K reclamation, protected/unsupported atomic rejection, outstanding-request and transaction-capacity bounds, and authorization/audit outcomes. The focused call-runtime suite passes 53 tests, including a UDP integration that delivers an outbound INFO and processes its 200 response. Complete `cargo test --workspace --locked` passes, `cargo fmt --all -- --check` passes, workspace Clippy exits 0 with existing repository documentation/pedantic warnings, `tests/rust-sipp/run.sh` passes all three pinned scenarios, and `git diff --check` passes.
+blockers: Commit/publication, hosted Workspace/fuzz/dependency-audit validation, and final local/origin/GitHub parity remain pending. Provider credentials/runtime access, sanitized provider captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated; Asterisk remains the fallback.
+next_action: Commit the implementation and focused tests normally, push `in-dialog-requests`, then reconcile the resulting hosted PR #72 checks and exact local/origin/GitHub parity before continuing the next bounded offline acceptance slice.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #72 or revert the generic in-dialog request slice if its contract is superseded.
+notes: Tests are part of this implementation slice. Pull-request opened/reopened/synchronize events run the complete ordinary hosted suite rather than a changed-module-only selector, so the focused call-engine/runtime tests are exercised through `cargo test --workspace --locked`. Every push to `aistack/main` repeats that same ordinary suite. Scheduled/manual capacity, extended property, multi-hour soak, and credentialed provider/live-call checks remain separate gates. All workflow runners remain hosted `ubuntu-latest`; Docker remains limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
 ## 59.4 Stacked-PR Checkpoints
 
 Each PR should leave a green checkpoint before the next PR depends on it:

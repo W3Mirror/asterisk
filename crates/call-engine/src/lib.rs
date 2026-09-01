@@ -99,6 +99,16 @@ pub enum EngineError {
     UnknownDialog,
     /// The request is outside the provider-neutral basic-call surface.
     UnsupportedRequest,
+    /// The request method is not supported as an application-originated
+    /// in-dialog request.
+    UnsupportedInDialogMethod,
+    /// The call is not in a live state that can originate an in-dialog
+    /// request.
+    CallNotActive,
+    /// Another locally originated request is still awaiting its response.
+    InDialogRequestOutstanding,
+    /// An application attempted to override a dialog-managed SIP header.
+    ProtectedHeader(&'static str),
     /// The requested call is not an inbound INVITE transaction.
     NotInboundInvite,
     /// The supplied status code cannot be used for the requested operation.
@@ -143,6 +153,18 @@ impl Display for EngineError {
             Self::UnknownDialog => formatter.write_str("SIP dialog is not registered"),
             Self::UnsupportedRequest => {
                 formatter.write_str("SIP request is outside the basic call surface")
+            }
+            Self::UnsupportedInDialogMethod => {
+                formatter.write_str("SIP method is not supported for an outbound in-dialog request")
+            }
+            Self::CallNotActive => {
+                formatter.write_str("call is not active and cannot originate an in-dialog request")
+            }
+            Self::InDialogRequestOutstanding => {
+                formatter.write_str("call already has an outbound in-dialog request in flight")
+            }
+            Self::ProtectedHeader(name) => {
+                write!(formatter, "in-dialog request cannot override {name}")
             }
             Self::NotInboundInvite => {
                 formatter.write_str("call is not backed by an inbound INVITE")
@@ -916,6 +938,188 @@ impl CallEngine {
             destination,
             message: SipMessage::Request(request),
         }])
+    }
+
+    /// Sends one application-controlled request inside a confirmed SIP
+    /// dialog.
+    ///
+    /// The engine owns the dialog identity, route set, remote target, local
+    /// sequence, and transaction branch. Callers provide only the supported
+    /// method-specific headers (for example `Refer-To` or `Event`) and body.
+    /// `INFO`, `UPDATE`, `REFER`, and `NOTIFY` are intentionally supported;
+    /// `BYE`, `ACK`, `CANCEL`, and re-INVITE remain owned by their dedicated
+    /// state-machine operations.
+    ///
+    /// The operation is transactional. Dialog and transaction state is
+    /// committed only after all validation and request construction succeeds.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the method is unsupported, the call is not in a
+    /// confirmed live state, another local request is outstanding, a caller
+    /// tries to override a dialog-managed header, a bound is exhausted, or
+    /// the dialog/transaction cannot be constructed.
+    pub fn send_in_dialog_request(
+        &mut self,
+        id: &CallId,
+        method: SipMethod,
+        extra_headers: Headers,
+        body: Vec<u8>,
+        now: Duration,
+        reliability: TransportReliability,
+    ) -> Result<EngineOutput, EngineError> {
+        let mut working = self.clone();
+        let output = working.send_in_dialog_request_inner(
+            id,
+            method,
+            extra_headers,
+            body,
+            now,
+            reliability,
+        )?;
+        *self = working;
+        Ok(output)
+    }
+
+    /// Sends an in-dialog request after verifying the principal's control
+    /// permission and records a bounded, credential-free audit outcome.
+    /// `REFER` requires transfer permission; the other supported methods
+    /// require call-management permission.
+    pub fn send_in_dialog_request_authorized(
+        &mut self,
+        principal: &AuthenticatedPrincipal,
+        id: &CallId,
+        method: SipMethod,
+        extra_headers: Headers,
+        body: Vec<u8>,
+        now: Duration,
+        reliability: TransportReliability,
+    ) -> Result<EngineOutput, EngineError> {
+        let operation = AuditOperation::InDialogRequest;
+        let permission_command = in_dialog_permission_command(&method);
+        if let Err(error) = principal.authorize(permission_command) {
+            self.registry.record_audit(
+                principal,
+                Some(id),
+                operation,
+                AuditOutcome::Rejected(error.code()),
+            );
+            return Err(error.into());
+        }
+        let result = self.send_in_dialog_request(id, method, extra_headers, body, now, reliability);
+        self.registry.record_audit(
+            principal,
+            Some(id),
+            operation,
+            result.as_ref().map_or_else(
+                |error| AuditOutcome::Rejected(engine_error_code(error)),
+                |_| AuditOutcome::Succeeded,
+            ),
+        );
+        result
+    }
+
+    fn send_in_dialog_request_inner(
+        &mut self,
+        id: &CallId,
+        method: SipMethod,
+        extra_headers: Headers,
+        body: Vec<u8>,
+        now: Duration,
+        reliability: TransportReliability,
+    ) -> Result<EngineOutput, EngineError> {
+        if !is_outbound_in_dialog_method(&method) {
+            return Err(EngineError::UnsupportedInDialogMethod);
+        }
+        validate_in_dialog_extra_headers(&extra_headers)?;
+        let snapshot = self.registry.snapshot(id)?;
+        if matches!(
+            snapshot.state,
+            CallState::Created
+                | CallState::Inviting
+                | CallState::Early
+                | CallState::Ringing
+                | CallState::Ending
+                | CallState::Ended
+                | CallState::Failed
+        ) {
+            return Err(EngineError::CallNotActive);
+        }
+        let dialog = self
+            .dialogs
+            .get(id)
+            .cloned()
+            .ok_or(EngineError::UnknownDialog)?;
+        if dialog.state() != DialogState::Confirmed {
+            return Err(EngineError::CallNotActive);
+        }
+        if self.has_outstanding_client_request(id) {
+            return Err(EngineError::InDialogRequestOutstanding);
+        }
+        self.ensure_transaction_capacity()?;
+
+        let (initial_request, final_response, destination) = match dialog.role() {
+            DialogRole::Uac => self
+                .final_invites
+                .values()
+                .find(|invite| invite.call_id == *id && invite.successful)
+                .map(|invite| {
+                    (
+                        invite.request.clone(),
+                        invite.response.clone(),
+                        invite.destination,
+                    )
+                })
+                .ok_or(EngineError::UnknownDialog)?,
+            DialogRole::Uas => self
+                .final_server_invites
+                .values()
+                .find(|invite| invite.call_id == *id)
+                .map(|invite| {
+                    (
+                        invite.request.clone(),
+                        invite.response.clone(),
+                        invite.destination,
+                    )
+                })
+                .ok_or(EngineError::UnknownDialog)?,
+        };
+        let mut next_branch = self.next_branch;
+        let branch = self.allocate_unique_client_branch_for(&mut next_branch, &method)?;
+        let mut dialog = dialog;
+        let request = build_in_dialog_request(
+            &branch,
+            method.clone(),
+            &extra_headers,
+            body,
+            &initial_request,
+            &final_response,
+            &mut dialog,
+        )?;
+        let key = transaction_key(&branch, &method);
+        self.ensure_new_transaction(&key)?;
+        let transaction =
+            ClientTransaction::new(request.clone(), now, reliability, self.config.timers)?;
+
+        self.dialogs.insert(id.clone(), dialog);
+        self.client_transactions.insert(key.clone(), transaction);
+        self.client_destinations.insert(key.clone(), destination);
+        self.client_calls.insert(key, id.clone());
+        self.next_branch = next_branch;
+        self.finish(vec![SendAction {
+            destination,
+            message: SipMessage::Request(request),
+        }])
+    }
+
+    fn has_outstanding_client_request(&self, id: &CallId) -> bool {
+        self.client_transactions.iter().any(|(key, transaction)| {
+            self.client_calls.get(key) == Some(id)
+                && matches!(
+                    transaction.state(),
+                    ClientState::Calling | ClientState::Trying | ClientState::Proceeding
+                )
+        })
     }
 
     /// Applies one call command after verifying the principal's permission.
@@ -2858,6 +3062,105 @@ fn build_ack(
     })
 }
 
+fn is_outbound_in_dialog_method(method: &SipMethod) -> bool {
+    matches!(
+        method,
+        SipMethod::Info | SipMethod::Update | SipMethod::Refer | SipMethod::Notify
+    )
+}
+
+fn in_dialog_permission_command(method: &SipMethod) -> CallCommand {
+    if matches!(method, SipMethod::Refer) {
+        CallCommand::BeginTransfer
+    } else {
+        CallCommand::MediaStarted
+    }
+}
+
+fn validate_in_dialog_extra_headers(headers: &Headers) -> Result<(), EngineError> {
+    for header in headers.iter() {
+        if let Some(name) = protected_in_dialog_header(header.name.as_str()) {
+            return Err(EngineError::ProtectedHeader(name));
+        }
+    }
+    Ok(())
+}
+
+fn protected_in_dialog_header(name: &str) -> Option<&'static str> {
+    match name {
+        value if value.eq_ignore_ascii_case("Via") || value.eq_ignore_ascii_case("v") => {
+            Some("Via")
+        }
+        value if value.eq_ignore_ascii_case("From") || value.eq_ignore_ascii_case("f") => {
+            Some("From")
+        }
+        value if value.eq_ignore_ascii_case("To") || value.eq_ignore_ascii_case("t") => Some("To"),
+        value if value.eq_ignore_ascii_case("Call-ID") || value.eq_ignore_ascii_case("i") => {
+            Some("Call-ID")
+        }
+        value if value.eq_ignore_ascii_case("CSeq") || value.eq_ignore_ascii_case("c") => {
+            Some("CSeq")
+        }
+        value if value.eq_ignore_ascii_case("Route") => Some("Route"),
+        value if value.eq_ignore_ascii_case("Max-Forwards") => Some("Max-Forwards"),
+        value if value.eq_ignore_ascii_case("Content-Length") => Some("Content-Length"),
+        _ => None,
+    }
+}
+
+fn build_in_dialog_request(
+    branch: &str,
+    method: SipMethod,
+    extra_headers: &Headers,
+    body: Vec<u8>,
+    initial_request: &SipRequest,
+    final_response: &SipResponse,
+    dialog: &mut Dialog,
+) -> Result<SipRequest, EngineError> {
+    let cseq = dialog.next_local_sequence_for(method.clone())?;
+    let from = match dialog.role() {
+        DialogRole::Uac => required_header(&initial_request.headers, "From")?,
+        DialogRole::Uas => required_header(&final_response.headers, "To")?,
+    };
+    let to = match dialog.role() {
+        DialogRole::Uac => required_header(&final_response.headers, "To")?,
+        DialogRole::Uas => required_header(&initial_request.headers, "From")?,
+    };
+    let via = match dialog.role() {
+        DialogRole::Uac => {
+            replace_top_via_branch(required_header(&initial_request.headers, "Via")?, branch)?
+        }
+        DialogRole::Uas => {
+            let transport = required_header(&initial_request.headers, "Via")?
+                .split_whitespace()
+                .next()
+                .filter(|value| !value.is_empty())
+                .unwrap_or("SIP/2.0/UDP");
+            format!("{transport} rust.invalid;branch={branch}")
+        }
+    };
+    let mut headers = Headers::new();
+    headers.push("Via", via);
+    headers.push("Max-Forwards", "70");
+    headers.push("From", from);
+    headers.push("To", to);
+    headers.push("Call-ID", dialog.call_id());
+    headers.push("CSeq", format!("{cseq} {method}"));
+    for route in dialog.route_set() {
+        headers.push("Route", format!("<{route}>"));
+    }
+    for header in extra_headers.iter() {
+        headers.push(header.name.clone(), header.value.clone());
+    }
+    Ok(SipRequest {
+        method,
+        request_uri: dialog.remote_target().to_owned(),
+        version: "SIP/2.0".to_owned(),
+        headers,
+        body,
+    })
+}
+
 fn build_bye(
     branch: &str,
     initial_request: &SipRequest,
@@ -3638,6 +3941,79 @@ mod tests {
         }
     }
 
+    fn in_dialog_response(request: &SipRequest) -> SipResponse {
+        let mut headers = Headers::new();
+        headers.push("Via", request.headers.get("Via").unwrap());
+        headers.push("From", request.headers.get("From").unwrap());
+        headers.push("To", request.headers.get("To").unwrap());
+        headers.push("Call-ID", request.headers.get("Call-ID").unwrap());
+        headers.push("CSeq", request.headers.get("CSeq").unwrap());
+        SipResponse {
+            version: "SIP/2.0".to_owned(),
+            status_code: 200,
+            reason: "OK".to_owned(),
+            headers,
+            body: Vec::new(),
+        }
+    }
+
+    fn confirmed_uac_dialog(engine: &mut CallEngine) -> (CallId, SipRequest, SipResponse) {
+        let request = invite(
+            "out-in-dialog",
+            "sip-call-out-in-dialog",
+            "Bob <sip:bob@example.com>",
+            "7 INVITE",
+        );
+        let (call_id, _) = engine
+            .originate(
+                request.clone(),
+                address(5061),
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        let response = successful_response(&request);
+        engine
+            .receive_response(response.clone(), Duration::from_millis(1))
+            .unwrap();
+        (call_id, request, response)
+    }
+
+    fn confirmed_uas_dialog(engine: &mut CallEngine) -> (CallId, SipRequest, SipResponse) {
+        let request = invite(
+            "in-in-dialog",
+            "sip-call-in-in-dialog",
+            "Bob <sip:bob@example.com>",
+            "1 INVITE",
+        );
+        let source = address(5060);
+        let created = engine
+            .receive_request(
+                source,
+                request.clone(),
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        let call_id = created.events()[0].call_id.clone();
+        let answered = engine
+            .respond_to_invite(&call_id, 200, "OK", Vec::new(), Duration::ZERO)
+            .unwrap();
+        let SipMessage::Response(response) = &answered.actions()[0].message else {
+            panic!("expected final INVITE response");
+        };
+        let response = response.clone();
+        engine
+            .receive_request(
+                source,
+                ack_for(&request, &response, "in-in-dialog-ack"),
+                Duration::from_millis(1),
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        (call_id, request, response)
+    }
+
     fn reliable_provisional_response(request: &SipRequest, rseq: u32) -> SipResponse {
         let mut headers = Headers::new();
         headers.push("Via", request.headers.get("Via").unwrap());
@@ -4301,6 +4677,326 @@ mod tests {
             engine.snapshot(&call_id).unwrap().state,
             CallState::Answered
         );
+    }
+
+    #[test]
+    fn outbound_uac_in_dialog_request_uses_dialog_routes_identity_and_body() {
+        let mut engine = CallEngine::new(EngineConfig::default()).unwrap();
+        let request = invite(
+            "out-in-dialog",
+            "sip-call-out-in-dialog",
+            "Bob <sip:bob@example.com>",
+            "7 INVITE",
+        );
+        let (call_id, _) = engine
+            .originate(
+                request.clone(),
+                address(5061),
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        let mut response = successful_response(&request);
+        response.headers.push(
+            "Record-Route",
+            "<sip:proxy-a.example;lr>, <sip:proxy-b.example;lr>",
+        );
+        engine
+            .receive_response(response.clone(), Duration::from_millis(2))
+            .unwrap();
+
+        let mut extra_headers = Headers::new();
+        extra_headers.push("Refer-To", "<sip:carol@example.com>");
+        extra_headers.push("X-Provider-Feature", "attended-transfer");
+        let output = engine
+            .send_in_dialog_request(
+                &call_id,
+                SipMethod::Refer,
+                extra_headers,
+                b"transfer-context".to_vec(),
+                Duration::from_millis(3),
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        let SipMessage::Request(outbound) = &output.actions()[0].message else {
+            panic!("expected outbound in-dialog request");
+        };
+        assert_eq!(outbound.method, SipMethod::Refer);
+        assert_eq!(outbound.request_uri, "sip:bob@127.0.0.1:5070");
+        assert_eq!(outbound.headers.get("From"), request.headers.get("From"));
+        assert_eq!(outbound.headers.get("To"), response.headers.get("To"));
+        assert_eq!(
+            outbound.headers.get("Call-ID"),
+            Some("sip-call-out-in-dialog")
+        );
+        assert_eq!(outbound.headers.get("CSeq"), Some("8 REFER"));
+        assert_eq!(
+            outbound.headers.get_all("Route").collect::<Vec<_>>(),
+            vec!["<sip:proxy-b.example;lr>", "<sip:proxy-a.example;lr>"]
+        );
+        assert_eq!(
+            outbound.headers.get("Refer-To"),
+            Some("<sip:carol@example.com>")
+        );
+        assert_eq!(
+            outbound.headers.get("X-Provider-Feature"),
+            Some("attended-transfer")
+        );
+        assert_eq!(outbound.body, b"transfer-context");
+        assert!(
+            outbound
+                .headers
+                .get("Via")
+                .is_some_and(|via| via.contains("branch=z9hG4bKrust-refer-2"))
+        );
+    }
+
+    #[test]
+    fn outbound_uas_in_dialog_request_uses_local_from_and_remote_to_tags() {
+        let mut engine = CallEngine::new(EngineConfig::default()).unwrap();
+        let (call_id, initial, final_response) = confirmed_uas_dialog(&mut engine);
+        let mut extra_headers = Headers::new();
+        extra_headers.push("Event", "refer");
+        extra_headers.push("Subscription-State", "active");
+        let output = engine
+            .send_in_dialog_request(
+                &call_id,
+                SipMethod::Notify,
+                extra_headers,
+                b"SIP/2.0 100 Trying".to_vec(),
+                Duration::from_millis(2),
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        let SipMessage::Request(outbound) = &output.actions()[0].message else {
+            panic!("expected outbound in-dialog request");
+        };
+        assert_eq!(outbound.method, SipMethod::Notify);
+        assert_eq!(outbound.request_uri, "sip:alice@127.0.0.1:5060");
+        assert_eq!(
+            outbound.headers.get("From"),
+            final_response.headers.get("To")
+        );
+        assert_eq!(outbound.headers.get("To"), initial.headers.get("From"));
+        assert_eq!(
+            outbound.headers.get("Call-ID"),
+            Some("sip-call-in-in-dialog")
+        );
+        assert_eq!(outbound.headers.get("CSeq"), Some("1 NOTIFY"));
+        assert_eq!(outbound.headers.get("Event"), Some("refer"));
+        assert_eq!(outbound.headers.get("Subscription-State"), Some("active"));
+        assert_eq!(outbound.body, b"SIP/2.0 100 Trying");
+        assert!(outbound.headers.get("From").is_some_and(value_has_tag));
+        assert!(outbound.headers.get("To").is_some_and(value_has_tag));
+        assert!(
+            outbound
+                .headers
+                .get("Via")
+                .is_some_and(|via| via.contains("branch=z9hG4bKrust-notify-1"))
+        );
+    }
+
+    #[test]
+    fn in_dialog_response_completes_non_invite_transaction_and_releases_after_timer() {
+        let mut engine = CallEngine::new(EngineConfig::default()).unwrap();
+        let (call_id, _, _) = confirmed_uac_dialog(&mut engine);
+        let output = engine
+            .send_in_dialog_request(
+                &call_id,
+                SipMethod::Info,
+                Headers::new(),
+                Vec::new(),
+                Duration::from_millis(2),
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        let SipMessage::Request(request) = &output.actions()[0].message else {
+            panic!("expected outbound INFO");
+        };
+        assert_eq!(engine.transaction_count(), 1);
+        engine
+            .receive_response(in_dialog_response(request), Duration::from_millis(3))
+            .unwrap();
+        assert_eq!(
+            engine.snapshot(&call_id).unwrap().state,
+            CallState::Answered
+        );
+        assert_eq!(engine.transaction_count(), 1);
+        engine.poll(Duration::from_secs(8)).unwrap();
+        assert_eq!(engine.transaction_count(), 0);
+        assert_eq!(engine.dialog_count(), 1);
+    }
+
+    #[test]
+    fn unsupported_and_protected_in_dialog_requests_are_atomic() {
+        let mut engine = CallEngine::new(EngineConfig::default()).unwrap();
+        let (call_id, _, _) = confirmed_uac_dialog(&mut engine);
+        let before_metrics = engine.metrics();
+        let before_diagnostics = engine.diagnostics(&call_id).unwrap();
+        assert_eq!(
+            engine.send_in_dialog_request(
+                &call_id,
+                SipMethod::Register,
+                Headers::new(),
+                Vec::new(),
+                Duration::from_millis(2),
+                TransportReliability::Unreliable,
+            ),
+            Err(EngineError::UnsupportedInDialogMethod)
+        );
+        let mut protected = Headers::new();
+        protected.push("Via", "SIP/2.0/UDP attacker.invalid;branch=override");
+        assert_eq!(
+            engine.send_in_dialog_request(
+                &call_id,
+                SipMethod::Info,
+                protected,
+                Vec::new(),
+                Duration::from_millis(3),
+                TransportReliability::Unreliable,
+            ),
+            Err(EngineError::ProtectedHeader("Via"))
+        );
+        assert_eq!(engine.metrics(), before_metrics);
+        assert_eq!(engine.diagnostics(&call_id).unwrap(), before_diagnostics);
+        assert_eq!(engine.transaction_count(), 0);
+
+        let valid = engine
+            .send_in_dialog_request(
+                &call_id,
+                SipMethod::Info,
+                Headers::new(),
+                Vec::new(),
+                Duration::from_millis(4),
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        let SipMessage::Request(request) = &valid.actions()[0].message else {
+            panic!("expected outbound INFO");
+        };
+        assert_eq!(request.headers.get("CSeq"), Some("8 INFO"));
+        assert!(
+            request
+                .headers
+                .get("Via")
+                .is_some_and(|via| via.contains("branch=z9hG4bKrust-info-2"))
+        );
+    }
+
+    #[test]
+    fn in_dialog_request_bounds_cover_outstanding_and_transaction_capacity() {
+        let mut engine = CallEngine::new(EngineConfig {
+            max_transactions: 1,
+            ..EngineConfig::default()
+        })
+        .unwrap();
+        let (call_id, _, _) = confirmed_uac_dialog(&mut engine);
+        let first = engine
+            .send_in_dialog_request(
+                &call_id,
+                SipMethod::Info,
+                Headers::new(),
+                Vec::new(),
+                Duration::from_millis(1),
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        assert_eq!(engine.transaction_count(), 1);
+        assert_eq!(
+            engine.send_in_dialog_request(
+                &call_id,
+                SipMethod::Update,
+                Headers::new(),
+                Vec::new(),
+                Duration::from_millis(2),
+                TransportReliability::Unreliable,
+            ),
+            Err(EngineError::InDialogRequestOutstanding)
+        );
+        let SipMessage::Request(first_request) = &first.actions()[0].message else {
+            panic!("expected outbound INFO");
+        };
+        engine
+            .receive_response(in_dialog_response(first_request), Duration::from_millis(3))
+            .unwrap();
+        assert_eq!(engine.transaction_count(), 1);
+        assert_eq!(
+            engine.send_in_dialog_request(
+                &call_id,
+                SipMethod::Update,
+                Headers::new(),
+                Vec::new(),
+                Duration::from_millis(4),
+                TransportReliability::Unreliable,
+            ),
+            Err(EngineError::TransactionLimitReached)
+        );
+        engine.poll(Duration::from_secs(9)).unwrap();
+        assert_eq!(engine.transaction_count(), 0);
+        assert!(
+            engine
+                .send_in_dialog_request(
+                    &call_id,
+                    SipMethod::Update,
+                    Headers::new(),
+                    Vec::new(),
+                    Duration::from_secs(10),
+                    TransportReliability::Unreliable,
+                )
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn authorized_in_dialog_requests_require_method_permission_and_emit_audit_records() {
+        let mut engine = CallEngine::new(EngineConfig::default()).unwrap();
+        let (call_id, _, _) = confirmed_uac_dialog(&mut engine);
+        let manage = principal(&[ControlPermission::ManageCalls]);
+        let mut refer_headers = Headers::new();
+        refer_headers.push("Refer-To", "<sip:carol@example.com>");
+        assert_eq!(
+            engine.send_in_dialog_request_authorized(
+                &manage,
+                &call_id,
+                SipMethod::Refer,
+                refer_headers.clone(),
+                Vec::new(),
+                Duration::from_millis(2),
+                TransportReliability::Unreliable,
+            ),
+            Err(EngineError::CallApi(ApiError::PermissionDenied {
+                command: CallCommand::BeginTransfer,
+                permission: ControlPermission::TransferCalls,
+            }))
+        );
+        let transfer = principal(&[ControlPermission::TransferCalls]);
+        let success = engine
+            .send_in_dialog_request_authorized(
+                &transfer,
+                &call_id,
+                SipMethod::Refer,
+                refer_headers,
+                Vec::new(),
+                Duration::from_millis(3),
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        assert_eq!(success.actions().len(), 1);
+
+        let reader = principal(&[ControlPermission::ReadCalls]);
+        let records = engine.drain_audit_records(&reader, 8).unwrap();
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].principal_id, "voice-app");
+        assert_eq!(records[0].call_id, Some(call_id.clone()));
+        assert_eq!(records[0].operation, AuditOperation::InDialogRequest);
+        assert_eq!(
+            records[0].outcome,
+            AuditOutcome::Rejected("permission_denied")
+        );
+        assert_eq!(records[1].principal_id, "voice-app");
+        assert_eq!(records[1].call_id, Some(call_id));
+        assert_eq!(records[1].operation, AuditOperation::InDialogRequest);
+        assert_eq!(records[1].outcome, AuditOutcome::Succeeded);
     }
 
     #[test]

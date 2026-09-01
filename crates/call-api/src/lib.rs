@@ -236,6 +236,8 @@ pub enum AuditOperation {
     ReclaimTerminal,
     /// Negotiate or update the call's audio media.
     NegotiateAudio,
+    /// Send an application-controlled in-dialog SIP request.
+    InDialogRequest,
     /// Apply an authorized bridge-control operation.
     BridgeControl {
         /// Bridge operation requested by the caller.
