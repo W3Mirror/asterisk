@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**
-**Current checkpoint:** CP-056 — PR #19 hosted validation confirmed after ledger update
-**Last checkpoint (UTC):** 2026-09-01T17:49:30Z
+**Current checkpoint:** CP-058 — PR #20 hosted validation confirmed
+**Last checkpoint (UTC):** 2026-09-01T18:02:00Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Milestone 4 — Dialog + SDP + Basic Calls<br>
-**Next resume action:** Reconcile PR #20 onto exact published PR #19 head `5ed8de81f`, run focused UDP-runtime checks, publish, and verify hosted CI and mergeability
-**Active PR:** [#19](https://github.com/W3Mirror/asterisk/pull/19); branch `media-websocket-transport` targets `media-websocket`
+**Next resume action:** Reconcile PR #21 onto exact published PR #20 head `b2ae9c702`, run focused protocol-fuzz checks, publish, and verify hosted CI and mergeability
+**Active PR:** [#20](https://github.com/W3Mirror/asterisk/pull/20); branch `media-udp-runtime` targets `media-websocket-transport`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-19-media-websocket-transport`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-20-media-udp-runtime`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -3771,7 +3771,9 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 16 | [#16](https://github.com/W3Mirror/asterisk/pull/16) | `sip-rtcp-quality` | `sip-rtcp-security` | /home/ashutosh/.worktrees/w3mirror/asterisk/pr-16-rtcp-quality | Bounded RTCP loss, jitter, and RTT metrics | in_progress | `13416c664a5541cf2228904dc9ed3f3f74865e90` | Hosted run [33534472296](https://github.com/W3Mirror/asterisk/actions/runs/33534472296) passed; GitHub reports OPEN/CLEAN/MERGEABLE | Validate PR #17 on this base |
 | 17 | [#17](https://github.com/W3Mirror/asterisk/pull/17) | `sip-media-rtcp` | `sip-rtcp-quality` | /home/ashutosh/.worktrees/w3mirror/asterisk/pr-17-media-rtcp | Wire bounded RTCP receive/send and quality stats into `MediaSession` | in_progress | `d13a487d189c33b209fe2b8b49ea89aa68561490` | Hosted run [33535496455](https://github.com/W3Mirror/asterisk/actions/runs/33535496455) passed; GitHub reports OPEN/CLEAN/MERGEABLE | Validate PR #18 on this base |
 | 18 | [#18](https://github.com/W3Mirror/asterisk/pull/18) | `media-websocket` | `sip-media-rtcp` | /home/ashutosh/.worktrees/w3mirror/asterisk/pr-18-media-websocket | Bounded RFC 6455 media framing, masking, fragmentation, controls, negotiation, G.711 bridging, and direction enforcement | in_progress | `e96887d144b34520014819a87513b554c4f25ed8` | Hosted run [33536631274](https://github.com/W3Mirror/asterisk/actions/runs/33536631274) passed; GitHub reports OPEN/CLEAN/MERGEABLE against exact PR #17 head `d13a487d`; focused and workspace checks pass | Reconcile PR #19 onto this base |
-| 19 | [#19](https://github.com/W3Mirror/asterisk/pull/19) | `media-websocket-transport` | `media-websocket` | /home/ashutosh/.worktrees/w3mirror/asterisk/pr-19-media-websocket-transport | Bounded blocking WebSocket stream transport, partial-frame buffering, output backpressure, controls, and fresh client masking keys | in_progress | `8f92f08e1f140fb4683b8406b597a402e23f86d7` | Hosted run [33537469629](https://github.com/W3Mirror/asterisk/actions/runs/33537469629) passed; GitHub reports OPEN/CLEAN/MERGEABLE against exact PR #18 head `e96887d`; focused and workspace checks pass | Reconcile PR #20 onto this validated head |
+| 19 | [#19](https://github.com/W3Mirror/asterisk/pull/19) | `media-websocket-transport` | `media-websocket` | /home/ashutosh/.worktrees/w3mirror/asterisk/pr-19-media-websocket-transport | Bounded blocking WebSocket stream transport, partial-frame buffering, output backpressure, controls, and fresh client masking keys | in_progress | `c034292ec58dc071fc95cb7db0151181801410f5` | Hosted run [33540068250](https://github.com/W3Mirror/asterisk/actions/runs/33540068250) passed; GitHub reports OPEN/CLEAN against exact PR #18 head `e96887d`; focused and workspace checks pass | Validate PR #20 against this published head |
+
+| 20 | [#20](https://github.com/W3Mirror/asterisk/pull/20) | `media-udp-runtime` | `media-websocket-transport` | /home/ashutosh/.worktrees/w3mirror/asterisk/pr-20-media-udp-runtime | Bounded UDP media runtime: RTP/RTCP datagram bounds, source and SSRC policy, endpoint learning/override, DTMF and RTCP sends, reusable receive buffers, and explicit non-async transport boundaries | in_progress | `b2ae9c702fff0289a2d6156bbdee1c70c99543ab` | Hosted run [33540915853](https://github.com/W3Mirror/asterisk/actions/runs/33540915853) passed Workspace, Protocol fuzz, and Dependency audit on hosted `ubuntu-latest`; GitHub reports OPEN/CLEAN against exact PR #19 head `c034292ec`; local focused `cargo test -p media-runtime --locked` (7 passed), dependent `cargo test -p media-core --locked` (10 passed), full workspace tests, formatting, workspace Clippy, and diff checks pass | Reconcile PR #21 onto this validated head |
 
 ### CP-028 — Provider routing profile implementation committed
 
@@ -4671,6 +4673,48 @@ head_sha: 5ed8de81fff7f958e172b1366fe02e750f949067
 evidence: Hosted Rust quality run [33539530314](https://github.com/W3Mirror/asterisk/actions/runs/33539530314) completed successfully for this exact head on hosted `ubuntu-latest`: Workspace checks, Protocol fuzz checks, and Dependency audit passed. GitHub reports PR #19 OPEN and CLEAN against exact PR #18 head `e96887d14`.
 blockers: Production deployment identity, effective configuration, provider credentials, sanitized captures, Asterisk/provider interoperability, rollback execution, and safe production Rust traffic remain unavailable; Asterisk routing remains the fallback
 next_action: Reconcile PR #20 onto exact published PR #19 head `5ed8de81f`, run focused UDP-runtime checks, publish, and verify hosted CI and mergeability
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic
+notes: Focused affected-module tests remain required in each implementation PR. Pull requests and pushes to `aistack/main` run the complete ordinary hosted workspace/offline suite; extended and credentialed/live-call checks remain scheduled/manual or approval-gated.
+```
+
+### CP-057 — PR #20 reconciled and locally validated
+
+```yaml
+checkpoint_id: CP-057
+recorded_at_utc: 2026-09-01T17:55:53Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Milestone 2/4 — Dialog + SDP + Basic Calls
+scope: Reconcile the bounded UDP media runtime onto the verified PR #19 head while preserving source-policy, endpoint, and datagram bounds
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-20-media-udp-runtime
+branch: media-udp-runtime
+base_branch: media-websocket-transport
+pr: "#20 https://github.com/W3Mirror/asterisk/pull/20"
+head_sha: 400aadb5a5896d0dedc3a90fbc403cd86166edff
+evidence: Replayed the UDP runtime implementation onto PR #19 head `c034292ec`, dropping stale ledger-only commits. Local `cargo fmt --all -- --check`, focused `cargo test -p media-runtime --locked` (7 passed), dependent `cargo test -p media-core --locked` (10 passed), `cargo test --workspace --locked`, `cargo clippy --workspace --all-targets --locked`, and `git diff --check origin/media-websocket-transport...HEAD` passed. Existing Clippy and missing-documentation warnings remain non-fatal baseline warnings; no changed-path errors were observed. Hosted validation is pending publication.
+blockers: Production deployment identity, effective configuration, provider credentials, sanitized captures, Asterisk/provider interoperability, rollback execution, and safe production Rust traffic remain unavailable; DTLS-SRTP, async runtime integration, and provider interoperability remain follow-up concerns
+next_action: Commit and push the PR #20 reconciliation checkpoint, then verify hosted CI and mergeability
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic
+notes: Focused affected-module tests remain required in each implementation PR. Pull requests and pushes to `aistack/main` run the complete ordinary hosted workspace/offline suite; extended and credentialed/live-call checks remain scheduled/manual or approval-gated.
+```
+
+### CP-058 — PR #20 hosted validation confirmed
+
+```yaml
+checkpoint_id: CP-058
+recorded_at_utc: 2026-09-01T18:02:00Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Milestone 2/4 — Dialog + SDP + Basic Calls
+scope: Publish and validate the reconciled UDP media runtime on hosted CI
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-20-media-udp-runtime
+branch: media-udp-runtime
+base_branch: media-websocket-transport
+pr: "#20 https://github.com/W3Mirror/asterisk/pull/20"
+head_sha: b2ae9c702fff0289a2d6156bbdee1c70c99543ab
+evidence: Hosted Rust quality run [33540915853](https://github.com/W3Mirror/asterisk/actions/runs/33540915853) completed successfully for this exact head on hosted `ubuntu-latest`: Workspace checks, Protocol fuzz checks, and Dependency audit passed. GitHub reports PR #20 OPEN and CLEAN against exact PR #19 head `c034292ec`; local focused and full workspace checks remain green.
+blockers: Production deployment identity, effective configuration, provider credentials, sanitized captures, Asterisk/provider interoperability, rollback execution, and safe production Rust traffic remain unavailable; DTLS-SRTP, async runtime integration, and provider interoperability remain follow-up concerns
+next_action: Reconcile PR #21 onto exact published PR #20 head `b2ae9c702`, run focused protocol-fuzz checks, publish, and verify hosted CI and mergeability
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic
 notes: Focused affected-module tests remain required in each implementation PR. Pull requests and pushes to `aistack/main` run the complete ordinary hosted workspace/offline suite; extended and credentialed/live-call checks remain scheduled/manual or approval-gated.
 ```

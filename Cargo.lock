@@ -63,6 +63,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "media-runtime"
+version = "0.1.0"
+dependencies = [
+ "dtmf",
+ "media-core",
+ "rtcp",
+ "rtp",
+ "sip-security",
+]
+
+[[package]]
 name = "media-websocket"
 version = "0.1.0"
 dependencies = [

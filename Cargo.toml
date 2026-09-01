@@ -9,6 +9,7 @@ members = [
   "crates/dtmf",
   "crates/media-core",
   "crates/media-websocket",
+  "crates/media-runtime",
   "crates/call-core",
   "crates/sip-transaction",
   "crates/sip-transport",
