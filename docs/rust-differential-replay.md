@@ -25,6 +25,19 @@ lifecycle and bridge events, terminal/retained state, dialog presence,
 negotiated codec and direction, media packet/queue/drop counters, and final
 call/bridge/transaction/queue cleanup.
 
+## Sanitized capture conversion
+
+`normalize_capture` accepts a bounded sequence of `CapturedSip` records. Each
+record carries an explicit `CaptureDirection`, peer address, and complete SIP
+wire message. The adapter parses each message with the bounded SIP parser and
+emits the same ordered `received`/`sent` facts used by replay normalization;
+raw bytes and environment-owned values are not retained in the observation.
+
+Use `NormalizedObservation::sip_traffic` when comparing a capture with a full
+Rust replay report. A capture can establish wire behavior but cannot provide
+the replay's lifecycle, media, or cleanup facts, so those richer facts remain
+in the full report comparison.
+
 Run the focused suite with:
 
 ```sh
@@ -42,11 +55,11 @@ fact<TAB>timing order-only
 fact<TAB>sip 1 endpoint-1 received request INVITE cseq=1/INVITE sip-call-1 body=none
 ```
 
-Future sanitized Asterisk/provider capture conversion must emit this same
-format and pass through `parse_oracle_fixture`; it must not add a parallel
-comparison path. Source conversion remains separate because this repository
-does not yet contain sanitized PCAPs or access to a running Asterisk/provider
-environment.
+Future sanitized Asterisk/provider capture conversion can feed the same
+`normalize_capture` adapter and `parse_oracle_fixture` format; it must not add a
+parallel comparison path. Source conversion remains separate because this
+repository does not yet contain sanitized PCAPs or access to a running
+Asterisk/provider environment.
 
 An observed mismatch is evidence to investigate, not automatically a Rust bug.
 Traffic must remain on Asterisk until material differences are explained and
