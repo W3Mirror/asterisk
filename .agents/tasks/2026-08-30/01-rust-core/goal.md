@@ -5623,6 +5623,27 @@ rollback: Keep all signaling, media, and call routing on Asterisk; do not enable
 notes: Every implementation PR ships focused tests for each affected crate/module. Hosted pull_request and `aistack/main` push events run the complete ordinary locked workspace suite rather than automatically selecting changed modules; extended load/property, differential replay, capacity, soak, credentialed-provider, and real-time checks remain scheduled, manually dispatched, or approval-gated. Docker is limited to the pinned SIPp dependency.
 ~~~
 
+### CP-089 — PR #33 restack local gates completed
+
+~~~yaml
+checkpoint_id: CP-089
+recorded_at_utc: 2026-09-01T21:02:30Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Synthetic semantic differential replay
+scope: Complete local validation of the restacked differential-replay branch before replacing the stale remote PR head
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-33
+branch: synthetic-differential-replay
+base_branch: rust-load-reclamation-smoke
+pr: "#33 https://github.com/W3Mirror/asterisk/pull/33"
+head_sha: e1b123a4c5ad9c5c6e4b051f00250d50c65c8ef9
+evidence: `cargo test -p differential-replay --locked` passed 4 tests; `cargo test -p scenario-replay --locked` passed 15 tests; `cargo test --workspace --locked` passed 170 tests; formatting, strict changed-package Clippy, workflow-compatible workspace Clippy, `bash -n tests/rust-sipp/run.sh`, workflow YAML parsing, and `git diff --check` passed. The local SIPp harness completed successfully for the success, busy, and cancel scenarios. The restacked branch is clean and contains the focused differential and scenario-replay tests alongside the implementation.
+blockers: The remote PR still points at stale head `6a81945a52e46f03f611d493d1aeeccf449e5a52` and reports DIRTY/CONFLICTING until the exact lease-pinned force push; the oracle remains synthetic and is not Asterisk/provider interoperability evidence. Sanitized real captures, media/WebSocket load, long-duration soak/memory, runtime human-leg SIP origination/RTP composition, provider interoperability, and rollback proof remain active goal work.
+next_action: Publish `e1b123a4c5ad9c5c6e4b051f00250d50c65c8ef9` to PR #33 with an exact SHA-pinned `--force-with-lease`, then verify hosted checks and mergeability.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; restore the backup branch `backup/synthetic-differential-replay-before-restack-20260901` if the restacked publication must be abandoned.
+notes: Focused affected-module tests remain mandatory PR content. Hosted pull_request and `aistack/main` push events run the complete ordinary locked workspace suite; extended load/property, differential replay, capacity, soak, credentialed-provider, and real-time checks remain separate scheduled, manual, or approval-gated tiers. Docker is limited to the pinned SIPp dependency.
+~~~
+
 ## 59.4 Stacked-PR Checkpoints
 
 Each PR should leave a green checkpoint before the next PR depends on it:
