@@ -49,6 +49,10 @@ Call `receive_rtcp` or `receive_rtcp_from` for remote RTCP datagrams and
 packet bound, expected remote SSRC, and observed-source policy. Its statistics
 are exposed under `MediaSessionStats::rtcp`, including report-derived loss,
 jitter, and matching Sender Report/Reception Report RTT estimates.
+After at least one valid RTP packet, `receiver_report` generates a local-SSRC
+Receiver Report for the current remote RTP source. It includes interval loss,
+cumulative observed loss, highest extended sequence, jitter, and the latest
+Sender Report timing without retaining unbounded packet history.
 
 ## Recording
 

@@ -10,7 +10,7 @@ use call_bridge::{BridgeError, BridgeRegistry, BridgeSnapshot, BridgeState, Huma
 use call_core::{BridgeId, CallId, LegId};
 use dtmf::{DtmfEvent, Notification};
 use media_core::{PushOutcome, ReceivedMedia};
-use media_runtime::{MediaChannel, MediaRuntimeError, MediaUdpRuntime};
+use media_runtime::{MediaChannel, MediaRuntimeError, MediaUdpRuntime, ReceivedRtcp};
 
 /// Direction of one caller/human media forwarding operation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -330,6 +330,67 @@ impl HumanMediaBridgeRuntime {
         )
     }
 
+    /// Receives and accounts for one caller-side RTCP compound datagram.
+    ///
+    /// RTCP is terminated on this leg rather than copied to the human leg,
+    /// whose forwarded RTP uses a different SSRC and sequence space.
+    ///
+    /// # Errors
+    ///
+    /// Returns before reading the caller RTCP socket unless the bridge remains
+    /// human-active with the exact attached endpoints.
+    pub fn receive_caller_rtcp_once(
+        &mut self,
+        bridges: &BridgeRegistry,
+        arrival: Duration,
+    ) -> Result<ReceivedRtcp, HumanMediaBridgeError> {
+        self.validate(bridges)?;
+        Ok(self.caller.receive_rtcp(arrival)?)
+    }
+
+    /// Receives and accounts for one human-side RTCP compound datagram.
+    ///
+    /// # Errors
+    ///
+    /// Returns before reading the human RTCP socket unless the bridge remains
+    /// human-active with the exact attached endpoints.
+    pub fn receive_human_rtcp_once(
+        &mut self,
+        bridges: &BridgeRegistry,
+        arrival: Duration,
+    ) -> Result<ReceivedRtcp, HumanMediaBridgeError> {
+        self.validate(bridges)?;
+        Ok(self.human.receive_rtcp(arrival)?)
+    }
+
+    /// Sends a generated Receiver Report to the caller-side RTCP peer.
+    ///
+    /// # Errors
+    ///
+    /// Returns a bridge-state, missing endpoint/source, media, or socket error.
+    pub fn send_caller_receiver_report(
+        &mut self,
+        bridges: &BridgeRegistry,
+        now: Duration,
+    ) -> Result<usize, HumanMediaBridgeError> {
+        self.validate(bridges)?;
+        Ok(self.caller.send_receiver_report(now)?)
+    }
+
+    /// Sends a generated Receiver Report to the human-side RTCP peer.
+    ///
+    /// # Errors
+    ///
+    /// Returns a bridge-state, missing endpoint/source, media, or socket error.
+    pub fn send_human_receiver_report(
+        &mut self,
+        bridges: &BridgeRegistry,
+        now: Duration,
+    ) -> Result<usize, HumanMediaBridgeError> {
+        self.validate(bridges)?;
+        Ok(self.human.send_receiver_report(now)?)
+    }
+
     fn validate(&self, bridges: &BridgeRegistry) -> Result<(), HumanMediaBridgeError> {
         let snapshot = bridges.snapshot(&self.bridge_id)?;
         if snapshot.state != BridgeState::HumanActive {
@@ -426,6 +487,7 @@ mod tests {
         decode,
     };
     use media_runtime::MediaUdpRuntimeConfig;
+    use rtcp::{ReceiverReport, RtcpPacket};
     use rtp::{RtpPacket, RtpSessionConfig, parse, serialize};
 
     use super::*;
@@ -435,7 +497,9 @@ mod tests {
         bridge_id: BridgeId,
         media: HumanMediaBridgeRuntime,
         caller_peer: UdpSocket,
+        caller_rtcp_peer: UdpSocket,
         human_peer: UdpSocket,
+        human_rtcp_peer: UdpSocket,
     }
 
     fn media_session(remote_ssrc: u32, local_ssrc: u32, drop_newest: bool) -> MediaSession {
@@ -471,11 +535,16 @@ mod tests {
         remote_ssrc: u32,
         local_ssrc: u32,
         drop_newest: bool,
-    ) -> (MediaUdpRuntime, UdpSocket) {
+    ) -> (MediaUdpRuntime, UdpSocket, UdpSocket) {
         let audio_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
         let control_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
-        let peer = UdpSocket::bind("127.0.0.1:0").unwrap();
-        peer.set_read_timeout(Some(Duration::from_millis(50)))
+        let audio_peer = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let control_peer = UdpSocket::bind("127.0.0.1:0").unwrap();
+        audio_peer
+            .set_read_timeout(Some(Duration::from_millis(50)))
+            .unwrap();
+        control_peer
+            .set_read_timeout(Some(Duration::from_millis(50)))
             .unwrap();
         let mut runtime = MediaUdpRuntime::from_sockets(
             audio_socket,
@@ -487,8 +556,9 @@ mod tests {
             },
         )
         .unwrap();
-        runtime.set_remote_rtp(peer.local_addr().unwrap());
-        (runtime, peer)
+        runtime.set_remote_rtp(audio_peer.local_addr().unwrap());
+        runtime.set_remote_rtcp(control_peer.local_addr().unwrap());
+        (runtime, audio_peer, control_peer)
     }
 
     fn fixture(human_drop_newest: bool) -> Fixture {
@@ -511,8 +581,8 @@ mod tests {
             .unwrap();
         bridges.complete_human(&bridge_id).unwrap();
         let _ = bridges.drain_events(usize::MAX).unwrap();
-        let (caller, caller_peer) = udp_runtime(11, 101, false);
-        let (human, human_peer) = udp_runtime(22, 202, human_drop_newest);
+        let (caller, caller_peer, caller_rtcp_peer) = udp_runtime(11, 101, false);
+        let (human, human_peer, human_rtcp_peer) = udp_runtime(22, 202, human_drop_newest);
         let media =
             HumanMediaBridgeRuntime::new(&bridges.snapshot(&bridge_id).unwrap(), caller, human)
                 .unwrap();
@@ -521,7 +591,9 @@ mod tests {
             bridge_id,
             media,
             caller_peer,
+            caller_rtcp_peer,
             human_peer,
+            human_rtcp_peer,
         }
     }
 
@@ -565,6 +637,23 @@ mod tests {
         let mut output = [0_u8; 1_024];
         let (length, _) = peer.recv_from(&mut output).unwrap();
         parse(&output[..length]).unwrap()
+    }
+
+    fn rtcp_receiver_report(ssrc: u32) -> (RtcpPacket, Vec<u8>) {
+        let packet = RtcpPacket::ReceiverReport(ReceiverReport {
+            ssrc,
+            reports: Vec::new(),
+        });
+        let wire = rtcp::serialize(&packet).unwrap();
+        (packet, wire)
+    }
+
+    fn receive_rtcp_packet(peer: &UdpSocket) -> RtcpPacket {
+        let mut output = [0_u8; 1_024];
+        let (length, _) = peer.recv_from(&mut output).unwrap();
+        let mut packets = rtcp::parse(&output[..length]).unwrap();
+        assert_eq!(packets.len(), 1);
+        packets.remove(0)
     }
 
     #[test]
@@ -650,8 +739,8 @@ mod tests {
                 LegId::from_sequence(2),
             )
             .unwrap();
-        let (caller, _) = udp_runtime(11, 101, false);
-        let (human, _) = udp_runtime(22, 202, false);
+        let (caller, _, _) = udp_runtime(11, 101, false);
+        let (human, _, _) = udp_runtime(22, 202, false);
         assert!(matches!(
             HumanMediaBridgeRuntime::new(&bridges.snapshot(&bridge_id).unwrap(), caller, human),
             Err(HumanMediaBridgeError::NotHumanActive {
@@ -802,6 +891,152 @@ mod tests {
                 .unwrap(),
             HumanMediaForward::Audio { .. }
         ));
+    }
+
+    #[test]
+    fn terminates_inbound_rtcp_on_each_active_bridge_leg() {
+        let mut fixture = fixture(false);
+        let (caller_report, caller_wire) = rtcp_receiver_report(11);
+        fixture
+            .caller_rtcp_peer
+            .send_to(
+                &caller_wire,
+                fixture.media.caller().local_rtcp_addr().unwrap(),
+            )
+            .unwrap();
+        let received = fixture
+            .media
+            .receive_caller_rtcp_once(&fixture.bridges, Duration::from_millis(20))
+            .unwrap();
+        assert_eq!(received.packets, vec![caller_report]);
+        assert_eq!(
+            fixture.media.caller().media().stats().rtcp.packets_received,
+            1
+        );
+        let mut unexpected = [0_u8; 1_024];
+        assert!(fixture.human_rtcp_peer.recv_from(&mut unexpected).is_err());
+
+        let (human_report, human_wire) = rtcp_receiver_report(22);
+        fixture
+            .human_rtcp_peer
+            .send_to(
+                &human_wire,
+                fixture.media.human().local_rtcp_addr().unwrap(),
+            )
+            .unwrap();
+        assert_eq!(
+            fixture
+                .media
+                .receive_human_rtcp_once(&fixture.bridges, Duration::from_millis(40))
+                .unwrap()
+                .packets,
+            vec![human_report]
+        );
+        assert_eq!(
+            fixture.media.human().media().stats().rtcp.packets_received,
+            1
+        );
+    }
+
+    #[test]
+    fn ai_failback_rejects_before_consuming_caller_rtcp() {
+        let mut fixture = fixture(false);
+        let (_, wire) = rtcp_receiver_report(11);
+        fixture
+            .caller_rtcp_peer
+            .send_to(&wire, fixture.media.caller().local_rtcp_addr().unwrap())
+            .unwrap();
+        fixture.bridges.fail_human(&fixture.bridge_id).unwrap();
+        assert!(matches!(
+            fixture
+                .media
+                .receive_caller_rtcp_once(&fixture.bridges, Duration::from_millis(20)),
+            Err(HumanMediaBridgeError::NotHumanActive {
+                state: BridgeState::AiActive
+            })
+        ));
+        assert_eq!(
+            fixture.media.caller().media().stats().rtcp.packets_received,
+            0
+        );
+        assert_eq!(
+            fixture
+                .media
+                .caller_mut()
+                .receive_rtcp(Duration::from_millis(20))
+                .unwrap()
+                .bytes,
+            wire.len()
+        );
+    }
+
+    #[test]
+    fn sends_identity_correct_receiver_reports_for_both_rtp_sources() {
+        let mut fixture = fixture(false);
+        for (sequence, arrival) in [
+            (1, Duration::from_millis(20)),
+            (3, Duration::from_millis(60)),
+        ] {
+            fixture
+                .caller_peer
+                .send_to(
+                    &audio_packet(11, sequence, u32::from(sequence) * 160, 0xff),
+                    fixture.media.caller().local_rtp_addr().unwrap(),
+                )
+                .unwrap();
+            fixture
+                .media
+                .forward_caller_once(&fixture.bridges, arrival, false)
+                .unwrap();
+            let _ = receive_packet(&fixture.human_peer);
+        }
+        assert_eq!(
+            fixture
+                .media
+                .send_caller_receiver_report(&fixture.bridges, Duration::from_millis(80))
+                .unwrap(),
+            32
+        );
+        let RtcpPacket::ReceiverReport(caller_report) =
+            receive_rtcp_packet(&fixture.caller_rtcp_peer)
+        else {
+            panic!("expected caller receiver report");
+        };
+        assert_eq!(caller_report.ssrc, 101);
+        assert_eq!(caller_report.reports.len(), 1);
+        assert_eq!(caller_report.reports[0].source_ssrc, 11);
+        assert_eq!(caller_report.reports[0].highest_sequence, 3);
+        assert_eq!(caller_report.reports[0].cumulative_lost, 1);
+        assert_eq!(caller_report.reports[0].fraction_lost, 85);
+
+        fixture
+            .human_peer
+            .send_to(
+                &audio_packet(22, 9, 900, 0x7f),
+                fixture.media.human().local_rtp_addr().unwrap(),
+            )
+            .unwrap();
+        fixture
+            .media
+            .forward_human_once(&fixture.bridges, Duration::from_millis(100), false)
+            .unwrap();
+        let _ = receive_packet(&fixture.caller_peer);
+        assert_eq!(
+            fixture
+                .media
+                .send_human_receiver_report(&fixture.bridges, Duration::from_millis(120))
+                .unwrap(),
+            32
+        );
+        let RtcpPacket::ReceiverReport(human_report) =
+            receive_rtcp_packet(&fixture.human_rtcp_peer)
+        else {
+            panic!("expected human receiver report");
+        };
+        assert_eq!(human_report.ssrc, 202);
+        assert_eq!(human_report.reports[0].source_ssrc, 22);
+        assert_eq!(human_report.reports[0].highest_sequence, 9);
+        assert_eq!(human_report.reports[0].cumulative_lost, 0);
     }
 
     #[test]

@@ -392,6 +392,22 @@ impl RtcpSession {
         self.stats.clone()
     }
 
+    /// Returns the LSR and DLSR fields for a reception report generated at `now`.
+    ///
+    /// Both values are zero until a non-zero Sender Report timestamp has been
+    /// accepted. DLSR uses the RTCP 16.16-second representation and saturates
+    /// when the elapsed monotonic duration exceeds that field's range.
+    #[must_use]
+    pub fn reception_report_timing(&self, now: Duration) -> (u32, u32) {
+        let Some(sender) = self.last_sender_report else {
+            return (0, 0);
+        };
+        (
+            sender.lsr,
+            duration_to_ntp_short(now.saturating_sub(sender.received_at)),
+        )
+    }
+
     /// Returns the most recently observed known report SSRC.
     #[must_use]
     pub const fn remote_ssrc(&self) -> Option<u32> {
@@ -451,6 +467,15 @@ fn ntp_short_to_duration(value: u32) -> Duration {
     let seconds = u64::from(value >> 16);
     let nanos = (u64::from(value & 0xffff) * 1_000_000_000) / 65_536;
     Duration::from_secs(seconds).saturating_add(Duration::from_nanos(nanos))
+}
+
+fn duration_to_ntp_short(value: Duration) -> u32 {
+    if value.as_secs() > u64::from(u16::MAX) {
+        return u32::MAX;
+    }
+    let seconds = value.as_secs();
+    let fraction = (u64::from(value.subsec_nanos()) * 65_536) / 1_000_000_000;
+    u32::try_from((seconds << 16) | fraction).unwrap_or(u32::MAX)
 }
 
 fn packet_ssrc(packet: &RtcpPacket) -> Option<u32> {
@@ -775,6 +800,10 @@ mod tests {
         session
             .receive(&sender_wire, Duration::from_secs(10))
             .unwrap();
+        assert_eq!(
+            session.reception_report_timing(Duration::from_secs(12)),
+            (ntp_middle_32(1, 0), 2 << 16)
+        );
 
         let receiver = RtcpPacket::ReceiverReport(ReceiverReport {
             ssrc: 42,
@@ -795,6 +824,28 @@ mod tests {
         assert_eq!(stats.packets_lost, 12);
         assert_eq!(stats.jitter, 320);
         assert_eq!(stats.round_trip, Some(Duration::from_millis(1_500)));
+    }
+
+    #[test]
+    fn reception_report_timing_is_zero_without_a_sender_report_and_saturates() {
+        let mut session = RtcpSession::new(RtcpSessionConfig::default()).unwrap();
+        assert_eq!(session.reception_report_timing(Duration::MAX), (0, 0));
+        let sender = RtcpPacket::SenderReport(SenderReport {
+            ssrc: 42,
+            ntp_msw: 1,
+            ntp_lsw: 0,
+            rtp_timestamp: 0,
+            packets_sent: 0,
+            octets_sent: 0,
+            reports: Vec::new(),
+        });
+        session
+            .receive(&serialize(&sender).unwrap(), Duration::ZERO)
+            .unwrap();
+        assert_eq!(
+            session.reception_report_timing(Duration::from_secs(65_536)),
+            (ntp_middle_32(1, 0), u32::MAX)
+        );
     }
 
     #[test]

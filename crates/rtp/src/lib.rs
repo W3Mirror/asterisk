@@ -265,9 +265,26 @@ pub struct RtpStats {
     pub invalid_packets: u64,
     pub jitter: u32,
     pub ssrc_changes: u64,
+    base_extended_sequence: Option<i64>,
     highest_extended_sequence: Option<i64>,
     last_transit: Option<i64>,
     ssrc: Option<u32>,
+    source_packets_lost: u64,
+}
+
+/// Receive-side values needed to construct an RTCP reception report block.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RtpReceptionSnapshot {
+    /// Synchronization source currently being received.
+    pub source_ssrc: u32,
+    /// Highest extended RTP sequence number observed for the current source.
+    pub highest_sequence: u32,
+    /// Number of sequence positions expected since the current source began.
+    pub expected_packets: u64,
+    /// Number of missing sequence positions observed for the current source.
+    pub packets_lost: u64,
+    /// Current interarrival jitter estimate in RTP timestamp units.
+    pub jitter: u32,
 }
 
 impl RtpStats {
@@ -290,17 +307,20 @@ impl RtpStats {
             // across a source switch would manufacture loss and jitter from
             // unrelated streams.
             self.highest_extended_sequence = None;
+            self.base_extended_sequence = None;
             self.last_transit = None;
             self.jitter = 0;
+            self.source_packets_lost = 0;
         }
         self.ssrc = Some(packet.ssrc);
 
         let extended = self.extend_sequence(packet.sequence_number);
+        self.base_extended_sequence.get_or_insert(extended);
         if let Some(highest) = self.highest_extended_sequence {
             if extended > highest {
-                self.packets_lost = self
-                    .packets_lost
-                    .saturating_add((extended - highest - 1).max(0) as u64);
+                let newly_lost = u64::try_from((extended - highest - 1).max(0)).unwrap_or(0);
+                self.packets_lost = self.packets_lost.saturating_add(newly_lost);
+                self.source_packets_lost = self.source_packets_lost.saturating_add(newly_lost);
                 self.highest_extended_sequence = Some(extended);
             }
         } else {
@@ -319,6 +339,23 @@ impl RtpStats {
         }
         self.last_transit = Some(transit);
         Ok(())
+    }
+
+    /// Returns the current source's bounded RTCP reception-report values.
+    #[must_use]
+    pub fn reception_snapshot(&self) -> Option<RtpReceptionSnapshot> {
+        let source_ssrc = self.ssrc?;
+        let base = self.base_extended_sequence?;
+        let highest = self.highest_extended_sequence?;
+        let expected_packets =
+            u64::try_from(highest.saturating_sub(base).saturating_add(1)).unwrap_or(u64::MAX);
+        Some(RtpReceptionSnapshot {
+            source_ssrc,
+            highest_sequence: u32::try_from(highest & i64::from(u32::MAX)).unwrap_or_default(),
+            expected_packets,
+            packets_lost: self.source_packets_lost,
+            jitter: self.jitter,
+        })
     }
 
     fn extend_sequence(&self, sequence: u16) -> i64 {
@@ -854,6 +891,12 @@ impl RtpSession {
         }
     }
 
+    /// Returns the current source values used by RTCP reception reports.
+    #[must_use]
+    pub fn reception_snapshot(&self) -> Option<RtpReceptionSnapshot> {
+        self.received.reception_snapshot()
+    }
+
     /// Returns whether no packet has arrived within `timeout` at `now`.
     pub fn is_inactive(&self, now: Duration, timeout: Duration) -> bool {
         match self.last_received {
@@ -936,6 +979,16 @@ mod tests {
         stats
             .observe(&packet(2, 240, 1), Duration::from_millis(60), 8_000)
             .unwrap();
+        assert_eq!(
+            stats.reception_snapshot(),
+            Some(RtpReceptionSnapshot {
+                source_ssrc: 1,
+                highest_sequence: 65_538,
+                expected_packets: 4,
+                packets_lost: 1,
+                jitter: stats.jitter,
+            })
+        );
         stats
             .observe(&packet(10, 400, 2), Duration::from_millis(90), 8_000)
             .unwrap();
@@ -945,6 +998,16 @@ mod tests {
         assert_eq!(stats.packets_lost, 1);
         assert_eq!(stats.ssrc_changes, 1);
         assert!(stats.jitter > 0);
+        assert_eq!(
+            stats.reception_snapshot(),
+            Some(RtpReceptionSnapshot {
+                source_ssrc: 2,
+                highest_sequence: 11,
+                expected_packets: 2,
+                packets_lost: 0,
+                jitter: stats.jitter,
+            })
+        );
     }
 
     #[test]
