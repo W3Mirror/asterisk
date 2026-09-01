@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**
-**Current checkpoint:** CP-032 — PR #10 reconciled onto the current PR #9 head
-**Last checkpoint (UTC):** 2026-09-01T04:51:02Z
+**Current checkpoint:** CP-033 — PR #10 hosted validation and mergeability confirmed
+**Last checkpoint (UTC):** 2026-09-01T04:56:31Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Milestone 4 — Dialog + SDP + Basic Calls<br>
-**Next resume action:** Publish PR #10 and verify hosted authentication validation and mergeability against the updated PR #9 base
+**Next resume action:** Reconcile PR #11 onto the validated PR #10 head, run focused provider-routing checks, and publish its hosted validation
 **Active PR:** [#10](https://github.com/W3Mirror/asterisk/pull/10); branch `sip-auth-routing` targets `sip-engine-runtime`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-10-sip-auth`
@@ -3229,6 +3229,27 @@ rollback: Asterisk remains the active/fallback engine; do not enable Rust traffi
 notes: PR and aistack/main push events run the complete ordinary hosted workspace/offline suite when manifests exist; extended fuzzing, SIPp/interoperability, capacity, property, soak, credentialed-provider, and live real-time-call gates remain scheduled or manually gated.
 ```
 
+### CP-033 — PR #10 hosted validation and mergeability confirmed
+
+```yaml
+checkpoint_id: CP-033
+recorded_at_utc: 2026-09-01T04:56:31Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Milestone 4 — Dialog + SDP + Basic Calls
+scope: Validate the reconciled PR #10 SIP Digest authentication slice on local and hosted checks
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-10-sip-auth
+branch: sip-auth-routing
+base_branch: sip-engine-runtime
+pr: "#10 https://github.com/W3Mirror/asterisk/pull/10"
+head_sha: 0096df9d99ae410a10e611e40289e7ee3e3fc8dd
+evidence: Hosted pull_request run 33471490357 (https://github.com/W3Mirror/asterisk/actions/runs/33471490357) completed successfully for this exact head: Workspace checks, Protocol fuzz checks, and Dependency audit all passed on hosted ubuntu-latest runners. GitHub reports PR #10 OPEN, CLEAN, and MERGEABLE against `sip-engine-runtime`; local focused SIP-auth tests (6 passed), workspace tests, formatting, Clippy, and diff checks passed.
+blockers: Production deployment identity, effective configuration, provider credentials, sanitized SIP/SDP/RTP fixtures, and live-provider calls remain unavailable; Asterisk routing remains the fallback
+next_action: Reconcile PR #11 onto this validated PR #10 head, run focused provider-routing checks, and publish its hosted validation
+rollback: Asterisk remains the active/fallback engine; do not enable Rust traffic
+notes: Focused authentication tests ship with the implementation PR and are exercised by the complete hosted workspace suite. Extended fuzzing, SIPp/interoperability, capacity, property, soak, credentialed-provider, and live real-time-call evidence remain scheduled or manually gated.
+```
+
 ### Checkpoint template
 
 Copy this template, assign the next checkpoint ID, fill every field, and append it after each meaningful state change:
@@ -3335,7 +3356,7 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 8 | [#8](https://github.com/W3Mirror/asterisk/pull/8) | `media-session-core` | `call-engine-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-8-media-session` | Bounded RTP↔AI media session, RFC 4733 DTMF handling, and non-blocking PCM/WAV recording sink | in_progress | `4237adddea26` | Hosted run [33438853171](https://github.com/W3Mirror/asterisk/actions/runs/33438853171) passed workspace checks, protocol fuzz detection, and dependency audit; GitHub reports CLEAN/MERGEABLE | Keep the verified offline/hosted test contract in force while adding the next bounded slice |
 | 9 | [#9](https://github.com/W3Mirror/asterisk/pull/9) | `sip-engine-runtime` | `media-session-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-9-sip-runtime` | Bounded blocking UDP/TCP SIP runtime dispatch into `CallEngine`, outbound origination, application response wrappers, and atomic delivery | in_progress | `ff2803f637922c6ac457777830277810daf026fb` | Hosted run [33471126106](https://github.com/W3Mirror/asterisk/actions/runs/33471126106) passed Workspace, Protocol fuzz, and Dependency audit on hosted ubuntu-latest; GitHub reports CLEAN/MERGEABLE; local focused runtime fmt/test/clippy and workspace/diff checks passed | Keep the validated runtime contract as PR #10's base |
 
-| 10 | [#10](https://github.com/W3Mirror/asterisk/pull/10) | `sip-auth-routing` | `sip-engine-runtime` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-10-sip-auth` | Milestone 4 security/provider primitive: bounded SIP Digest challenge/authorization parsing, RFC 2617 MD5 auth/auth-int responses, redacted credentials, constant-time verification, and bounded failure throttling | in_progress | `a0fd4ff9f` | Reconciled onto PR #9 head `ff2803f637922c6ac457777830277810daf026fb`; local focused SIP-auth fmt/test/clippy and workspace/diff checks passed; hosted validation pending | Publish and verify PR #10 hosted authentication validation |
+| 10 | [#10](https://github.com/W3Mirror/asterisk/pull/10) | `sip-auth-routing` | `sip-engine-runtime` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-10-sip-auth` | Milestone 4 security/provider primitive: bounded SIP Digest challenge/authorization parsing, RFC 2617 MD5 auth/auth-int responses, redacted credentials, constant-time verification, and bounded failure throttling | in_progress | `0096df9d99ae410a10e611e40289e7ee3e3fc8dd` | Hosted run [33471490357](https://github.com/W3Mirror/asterisk/actions/runs/33471490357) passed Workspace, Protocol fuzz, and Dependency audit on hosted ubuntu-latest; GitHub reports CLEAN/MERGEABLE; local focused SIP-auth fmt/test/clippy and workspace/diff checks passed | Reconcile PR #11 onto this validated head |
 
 ### CP-026 — PR10 published and stacked remote parity verified
 
