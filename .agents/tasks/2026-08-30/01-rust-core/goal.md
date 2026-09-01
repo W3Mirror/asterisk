@@ -1,12 +1,12 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**
-**Current checkpoint:** CP-073 — PR #29 rebased and locally validated
-**Last checkpoint (UTC):** 2026-09-01T19:41:32Z
+**Current checkpoint:** CP-074 — PR #29 hosted validation confirmed after restack
+**Last checkpoint (UTC):** 2026-09-01T19:46:29Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Deterministic multi-leg bridge replay and failure verification<br>
-**Next resume action:** Publish the rebased PR #29 head with an exact SHA-pinned force-with-lease and verify hosted checks plus mergeability
-**Active PR:** [#29](https://github.com/W3Mirror/asterisk/pull/29) branch `call-bridge-scenario-replay` targets `call-bridge-core`; hosted validation is pending for the rebased head
+**Next resume action:** Reconcile PR #30 onto the validated PR #29 head and run focused property-invariant checks
+**Active PR:** [#29](https://github.com/W3Mirror/asterisk/pull/29) branch `call-bridge-scenario-replay` targets `call-bridge-core`; hosted validation is green for the published head
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-29`
 **Primary language:** Rust  
@@ -5182,6 +5182,27 @@ blockers: Hosted validation has not yet run for this rebased head; runtime SIP/m
 next_action: Publish PR #29 with an exact SHA-pinned force-with-lease against the verified remote head, then verify hosted checks and OPEN/CLEAN/MERGEABLE state
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the replay PR if the scenario contract is superseded
 notes: Every implementation PR must include focused tests for each affected crate/module. GitHub Actions does not infer a changed-module-only subset today; the complete workspace invocation exercises the focused tests. Extended fuzzing, SIPp/interoperability, property, capacity, soak, credentialed-provider, and real-time checks remain scheduled, manually dispatched, or approval-gated.
+```
+
+### CP-074 — PR #29 hosted validation confirmed after restack
+
+```yaml
+checkpoint_id: CP-074
+recorded_at_utc: 2026-09-01T19:46:29Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Deterministic multi-leg bridge replay and failure verification
+scope: Publish and validate the rebased deterministic bridge transition replay on hosted CI
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-29
+branch: call-bridge-scenario-replay
+base_branch: call-bridge-core
+pr: "#29 https://github.com/W3Mirror/asterisk/pull/29"
+head_sha: 52bbf69128874d42cd3e7efdeacd611b70d91b39
+evidence: Published the rebased PR #29 head with an exact SHA-pinned force-with-lease replacing remote head `2a9ff726dcf58f4dc02e2bd95de85b79d5784a11`. Hosted Rust quality run [33551101193](https://github.com/W3Mirror/asterisk/actions/runs/33551101193) completed successfully on hosted `ubuntu-latest`: Workspace checks, protocol fuzz checks, and dependency audit passed. GitHub reports PR #29 OPEN and CLEAN against `call-bridge-core`; local and remote heads match.
+blockers: Runtime SIP/media bridge integration, provider/Asterisk runtime identity, credentials, sanitized real captures, and live interoperability remain later gates; Asterisk remains the fallback.
+next_action: Reconcile PR #30 onto the validated PR #29 head and run focused property-invariant checks
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the replay PR if the scenario contract is superseded
+notes: Focused tests ship with the relevant implementation. Pull requests run the complete ordinary workspace suite (including those focused tests), while pushes to `aistack/main` repeat that complete ordinary hosted suite. Extended fuzzing, SIPp/interoperability, property, capacity, soak, credentialed-provider, and real-time checks remain scheduled, manually dispatched, or approval-gated.
 ```
 
 ## 59.4 Stacked-PR Checkpoints
