@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-086 — PR #32 restacked and hosted validation green
-**Last checkpoint (UTC):** 2026-09-01T20:49:11Z
+**Current checkpoint:** CP-085 — synthetic differential replay locally green
+**Last checkpoint (UTC):** 2026-09-01T09:19:14Z
 **Active phase:** Phase 1 — Rust media engine
-**Active milestone:** Deterministic signaling load and terminal reclamation<br>
-**Next resume action:** Reconcile the next bounded offline differential or media-load slice onto the validated PR #32 head
-**Active PR:** [#32](https://github.com/W3Mirror/asterisk/pull/32); branch `rust-load-reclamation-smoke` targets `sipp-local-integration`
+**Active milestone:** Synthetic semantic differential replay<br>
+**Next resume action:** Commit and publish `synthetic-differential-replay` as stacked PR #33 against `rust-load-reclamation-smoke`, then verify every hosted quality gate on its final head
+**Active PR:** pending PR #33; branch `synthetic-differential-replay` targets `rust-load-reclamation-smoke`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-32`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-33`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -2140,9 +2140,9 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 | Workstream | Status | Evidence / checkpoint | PR | Next action |
 | --- | --- | --- | --- | --- |
 | Phase 0 — current Asterisk surface | in_progress | CP-015; PR #1 hosted run 33431290927 passed and GitHub reports CLEAN/MERGEABLE at `8dbd0082823b9444e72a6ceebee27328bd0f506d` | #1 | Keep the verified Asterisk inventory and production-evidence gate in force |
-| Phase 1 — Rust media engine | in_progress | CP-018/CP-026/CP-047/CP-049/CP-050/CP-054/CP-056/CP-058/CP-059/CP-060/CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067/CP-068/CP-069/CP-070/CP-071/CP-072/CP-073/CP-074/CP-075/CP-076/CP-082/CP-083/CP-084; PR #2 foundation, PR #8 media/DTMF/recording, PR #18 bounded WebSocket adapter, PR #19 bounded stream driver, PR #20 UDP runtime, PR #21 parser fuzz harnesses, PR #22 hosted CI/offline verification contract, PR #25 deterministic SIP scenario replay, PR #26 deterministic fault corpus, PR #27 transfer/reclamation tests, PR #28 call-bridge state model, PR #29 bridge scenario replay, PR #30 cross-crate property invariants, PR #31 local SIPp integration, and PR #32 signaling load/reclamation smoke; focused and full offline workspace tests pass and PR #28/#29/#30/#31/#32 hosted checks are green | [#32](https://github.com/W3Mirror/asterisk/pull/32) | Implement the next bounded offline differential or media-load slice |
-| Offline deterministic verification | in_progress | CP-058/CP-059/CP-060/CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067/CP-068/CP-069/CP-070/CP-071/CP-072/CP-073/CP-074/CP-075/CP-076/CP-082/CP-083/CP-084 define focused per-module tests, synthetic SIP replay, property invariants, API/event contracts, media fault injection, bridge/transfer state tests, local SIPp scenarios, differential tooling, load/soak/reclamation tiers, and hosted PR/main-push execution semantics | [#32](https://github.com/W3Mirror/asterisk/pull/32) | Add focused tests for the next differential or media-load slice |
-| Synthetic SIP scenario replay | in_progress | CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067/CP-068/CP-069/CP-070/CP-071/CP-072/CP-073/CP-074/CP-075/CP-076; PR #25 provides bounded atomic normal-call replay, PR #26 adds signaling/media faults, PR #27 adds transfer-command and terminal-reclamation replay, PR #28 adds a bounded AI-to-human bridge state model with five focused bridge tests, PR #29 adds bridge transition replay with three focused scenarios, PR #30 adds 13 cross-crate property tests, and PR #31 adds three pinned SIPp UDP scenarios; local full workspace (160 tests) passes, all three SIPp scenarios pass, ordinary workspace Clippy is green, and hosted PR #31 checks pass | [#31](https://github.com/W3Mirror/asterisk/pull/31) | Reconcile PR #32 and validate its load/reclamation coverage |
+| Phase 1 — Rust media engine | in_progress | CP-018/CP-026/CP-047/CP-049/CP-050/CP-054/CP-056/CP-058/CP-059/CP-060/CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067/CP-068/CP-069/CP-070/CP-071/CP-072/CP-073/CP-074/CP-075/CP-076/CP-082/CP-083/CP-084/CP-085; PR #2 foundation, PR #8 media/DTMF/recording, PR #18 bounded WebSocket adapter, PR #19 bounded stream driver, PR #20 UDP runtime, PR #21 parser fuzz harnesses, PR #22 hosted CI/offline verification contract, PR #25 deterministic SIP scenario replay, PR #26 deterministic fault corpus, PR #27 transfer/reclamation tests, PR #28 call-bridge state model, PR #29 bridge scenario replay, PR #30 cross-crate property invariants, PR #31 local SIPp integration, PR #32 signaling load/reclamation smoke, and PR #33 synthetic differential replay; focused and full offline workspace tests pass and PR #28/#29/#30/#31/#32 hosted checks are green | [#33](https://github.com/W3Mirror/asterisk/pull/33) | Publish PR #33 and verify hosted validation, then implement the next bounded media-load slice |
+| Offline deterministic verification | in_progress | CP-058/CP-059/CP-060/CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067/CP-068/CP-069/CP-070/CP-071/CP-072/CP-073/CP-074/CP-075/CP-076/CP-082/CP-083/CP-084/CP-085 define focused per-module tests, synthetic SIP replay, property invariants, API/event contracts, media fault injection, bridge/transfer state tests, local SIPp scenarios, differential tooling, load/soak/reclamation tiers, and hosted PR/main-push execution semantics | [#33](https://github.com/W3Mirror/asterisk/pull/33) | Publish PR #33 and add focused tests for the next media-load slice |
+| Synthetic SIP scenario replay | in_progress | CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067/CP-068/CP-069/CP-070/CP-071/CP-072/CP-073/CP-074/CP-075/CP-076/CP-085; PR #25 provides bounded atomic normal-call replay, PR #26 adds signaling/media faults, PR #27 adds transfer-command and terminal-reclamation replay, PR #28 adds a bounded AI-to-human bridge state model with five focused bridge tests, PR #29 adds bridge transition replay with three focused scenarios, PR #30 adds 13 cross-crate property tests, PR #31 adds three pinned SIPp UDP scenarios, and PR #33 adds a bounded synthetic semantic oracle comparator; local full workspace (170 tests) passes, all three SIPp scenarios pass, ordinary workspace Clippy is green, and differential/scenario focused tests pass | [#33](https://github.com/W3Mirror/asterisk/pull/33) | Publish PR #33 and validate its hosted differential replay coverage |
 | Local SIPp integration | in_progress | CP-074/CP-075/CP-076; PR #31 adds a Rust UDP UAS fixture, success/busy/cancel SIPp XML scenarios, a digest-pinned Ubuntu/SIPp Docker image, and an executable runner with terminal reclamation assertions; hosted Docker-backed SIPp checks pass | [#31](https://github.com/W3Mirror/asterisk/pull/31) | Keep the SIPp matrix as a regression gate while extending load/reclamation coverage |
 | Call bridge state model | in_progress | CP-067/CP-068; PR #28 adds provider-neutral bounded bridge ownership, AI/human routing transitions, failure fail-back, event backpressure atomicity, endpoint reclamation, and five focused tests; hosted validation is green | [#28](https://github.com/W3Mirror/asterisk/pull/28) | Integrate the bridge state model with call/runtime signaling and media |
 | Phase 2 — SIP edge shadow mode | in_progress | CP-026; PR #7 hosted run 33436951454 passed and GitHub reports CLEAN/MERGEABLE at `fe87301a5322e278a8fb39404d675c6372d87ad9` | [#7](https://github.com/W3Mirror/asterisk/pull/7) | Publish and validate PR #8's media-session slice |
@@ -5538,6 +5538,26 @@ blockers: Extended fuzz campaigns, large capacity/property matrices, SIPp expans
 next_action: Reconcile the next bounded offline differential or media-load slice onto the validated PR #32 head
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #32 or remove its load workflow steps if the harness contract is superseded
 notes: The ordinary PR run executes the full workspace rather than a changed-module-only subset. Focused tests are mandatory implementation content; a push to `aistack/main` repeats the same complete ordinary hosted suite, while extended and credentialed tiers remain separate gates.
+
+### CP-085 — synthetic differential replay locally green
+
+~~~yaml
+checkpoint_id: CP-085
+recorded_at_utc: 2026-09-01T09:19:14Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Synthetic semantic differential replay
+scope: Add one bounded, versioned semantic comparison path for deterministic Rust reports and future converted Asterisk/provider captures, beginning with an explicitly synthetic INVITE/SDP/CANCEL oracle
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-33
+branch: synthetic-differential-replay
+base_branch: rust-load-reclamation-smoke
+pr: pending publication
+head_sha: 0be88b06065cdda260ba319de87cf5ef66b0d117
+evidence: New `differential-replay` workspace package normalizes application call/bridge IDs, SIP Call-IDs, endpoints, transport/dialog-instance values, SDP addresses/ports/payload IDs, and timing while retaining ordered SIP status and complete CSeq, lifecycle/bridge events, call/bridge state, negotiated codec/direction, media counters, and cleanup; bounded versioned fixtures and mismatch diagnostics share one path for synthetic and future sanitized capture conversion; four differential tests cover oracle parity, environment-value removal, bounded semantic differences, and invalid fixture/config bounds; `scenario-replay` now parses and atomically retains SDP negotiation outcomes, with direct tests for successful retention, indexed invalid-SDP rollback, and combined local/remote SDP bounds; focused tests pass (4 differential and 15 scenario-replay), all 170 locked workspace tests pass, strict changed-package Clippy with `--no-deps -- -D warnings`, workspace Clippy/all targets, formatting, workflow YAML parsing, and `git diff --check` pass
+blockers: The checked-in oracle is synthetic and is not Asterisk/provider interoperability evidence; sanitized real captures, explained material differences, media/WebSocket load, long-duration soak/memory, runtime human-leg SIP origination/RTP composition, real provider interoperability, and rollback proof remain active goal work; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Commit and publish `synthetic-differential-replay` as stacked PR #33 against `rust-load-reclamation-smoke`, verify hosted Workspace/SIPp/load, Protocol fuzz, and Dependency audit checks on its final head, then select the next smallest media-load or runtime-composition slice
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the differential-replay PR if the fixture contract is superseded
+notes: Relevant code, five fixture files, six directly affected-module tests, documentation, and lockfile changes ship together. Every PR and push to `aistack/main` runs the complete suite; no affected-module-only selector is implemented. The synthetic oracle proves only the comparison machinery, and mismatches remain investigation evidence rather than automatic Rust defects. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
