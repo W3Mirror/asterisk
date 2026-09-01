@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**
-**Current checkpoint:** CP-068 — PR #27 hosted validation confirmed
-**Last checkpoint (UTC):** 2026-09-01T07:57:42Z
+**Current checkpoint:** CP-069 — PR #27 restack reconciled before hosted revalidation
+**Last checkpoint (UTC):** 2026-09-01T19:12:00Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Offline deterministic verification foundation across Milestones 2–5<br>
-**Next resume action:** Reconcile PR #28 onto the validated PR #27 head and run focused call-bridge checks
+**Next resume action:** Publish the restacked PR #27 head with an exact force-with-lease, then verify hosted checks and mergeability
 **Active PR:** [#27](https://github.com/W3Mirror/asterisk/pull/27); branch `sip-scenario-transfer-reclamation` targets `sip-scenario-faults`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-27`
@@ -4994,6 +4994,27 @@ blockers: Provider/Asterisk runtime identity, credentials, sanitized real captur
 next_action: Reconcile PR #28 onto the validated PR #27 head and run focused call-bridge checks
 rollback: Asterisk remains the active/fallback engine; no routing was changed
 notes: Focused affected-module tests are mandatory implementation-PR content. Hosted pull_request events run the complete ordinary workspace suite (not automatic module-only selection), and pushes to `aistack/main` repeat that complete ordinary hosted suite; extended fuzzing, SIPp/interoperability, capacity, property, soak, credentialed-provider, and real-time checks remain scheduled, manually dispatched, or approval-gated.
+```
+
+### CP-069 — PR #27 restack reconciled before hosted revalidation
+
+```yaml
+checkpoint_id: CP-069
+recorded_at_utc: 2026-09-01T19:12:00Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Offline deterministic verification foundation across Milestones 2–5
+scope: Reconcile the transfer/reclamation slice onto the current hosted-green PR #26 head while preserving the implementation test contract
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-27
+branch: sip-scenario-transfer-reclamation
+base_branch: sip-scenario-faults
+pr: "#27 https://github.com/W3Mirror/asterisk/pull/27"
+head_sha: d68d4eceb
+evidence: Restacked PR #27 onto the current PR #26 head `d56e1d06e`, preserving the transfer/reclamation implementation, focused tests, and prior PR #25/#26 ledger records. Local `cargo fmt --all -- --check`, focused `cargo test -p scenario-replay --locked` (10 passed), focused `cargo test -p call-engine --locked` (12 passed), full `cargo test --workspace --locked` (139 passed), workspace Clippy with the existing baseline warnings, strict scenario-replay Clippy, and `git diff --check` passed. The remote PR #27 head remains `30f2dab32` and requires exact SHA-pinned force-with-lease publication before hosted revalidation.
+blockers: Provider/Asterisk runtime identity, credentials, sanitized real captures, and live interoperability remain unavailable; they block only the later interoperability/traffic-evidence gate, not offline transfer/reclamation tests
+next_action: Publish PR #27 with a pinned force-with-lease using remote head `30f2dab32` as the lease, then verify hosted checks and OPEN/CLEAN/MERGEABLE state
+rollback: Asterisk remains the active/fallback engine; no routing was changed
+notes: Every implementation PR must include focused tests for each affected crate/module. Hosted pull_request events run the complete ordinary workspace suite (not automatic module-only selection), and pushes to `aistack/main` repeat that complete ordinary hosted suite; extended fuzzing, SIPp/interoperability, capacity, property, soak, credentialed-provider, and real-time checks remain scheduled, manually dispatched, or approval-gated.
 ```
 
 ## 59.4 Stacked-PR Checkpoints
