@@ -16,8 +16,9 @@ use std::{
 };
 
 use call_api::{
-    ApiError, AuditOperation, AuditOutcome, AuditRecord, AuthenticatedPrincipal, CallCommand,
-    CallMetrics, CallRegistry, CallRegistryConfig, CallSnapshot, NegotiatedAudio,
+    ApiError, AuditOperation, AuditOutcome, AuditRecord, AuthenticatedPrincipal,
+    BridgeControlOperation, CallCommand, CallMetrics, CallRegistry, CallRegistryConfig,
+    CallSnapshot, NegotiatedAudio,
 };
 use call_core::{CallId, CallState, CommandId, LifecycleEvent};
 use sip_auth::{DigestAuthorization, DigestChallenge, DigestCredentials, DigestError};
@@ -791,6 +792,132 @@ impl CallEngine {
         self.finish(Vec::new())
     }
 
+    /// Records an authorized bridge-control operation in the bounded audit
+    /// trail. Bridge state lives in the runtime bridge registry, while the
+    /// call engine owns the shared credential-free audit queue.
+    pub fn record_bridge_audit(
+        &mut self,
+        principal: &AuthenticatedPrincipal,
+        call_id: Option<&CallId>,
+        operation: BridgeControlOperation,
+        outcome: AuditOutcome,
+    ) {
+        self.registry.record_audit(
+            principal,
+            call_id,
+            AuditOperation::BridgeControl { operation },
+            outcome,
+        );
+    }
+
+    /// Hangs up one call, sending an in-dialog BYE when its dialog is
+    /// confirmed and terminalizing an unconfirmed call without leaving
+    /// signaling resources behind.
+    ///
+    /// The operation is transactional: all validation, bounded registry
+    /// changes, and request construction happen on a clone before this engine
+    /// is replaced. A confirmed dialog remains in `Ending` until the final
+    /// BYE response arrives; that response emits `call.ended` and releases
+    /// the dialog and BYE transaction.
+    pub fn hangup(
+        &mut self,
+        id: &CallId,
+        now: Duration,
+        reliability: TransportReliability,
+    ) -> Result<EngineOutput, EngineError> {
+        let mut working = self.clone();
+        let output = working.hangup_inner(id, now, reliability)?;
+        *self = working;
+        Ok(output)
+    }
+
+    fn hangup_inner(
+        &mut self,
+        id: &CallId,
+        now: Duration,
+        reliability: TransportReliability,
+    ) -> Result<EngineOutput, EngineError> {
+        let snapshot = self.registry.snapshot(id)?;
+        if matches!(
+            snapshot.state,
+            CallState::Ended | CallState::Failed | CallState::Ending
+        ) {
+            return Err(EngineError::CallApi(ApiError::InvalidCommand {
+                state: snapshot.state,
+                command: CallCommand::Hangup,
+            }));
+        }
+
+        let Some(dialog) = self.dialogs.get(id).cloned() else {
+            let mut registry = self.registry.clone();
+            ensure_event_capacity_for(&registry, 2)?;
+            registry.apply(id, CallCommand::Hangup)?;
+            registry.apply(id, CallCommand::End)?;
+            self.registry = registry;
+            self.remove_call_resources(id);
+            return self.finish(Vec::new());
+        };
+
+        if dialog.state() != DialogState::Confirmed {
+            let mut registry = self.registry.clone();
+            ensure_event_capacity_for(&registry, 2)?;
+            registry.apply(id, CallCommand::Hangup)?;
+            registry.apply(id, CallCommand::End)?;
+            self.registry = registry;
+            self.remove_call_resources(id);
+            return self.finish(Vec::new());
+        }
+
+        self.ensure_transaction_capacity()?;
+        let (template_request, template_response, destination) = match dialog.role() {
+            DialogRole::Uac => self
+                .final_invites
+                .values()
+                .find(|invite| invite.call_id == *id && invite.successful)
+                .map(|invite| {
+                    (
+                        invite.request.clone(),
+                        invite.response.clone(),
+                        invite.destination,
+                    )
+                })
+                .ok_or(EngineError::UnknownDialog)?,
+            DialogRole::Uas => self
+                .final_server_invites
+                .values()
+                .find(|invite| invite.call_id == *id)
+                .map(|invite| {
+                    (
+                        invite.request.clone(),
+                        invite.response.clone(),
+                        invite.destination,
+                    )
+                })
+                .ok_or(EngineError::UnknownDialog)?,
+        };
+        let mut next_branch = self.next_branch;
+        let branch = self.allocate_unique_client_branch_for(&mut next_branch, &SipMethod::Bye)?;
+        let key = transaction_key(&branch, &SipMethod::Bye);
+        let mut dialog = dialog;
+        let request = build_bye(&branch, &template_request, &template_response, &mut dialog)?;
+        let transaction =
+            ClientTransaction::new(request.clone(), now, reliability, self.config.timers)?;
+        let mut registry = self.registry.clone();
+        ensure_event_capacity_for(&registry, 1)?;
+        registry.apply(id, CallCommand::Hangup)?;
+
+        self.registry = registry;
+        self.dialogs.insert(id.clone(), dialog);
+        self.client_transactions.insert(key.clone(), transaction);
+        self.client_destinations.insert(key.clone(), destination);
+        self.client_calls.insert(key, id.clone());
+        self.next_branch = next_branch;
+        self.finish(vec![SendAction {
+            destination,
+            message: SipMessage::Request(request),
+        }])
+    }
+
     /// Applies one call command after verifying the principal's permission.
     pub fn apply_authorized_call_command(
         &mut self,
@@ -1184,15 +1311,29 @@ impl CallEngine {
 
         let _transaction_actions = transaction.on_response(&response, now)?;
         let call_state = registry.snapshot(&call_id)?.state;
-        let command = (response_method == SipMethod::Invite)
-            .then(|| response_call_command(call_state, response.status_code))
-            .flatten();
+        let command = if response_method == SipMethod::Bye && response.status_code >= 200 {
+            (call_state == CallState::Ending).then_some(CallCommand::End)
+        } else {
+            (response_method == SipMethod::Invite)
+                .then(|| response_call_command(call_state, response.status_code))
+                .flatten()
+        };
         if command.is_some() {
             ensure_event_capacity_for(&registry, 1)?;
         }
         let _dialog_actions = dialog.receive_response(&response)?;
         if let Some(command) = command {
             registry.apply(&call_id, command)?;
+        }
+
+        // A final response to a locally generated BYE completes the call
+        // lifecycle and releases the dialog, transaction, and any retained
+        // final INVITE response. The response itself has already been
+        // validated by both the transaction and dialog layers above.
+        if response_method == SipMethod::Bye && response.status_code >= 200 {
+            self.registry = registry;
+            self.remove_call_resources(&call_id);
+            return self.finish(Vec::new());
         }
 
         let mut output_actions = Vec::new();
@@ -2296,11 +2437,19 @@ impl CallEngine {
     }
 
     fn allocate_unique_client_branch(&self, next_branch: &mut u64) -> Result<String, EngineError> {
+        self.allocate_unique_client_branch_for(next_branch, &SipMethod::Invite)
+    }
+
+    fn allocate_unique_client_branch_for(
+        &self,
+        next_branch: &mut u64,
+        method: &SipMethod,
+    ) -> Result<String, EngineError> {
         loop {
             let sequence = *next_branch;
             *next_branch = sequence.checked_add(1).ok_or(EngineError::InvalidConfig)?;
-            let branch = format!("z9hG4bKrust-auth-{sequence}");
-            let key = transaction_key(&branch, &SipMethod::Invite);
+            let branch = format!("z9hG4bKrust-{}-{sequence}", method_branch_label(method));
+            let key = transaction_key(&branch, method);
             if self.ensure_new_transaction(&key).is_ok() {
                 return Ok(branch);
             }
@@ -2339,6 +2488,23 @@ impl CallEngine {
 
 fn required_header<'a>(headers: &'a Headers, name: &'static str) -> Result<&'a str, EngineError> {
     header_value(headers, name).ok_or(EngineError::MissingHeader(name))
+}
+
+fn method_branch_label(method: &SipMethod) -> &'static str {
+    match method {
+        SipMethod::Invite => "invite",
+        SipMethod::Bye => "bye",
+        SipMethod::Cancel => "cancel",
+        SipMethod::Ack => "ack",
+        SipMethod::Options => "options",
+        SipMethod::Prack => "prack",
+        SipMethod::Register => "register",
+        SipMethod::Refer => "refer",
+        SipMethod::Notify => "notify",
+        SipMethod::Info => "info",
+        SipMethod::Update => "update",
+        SipMethod::Other(_) => "other",
+    }
 }
 
 fn header_value<'a>(headers: &'a Headers, name: &str) -> Option<&'a str> {
@@ -2682,6 +2848,53 @@ fn build_ack(
         } else {
             request.request_uri.clone()
         },
+        version: "SIP/2.0".to_owned(),
+        headers,
+        body: Vec::new(),
+    })
+}
+
+fn build_bye(
+    branch: &str,
+    initial_request: &SipRequest,
+    final_response: &SipResponse,
+    dialog: &mut Dialog,
+) -> Result<SipRequest, EngineError> {
+    let cseq = dialog.next_local_sequence_for(SipMethod::Bye)?;
+    let from = match dialog.role() {
+        DialogRole::Uac => required_header(&initial_request.headers, "From")?,
+        DialogRole::Uas => required_header(&final_response.headers, "To")?,
+    };
+    let to = match dialog.role() {
+        DialogRole::Uac => required_header(&final_response.headers, "To")?,
+        DialogRole::Uas => required_header(&initial_request.headers, "From")?,
+    };
+    let via = match dialog.role() {
+        DialogRole::Uac => {
+            replace_top_via_branch(required_header(&initial_request.headers, "Via")?, branch)?
+        }
+        DialogRole::Uas => {
+            let transport = required_header(&initial_request.headers, "Via")?
+                .split_whitespace()
+                .next()
+                .filter(|value| !value.is_empty())
+                .unwrap_or("SIP/2.0/UDP");
+            format!("{transport} rust.invalid;branch={branch}")
+        }
+    };
+    let mut headers = Headers::new();
+    headers.push("Via", via);
+    headers.push("Max-Forwards", "70");
+    headers.push("From", from);
+    headers.push("To", to);
+    headers.push("Call-ID", dialog.call_id());
+    headers.push("CSeq", format!("{cseq} BYE"));
+    for route in dialog.route_set() {
+        headers.push("Route", format!("<{route}>"));
+    }
+    Ok(SipRequest {
+        method: SipMethod::Bye,
+        request_uri: dialog.remote_target().to_owned(),
         version: "SIP/2.0".to_owned(),
         headers,
         body: Vec::new(),
@@ -4736,6 +4949,102 @@ mod tests {
             })
         )));
         assert_eq!(engine.snapshot(&call_id).unwrap().state, CallState::Ended);
+    }
+
+    #[test]
+    fn local_hangup_sends_in_dialog_bye_and_finishes_on_response() {
+        let mut engine = CallEngine::new(EngineConfig::default()).unwrap();
+        let request = invite(
+            "local-bye",
+            "local-bye-call",
+            "Bob <sip:bob@example.com>",
+            "1 INVITE",
+        );
+        let (call_id, _) = engine
+            .originate(
+                request.clone(),
+                address(5060),
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        let invite_response = successful_response(&request);
+        let answered = engine
+            .receive_response(invite_response, Duration::from_millis(1))
+            .unwrap();
+        assert!(answered.actions().iter().any(|action| matches!(
+            action.message,
+            SipMessage::Request(SipRequest {
+                method: SipMethod::Ack,
+                ..
+            })
+        )));
+
+        let hanging_up = engine
+            .hangup(
+                &call_id,
+                Duration::from_millis(2),
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        let bye = hanging_up
+            .actions()
+            .iter()
+            .find_map(|action| match &action.message {
+                SipMessage::Request(request) if request.method == SipMethod::Bye => {
+                    Some(request.clone())
+                }
+                _ => None,
+            })
+            .expect("local hangup should emit an in-dialog BYE");
+        assert_eq!(engine.snapshot(&call_id).unwrap().state, CallState::Ending);
+        assert_eq!(engine.metrics().active_transactions, 1);
+        assert_eq!(bye.headers.get("CSeq"), Some("2 BYE"));
+        assert_eq!(bye.headers.get("Call-ID"), Some("local-bye-call"));
+        assert!(bye.headers.get("To").is_some_and(value_has_tag));
+
+        let completed = engine
+            .receive_response(successful_response(&bye), Duration::from_millis(3))
+            .unwrap();
+        assert!(
+            completed
+                .events()
+                .iter()
+                .any(|event| { event.call_id == call_id && event.kind == CallEventKind::Ended })
+        );
+        assert_eq!(engine.snapshot(&call_id).unwrap().state, CallState::Ended);
+        assert_eq!(engine.metrics().active_transactions, 0);
+        assert_eq!(engine.metrics().active_dialogs, 0);
+    }
+
+    #[test]
+    fn local_hangup_terminalizes_pending_call_without_orphaned_resources() {
+        let mut engine = CallEngine::new(EngineConfig::default()).unwrap();
+        let (call_id, _) = engine
+            .originate(
+                invite(
+                    "pending-bye",
+                    "pending-bye-call",
+                    "Bob <sip:bob@example.com>",
+                    "1 INVITE",
+                ),
+                address(5060),
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+
+        let output = engine
+            .hangup(
+                &call_id,
+                Duration::from_millis(1),
+                TransportReliability::Unreliable,
+            )
+            .unwrap();
+        assert!(output.actions().is_empty());
+        assert_eq!(engine.snapshot(&call_id).unwrap().state, CallState::Ended);
+        assert_eq!(engine.metrics().active_transactions, 0);
+        assert_eq!(engine.metrics().active_dialogs, 0);
     }
 
     #[test]
