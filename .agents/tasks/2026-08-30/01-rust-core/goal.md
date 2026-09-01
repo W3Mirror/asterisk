@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**
-**Current checkpoint:** CP-055 — PR #19 ledger normalized before publication
-**Last checkpoint (UTC):** 2026-09-01T18:00:00Z
+**Current checkpoint:** CP-056 — PR #19 hosted validation confirmed after ledger update
+**Last checkpoint (UTC):** 2026-09-01T17:49:30Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Milestone 4 — Dialog + SDP + Basic Calls<br>
-**Next resume action:** Commit and push the normalized PR #19 ledger, then verify hosted CI before reconciling PR #20
+**Next resume action:** Reconcile PR #20 onto exact published PR #19 head `5ed8de81f`, run focused UDP-runtime checks, publish, and verify hosted CI and mergeability
 **Active PR:** [#19](https://github.com/W3Mirror/asterisk/pull/19); branch `media-websocket-transport` targets `media-websocket`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-19-media-websocket-transport`
@@ -4651,6 +4651,27 @@ evidence: The active ledger now has one rendered row for each PR #1 through #19;
 blockers: The ledger cleanup commit has not yet been published or rechecked by hosted CI; provider credentials, sanitized captures, Asterisk/provider interoperability, rollback execution, and safe production Rust traffic remain unavailable
 next_action: Commit and push the ledger cleanup with normal hooks, then verify local/origin/GitHub parity and the resulting hosted workflow
 rollback: Restore the pre-cleanup branch head if publication must be abandoned; keep all signaling, media, and call routing on Asterisk and do not enable Rust traffic
+notes: Focused affected-module tests remain required in each implementation PR. Pull requests and pushes to `aistack/main` run the complete ordinary hosted workspace/offline suite; extended and credentialed/live-call checks remain scheduled/manual or approval-gated.
+```
+
+### CP-056 — PR #19 hosted validation confirmed after ledger update
+
+```yaml
+checkpoint_id: CP-056
+recorded_at_utc: 2026-09-01T17:49:30Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Milestone 2/4 — Dialog + SDP + Basic Calls
+scope: Revalidate the normalized PR #19 ledger on hosted CI
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-19-media-websocket-transport
+branch: media-websocket-transport
+base_branch: media-websocket
+pr: "#19 https://github.com/W3Mirror/asterisk/pull/19"
+head_sha: 5ed8de81fff7f958e172b1366fe02e750f949067
+evidence: Hosted Rust quality run [33539530314](https://github.com/W3Mirror/asterisk/actions/runs/33539530314) completed successfully for this exact head on hosted `ubuntu-latest`: Workspace checks, Protocol fuzz checks, and Dependency audit passed. GitHub reports PR #19 OPEN and CLEAN against exact PR #18 head `e96887d14`.
+blockers: Production deployment identity, effective configuration, provider credentials, sanitized captures, Asterisk/provider interoperability, rollback execution, and safe production Rust traffic remain unavailable; Asterisk routing remains the fallback
+next_action: Reconcile PR #20 onto exact published PR #19 head `5ed8de81f`, run focused UDP-runtime checks, publish, and verify hosted CI and mergeability
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic
 notes: Focused affected-module tests remain required in each implementation PR. Pull requests and pushes to `aistack/main` run the complete ordinary hosted workspace/offline suite; extended and credentialed/live-call checks remain scheduled/manual or approval-gated.
 ```
 
