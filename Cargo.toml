@@ -11,6 +11,7 @@ members = [
   "crates/call-core",
   "crates/sip-transaction",
   "crates/sip-transport",
+  "crates/sip-dialog",
 ]
 
 [workspace.package]
