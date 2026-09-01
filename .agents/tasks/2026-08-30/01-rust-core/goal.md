@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-088 — PR #33 final ledger head hosted validation confirmed
-**Last checkpoint (UTC):** 2026-09-01T09:38:29Z
+**Current checkpoint:** CP-090 — PR #33 restack hosted validation confirmed
+**Last checkpoint (UTC):** 2026-09-01T21:06:33Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Synthetic semantic differential replay<br>
 **Next resume action:** Reconcile PR #34 onto the validated PR #33 head before beginning the next runtime-composition slice
@@ -5641,6 +5641,27 @@ evidence: `cargo test -p differential-replay --locked` passed 4 tests; `cargo te
 blockers: The remote PR still points at stale head `6a81945a52e46f03f611d493d1aeeccf449e5a52` and reports DIRTY/CONFLICTING until the exact lease-pinned force push; the oracle remains synthetic and is not Asterisk/provider interoperability evidence. Sanitized real captures, media/WebSocket load, long-duration soak/memory, runtime human-leg SIP origination/RTP composition, provider interoperability, and rollback proof remain active goal work.
 next_action: Publish `e1b123a4c5ad9c5c6e4b051f00250d50c65c8ef9` to PR #33 with an exact SHA-pinned `--force-with-lease`, then verify hosted checks and mergeability.
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; restore the backup branch `backup/synthetic-differential-replay-before-restack-20260901` if the restacked publication must be abandoned.
+notes: Focused affected-module tests remain mandatory PR content. Hosted pull_request and `aistack/main` push events run the complete ordinary locked workspace suite; extended load/property, differential replay, capacity, soak, credentialed-provider, and real-time checks remain separate scheduled, manual, or approval-gated tiers. Docker is limited to the pinned SIPp dependency.
+~~~
+
+### CP-090 — PR #33 restack hosted validation confirmed
+
+~~~yaml
+checkpoint_id: CP-090
+recorded_at_utc: 2026-09-01T21:06:33Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Synthetic semantic differential replay
+scope: Validate the published restacked differential-replay head through every ordinary hosted Rust quality gate
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-33
+branch: synthetic-differential-replay
+base_branch: rust-load-reclamation-smoke
+pr: "#33 https://github.com/W3Mirror/asterisk/pull/33"
+head_sha: da5d06b54947e990aaf70f47efa2f05432ffea84
+evidence: Hosted Rust quality run [33558834375](https://github.com/W3Mirror/asterisk/actions/runs/33558834375) completed successfully for this exact head on hosted `ubuntu-latest`: Workspace checks (formatting, complete locked workspace tests, Docker-backed local SIPp scenarios, deterministic signaling reclamation smoke, and workspace Clippy), protocol fuzz checks, and dependency audit all passed; the extended signaling load and extended property steps were skipped as scheduled-only gates. GitHub reports PR #33 OPEN, CLEAN, and MERGEABLE against PR #32's final head `cd1785962515832216d87685e11ea8213742aae5`.
+blockers: The checked-in oracle is synthetic and is not Asterisk/provider interoperability evidence; sanitized real captures, explained material differences, media/WebSocket load, long-duration soak/memory, runtime human-leg SIP origination/RTP composition, real provider interoperability, and rollback proof remain active goal work; Rust traffic stays disabled and Asterisk remains the fallback.
+next_action: Reconcile PR #34's unique runtime-human-leg commits onto this validated PR #33 head, then run its focused and hosted checks.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; restore `backup/synthetic-differential-replay-before-restack-20260901` if the restacked publication must be abandoned.
 notes: Focused affected-module tests remain mandatory PR content. Hosted pull_request and `aistack/main` push events run the complete ordinary locked workspace suite; extended load/property, differential replay, capacity, soak, credentialed-provider, and real-time checks remain separate scheduled, manual, or approval-gated tiers. Docker is limited to the pinned SIPp dependency.
 ~~~
 
