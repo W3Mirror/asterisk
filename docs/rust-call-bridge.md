@@ -53,3 +53,9 @@ This foundation does not yet originate the human SIP transaction or forward
 media between two RTP sessions. Those runtime integrations must consume this
 state model in later slices and retain Asterisk as the production fallback
 until provider and real-call evidence satisfies the goal's traffic gates.
+
+`scenario-replay` consumes the same bridge transitions offline. Its reports
+include ordered bridge events and final bridge snapshots, and a rejected bridge
+step rolls back the complete signaling, media, and bridge scenario. This gives
+the control contract deterministic regression coverage without claiming live
+signaling or media integration.
