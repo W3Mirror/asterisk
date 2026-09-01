@@ -53,14 +53,14 @@ pub struct ProcessSample {
 }
 
 impl ProcessSample {
-    fn capture() -> Self {
+    pub(crate) fn capture() -> Self {
         Self {
             resident_bytes: resident_bytes(),
             open_file_descriptors: fs::read_dir("/proc/self/fd").ok().map(Iterator::count),
         }
     }
 
-    fn include(&mut self, sample: Self) {
+    pub(crate) fn include(&mut self, sample: Self) {
         self.resident_bytes = max_optional(self.resident_bytes, sample.resident_bytes);
         self.open_file_descriptors =
             max_optional(self.open_file_descriptors, sample.open_file_descriptors);
