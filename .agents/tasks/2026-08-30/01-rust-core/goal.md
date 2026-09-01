@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-220 — Non-real-time acceptance and CI test contract confirmed
-**Last checkpoint (UTC):** 2026-09-01T00:36:15Z
+**Current checkpoint:** CP-231 — PR #72 final PR-check parity reconciled
+**Last checkpoint (UTC):** 2026-09-01T02:23:46Z
 **Active phase:** Phase 1 — Rust media engine
-**Active milestone:** Bridge terminalization and Asterisk fallback<br>
-**Next resume action:** Commit and publish this goal-contract clarification, reconcile hosted CI, then continue the next bounded offline acceptance slice from the resulting head without enabling Rust traffic
-**Active PR:** #71 — `bridge-terminalization` targets `bridge-control-auth` (final hosted validation green; open and mergeable)
+**Active milestone:** In-dialog SIP request interoperability and Asterisk fallback<br>
+**Next resume action:** Create the next tracked worktree from exact head `cd7cb77cd` and add replay coverage for outbound in-dialog requests without enabling Rust traffic
+**Active PR:** #72 — `in-dialog-requests` targets `bridge-terminalization` (final ledger-head hosted validation green; open and mergeable)
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-71-bridge-terminalization`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-72-in-dialog-requests`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -2098,8 +2098,8 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 | Workstream | Status | Evidence / checkpoint | PR | Next action |
 | --- | --- | --- | --- | --- |
 | Phase 0 — current Asterisk surface | in_progress | CP-004/CP-010/CP-045/CP-051; `docs/current-asterisk-surface.md` (commit `edba8386c` plus 2026-08-30 rechecks); no Asterisk runtime, target SIP/RTP/8088 listeners, `.env.aistack`, or sanitized capture corpus; DNS/config/host address drift remains | #1 | Obtain provider/runtime access and sanitized successful/failed fixtures |
-| Phase 1 — Rust media engine | in_progress | CP-005/CP-008/CP-019/CP-042/CP-047–CP-067, CP-138, CP-142–CP-197, CP-199–CP-206, CP-217–CP-220; PR #2 safe protocol/media foundation, PR #8 bounded RTP↔AI media session/DTMF/PCM recorder, PR #18 WebSocket adapter, PR #19 stream driver, PR #20 UDP RTP/RTCP runtime, PR #21 parser fuzz harnesses, PR #25 deterministic replay foundation, PR #26 signaling/media fault corpus, PR #47 lazy provider Digest resolution, PR #48 provider-route gating, PR #50 routed provider-auth context, PR #51 PRACK/100rel support, PR #52 reliable provisional retransmission, PR #53 SIP-over-TLS transport, PR #54 bounded lifecycle-event replay, PR #55 bounded command idempotency, PR #56 authenticated control-plane access, PR #57 cardinality-safe aggregate metrics, PR #58 capacity-aware health/readiness, PR #59 bounded audit signals, PR #60 graceful drain, PR #61 transport-failure cleanup, PR #62 AI/WebSocket disconnect cleanup, PR #63 bounded media recording, PR #64 post-call recording finalization, PR #65 recorder error propagation, PR #66 redaction-safe call diagnostics, PR #67 controlled process-restart handoff, and PR #71 bridge terminalization; repository-native hosted Rust CI runs the complete ordinary suite on every PR and push to `aistack/main` | [#71](https://github.com/W3Mirror/asterisk/pull/71) OPEN/CLEAN/MERGEABLE at `59d1d4619`; final hosted run `33454616368` green; [#70](https://github.com/W3Mirror/asterisk/pull/70) OPEN/CLEAN/MERGEABLE at `c8834a222`; [#69](https://github.com/W3Mirror/asterisk/pull/69) OPEN/CLEAN/MERGEABLE at `49cea7b26`; [#67](https://github.com/W3Mirror/asterisk/pull/67) OPEN/CLEAN/MERGEABLE at `c1944645e`; final hosted run `33420380060` green; [#66](https://github.com/W3Mirror/asterisk/pull/66) OPEN/CLEAN/MERGEABLE at `495af2985`; [#65](https://github.com/W3Mirror/asterisk/pull/65) OPEN/CLEAN/MERGEABLE at `a2ed61e`; [#64](https://github.com/W3Mirror/asterisk/pull/64) OPEN/CLEAN/MERGEABLE at `14abe4a`; #63 OPEN/CLEAN/MERGEABLE at `9adb9d084`; #62 OPEN/CLEAN/MERGEABLE at `e8355f391`; #61 OPEN/CLEAN/MERGEABLE at `ba4bdde6d`; #60 OPEN/CLEAN/MERGEABLE at `3ec8e9618`; #59 OPEN/CLEAN/MERGEABLE at `723af3937`; #58 OPEN/CLEAN/MERGEABLE at `889c250f4`; #57 OPEN/CLEAN/MERGEABLE at `afa5de0fc`; #56 OPEN/CLEAN/MERGEABLE at `bec6974b3`; #55 OPEN/CLEAN/MERGEABLE at `55b32fc9`; #54 OPEN/CLEAN/MERGEABLE at `a6b04012b`; #53 OPEN/CLEAN/MERGEABLE at `a496e114a`; #52 OPEN/CLEAN/MERGEABLE; #51 OPEN/CLEAN/MERGEABLE | Reconcile hosted CI for this goal-contract clarification, then continue from the resulting head without enabling Rust traffic |
-| Offline deterministic verification | in_progress | CP-060–CP-067 plus CP-143–CP-197, CP-199–CP-206, and CP-217–CP-220 cover bounded replay, signaling/media faults, provider routing, lazy Digest resolution, duplicate-challenge replay, PRACK/100rel sequencing and RAck validation, atomic error paths, secret redaction, terminal context reclamation, TLS handshake/certificate validation, bounded SIP-over-TLS framing, explicit terminal `Ended` events, bounded lifecycle-event replay with evicted-cursor errors, bounded command idempotency with cross-crate property coverage, authenticated control-plane authorization, label-free aggregate metrics with identifier-redaction assertions, capacity-aware health/readiness with terminal retention metrics, credential-free bounded audit outcomes for authorized operations, graceful drain/restart admission with stateless rejection and existing-dialog continuation, TCP transport-loss failure/reclamation, AI/WebSocket disconnect cleanup, bounded caller/agent recording capture, timestamp-aligned mixed WAV export, configuration validation, idempotent post-call recording finalization, terminal recording reclamation, recorder error propagation without process panics, redaction-safe call diagnostics/listing with authorization and bounded signaling/media detail, controlled process-restart handoff with idempotent terminalization, ordered call/bridge events, admission drain, provider-context cleanup, bounded resource reclamation, and bridge terminalization with authorized audit outcomes and transactional SIP BYE cleanup; focused call-api (18 tests), call-engine (36 tests), and call-runtime (52 tests), complete locked workspace tests (311 tests), format, workspace Clippy, and `git diff --check` pass locally; hosted PR #71 final run `33454616368` passed Workspace, Protocol fuzz, and Dependency audit checks; schedule/manual-only Signaling capacity matrix and Two-hour lifecycle soak correctly skipped for the pull-request event. The PR and `aistack/main` push events run the complete ordinary hosted suite on `ubuntu-latest`, including affected-module tests through the workspace invocation; all workflow runners remain hosted and Docker is limited to the pinned SIPp integration dependency. Larger capacity, extended property, multi-hour soak, and credentialed provider/live-call evidence remain scheduled/manual or approval-gated | [#71](https://github.com/W3Mirror/asterisk/pull/71) OPEN/CLEAN/MERGEABLE at `59d1d4619` | Reconcile hosted CI for this goal-contract clarification, then continue from the resulting head without enabling Rust traffic |
+| Phase 1 — Rust media engine | in_progress | CP-005/CP-008/CP-019/CP-042/CP-047–CP-067, CP-138, CP-142–CP-197, CP-199–CP-206, CP-217–CP-230; PR #2 safe protocol/media foundation, PR #8 bounded RTP↔AI media session/DTMF/PCM recorder, PR #18 WebSocket adapter, PR #19 stream driver, PR #20 UDP RTP/RTCP runtime, PR #21 parser fuzz harnesses, PR #25 deterministic replay foundation, PR #26 signaling/media fault corpus, PR #47 lazy provider Digest resolution, PR #48 provider-route gating, PR #50 routed provider-auth context, PR #51 PRACK/100rel support, PR #52 reliable provisional retransmission, PR #53 SIP-over-TLS transport, PR #54 bounded lifecycle-event replay, PR #55 bounded command idempotency, PR #56 authenticated control-plane access, PR #57 cardinality-safe aggregate metrics, PR #58 capacity-aware health/readiness, PR #59 bounded audit signals, PR #60 graceful drain, PR #61 transport-failure cleanup, PR #62 AI/WebSocket disconnect cleanup, PR #63 bounded media recording, PR #64 post-call recording finalization, PR #65 recorder error propagation, PR #66 redaction-safe call diagnostics, PR #67 controlled process-restart handoff, PR #71 bridge terminalization, and PR #72 inbound in-dialog SIP method admission; repository-native hosted Rust CI runs the complete ordinary suite on every PR and push to `aistack/main` | [#72](https://github.com/W3Mirror/asterisk/pull/72) OPEN/CLEAN/MERGEABLE at `959d4846f`; synchronized hosted run `33460469661` green; [#71](https://github.com/W3Mirror/asterisk/pull/71) OPEN/CLEAN/MERGEABLE at `59d1d4619`; final hosted run `33454616368` green; [#70](https://github.com/W3Mirror/asterisk/pull/70) OPEN/CLEAN/MERGEABLE at `c8834a222`; [#69](https://github.com/W3Mirror/asterisk/pull/69) OPEN/CLEAN/MERGEABLE at `49cea7b26`; [#67](https://github.com/W3Mirror/asterisk/pull/67) OPEN/CLEAN/MERGEABLE at `c1944645e`; final hosted run `33420380060` green; [#66](https://github.com/W3Mirror/asterisk/pull/66) OPEN/CLEAN/MERGEABLE at `495af2985`; [#65](https://github.com/W3Mirror/asterisk/pull/65) OPEN/CLEAN/MERGEABLE at `a2ed61e`; [#64](https://github.com/W3Mirror/asterisk/pull/64) OPEN/CLEAN/MERGEABLE at `14abe4a`; #63 OPEN/CLEAN/MERGEABLE at `9adb9d084`; #62 OPEN/CLEAN/MERGEABLE at `e8355f391`; #61 OPEN/CLEAN/MERGEABLE at `ba4bdde6d`; #60 OPEN/CLEAN/MERGEABLE at `3ec8e9618`; #59 OPEN/CLEAN/MERGEABLE at `723af3937`; #58 OPEN/CLEAN/MERGEABLE at `889c250f4`; #57 OPEN/CLEAN/MERGEABLE at `afa5de0fc`; #56 OPEN/CLEAN/MERGEABLE at `bec6974b3`; #55 OPEN/CLEAN/MERGEABLE at `55b32fc9`; #54 OPEN/CLEAN/MERGEABLE at `a6b04012b`; #53 OPEN/CLEAN/MERGEABLE at `a496e114a`; #52 OPEN/CLEAN/MERGEABLE; #51 OPEN/CLEAN/MERGEABLE | Continue the next bounded offline acceptance slice from exact head `959d4846f` without enabling Rust traffic |
+| Offline deterministic verification | in_progress | CP-060–CP-067 plus CP-143–CP-197, CP-199–CP-206, and CP-217–CP-230 cover bounded replay, signaling/media faults, provider routing, lazy Digest resolution, duplicate-challenge replay, PRACK/100rel sequencing and RAck validation, atomic error paths, secret redaction, terminal context reclamation, TLS handshake/certificate validation, bounded SIP-over-TLS framing, explicit terminal `Ended` events, bounded lifecycle-event replay with evicted-cursor errors, bounded command idempotency with cross-crate property coverage, authenticated control-plane authorization, label-free aggregate metrics with identifier-redaction assertions, capacity-aware health/readiness with terminal retention metrics, credential-free bounded audit outcomes for authorized operations, graceful drain/restart admission with stateless rejection and existing-dialog continuation, TCP transport-loss failure/reclamation, AI/WebSocket disconnect cleanup, bounded caller/agent recording capture, timestamp-aligned mixed WAV export, configuration validation, idempotent post-call recording finalization, terminal recording reclamation, recorder error propagation without process panics, redaction-safe call diagnostics/listing with authorization and bounded signaling/media detail, controlled process-restart handoff with idempotent terminalization, ordered call/bridge events, admission drain, provider-context cleanup, bounded resource reclamation, bridge terminalization with authorized audit outcomes and transactional SIP BYE cleanup, and in-dialog INFO/UPDATE/REFER/NOTIFY admission with dialog validation and atomic unsupported-method rejection; focused call-api (18 tests), call-engine (44 tests), and call-runtime (53 tests), complete locked workspace tests, format, workspace Clippy, and `git diff --check` pass locally; synchronized hosted PR #72 run `33460469661` passed Workspace, Protocol fuzz, and Dependency audit checks, while schedule/manual-only Signaling capacity matrix and Two-hour lifecycle soak correctly skipped for the pull-request event. The PR and `aistack/main` push events run the complete ordinary hosted suite on `ubuntu-latest`, including affected-module tests through the workspace invocation; all workflow runners remain hosted and Docker is limited to the pinned SIPp integration dependency. Larger capacity, extended property, multi-hour soak, and credentialed provider/live-call evidence remain scheduled/manual or approval-gated | [#72](https://github.com/W3Mirror/asterisk/pull/72) OPEN/CLEAN/MERGEABLE at `959d4846f` | Continue the next bounded offline acceptance slice from exact head `959d4846f` without enabling Rust traffic |
 | Authenticated control-plane access | hosted_green | CP-169–CP-171; permission-gated API/engine/runtime wrappers, bounded non-secret principals, authorization-before-lookup, idempotent retry protection, terminal-resource cleanup, focused and property tests; hosted PR #56 validation green | [#56](https://github.com/W3Mirror/asterisk/pull/56) | Continue with observability and other bounded non-real-time acceptance slices |
 | Cardinality-safe observability | hosted_green | CP-172–CP-173; bounded call lifecycle counters, active-resource/queue gauges, signaling retransmission gauges, label-free Prometheus exposition, runtime delegation, identifier-redaction tests, 268 locked workspace tests, local SIPp/load/soak/fuzz checks, and hosted PR #57 validation green | [#57](https://github.com/W3Mirror/asterisk/pull/57) | Continue the next bounded control-plane, interoperability, or transport gap |
 | Health/readiness | hosted_green | CP-174–CP-175; capacity-aware `live`/`ready` state, retained-call metrics, label-free health exposition, runtime delegation, and focused terminal-reclamation/readiness tests; local 270-test workspace, format, Clippy, SIPp, load/smoke, soak, and six-target fuzz checks pass; hosted run `33389642572` passed workspace, fuzz, and dependency-audit jobs while scheduled capacity/soak jobs skipped as intended | [#58](https://github.com/W3Mirror/asterisk/pull/58) OPEN/CLEAN/MERGEABLE at `889c250f4` | Start the next bounded control-plane, interoperability, or transport slice from `health-readiness` |
@@ -6898,6 +6898,237 @@ blockers: This documentation update requires commit/publication and one hosted-h
 next_action: Commit and push this goal clarification, verify the hosted PR result and exact local/origin/GitHub parity, then continue the next bounded offline acceptance slice without enabling Rust traffic.
 rollback: Revert this documentation-only checkpoint if superseded; keep all signaling, media, and call routing on Asterisk and do not enable Rust traffic.
 notes: A PR does run tests when opened and whenever it is updated, but the current workflow does not infer an affected module or run a module-only job. The affected module's focused tests must be present in the PR and are exercised as part of the full ordinary workspace invocation. A push to `aistack/main` repeats that same ordinary hosted suite; it is not a promise that scheduled/manual long-running or credentialed live-call tiers have run. Docker remains limited to the pinned local SIPp integration dependency.
+~~~
+
+### CP-221 — In-dialog SIP request admission locally green
+
+~~~yaml
+checkpoint_id: CP-221
+recorded_at_utc: 2026-09-01T00:48:17Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: In-dialog SIP request interoperability and Asterisk fallback
+scope: Admit standard in-dialog INFO, UPDATE, REFER, and NOTIFY requests through CallEngine while preserving dialog validation, generic 200 responses, transaction bounds, and rejection of unsupported methods
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-72-in-dialog-requests
+branch: in-dialog-requests
+base_branch: bridge-terminalization
+pr: pending #72 publication
+head_sha: 4ee7cab2811292fcc19590df188c444f8ce1ea78 plus uncommitted call-engine implementation and tests
+evidence: CallEngine now admits INFO, UPDATE, REFER, and NOTIFY after the existing in-dialog tag/sequence checks; the dialog layer remains the authority for identity, state, duplicate, and sequence validation. Focused `cargo test -p call-engine --locked` passes all 38 tests, including acceptance coverage for all four methods and atomic unsupported REGISTER rejection. Complete `cargo test --workspace --locked` passes the workspace (313 tests), `cargo fmt --all -- --check` passes after formatting, workspace Clippy exits 0 with existing repository documentation/pedantic warnings, `tests/rust-sipp/run.sh` passes all three pinned scenarios, and `git diff --check` passes.
+blockers: Commit/publication, hosted Workspace/fuzz/dependency-audit validation, and final local/origin/GitHub parity remain pending. Provider credentials/runtime access, sanitized provider captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated; Asterisk remains the fallback.
+next_action: Commit the implementation and focused tests normally, push `in-dialog-requests`, open PR #72 against `bridge-terminalization`, then reconcile hosted CI and exact parity without enabling Rust traffic.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #72 or revert the in-dialog request admission slice if its contract is superseded.
+notes: This slice intentionally covers inbound in-dialog method admission only; generic outbound in-dialog request construction and provider-specific REFER/NOTIFY behavior remain separate follow-on work. The focused tests ship with the affected call-engine change and will run through the complete hosted workspace suite on PR and `aistack/main` push events.
+~~~
+
+### CP-222 — PR #72 hosted validation green
+
+~~~yaml
+checkpoint_id: CP-222
+recorded_at_utc: 2026-09-01T00:56:16Z
+status: hosted_green
+phase: Phase 1 — Rust media engine
+milestone: In-dialog SIP request interoperability and Asterisk fallback
+scope: Verify the complete ordinary hosted Rust quality suite for PR #72's published in-dialog request admission head
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-72-in-dialog-requests
+branch: in-dialog-requests
+base_branch: bridge-terminalization
+pr: https://github.com/W3Mirror/asterisk/pull/72
+head_sha: 3a76a3aa4c7adf5cfded82350d2b0e84ccc137d1
+evidence: Local HEAD, `origin/in-dialog-requests`, and `gh pr view 72 --json headRefOid` report `3a76a3aa4c7adf5cfded82350d2b0e84ccc137d1`. PR #72 is OPEN, non-draft, CLEAN, and MERGEABLE against `bridge-terminalization`. Hosted Rust quality run `33456391199` passed Workspace checks `99697144490` (formatting, complete locked workspace tests including the 38 call-engine tests, pinned Docker-backed SIPp scenarios, deterministic signaling/media/WebSocket/combined/short-soak reclamation smokes, and workspace Clippy), Protocol fuzz checks `99697144222` (all address-sanitizer targets), and Dependency audit `99697144441`; schedule/manual-only Signaling capacity matrix `99697145268` and Two-hour lifecycle soak `99697145009` correctly skipped for the pull-request event.
+blockers: This ledger reconciliation changes the PR head and requires one final hosted-head validation. Provider credentials/runtime access, sanitized provider captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated; Asterisk remains the fallback.
+next_action: Commit and push this ledger reconciliation, then verify the resulting PR #72 head and hosted ordinary suite before continuing the next bounded offline acceptance slice.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #72 or revert the in-dialog request admission slice if its contract is superseded.
+notes: The focused in-dialog INFO/UPDATE/REFER/NOTIFY admission tests are shipped in the affected call-engine PR and were exercised by the complete hosted workspace invocation. Pull-request events run the complete ordinary suite rather than an affected-module-only subset; pushes to `aistack/main` repeat that suite. Larger capacity, extended property, multi-hour soak, and credentialed provider/live-call evidence remain scheduled/manual or approval-gated. All workflow runners remain hosted `ubuntu-latest`; Docker remains limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-223 — PR #72 final hosted head reconciled
+
+~~~yaml
+checkpoint_id: CP-223
+recorded_at_utc: 2026-09-01T01:01:05Z
+status: hosted_green
+phase: Phase 1 — Rust media engine
+milestone: In-dialog SIP request interoperability and Asterisk fallback
+scope: Reconcile PR #72's synchronized documentation head with hosted CI and exact local/origin/GitHub parity
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-72-in-dialog-requests
+branch: in-dialog-requests
+base_branch: bridge-terminalization
+pr: https://github.com/W3Mirror/asterisk/pull/72
+head_sha: 35a6cb12c3ebec5a693522d6728a90ab264171ce
+evidence: Local HEAD, `origin/in-dialog-requests`, and `gh pr view 72 --json headRefOid` report `35a6cb12c3ebec5a693522d6728a90ab264171ce`. PR #72 is OPEN, non-draft, CLEAN, and MERGEABLE against `bridge-terminalization`. Final synchronized-head hosted Rust quality run `33456851520` passed Workspace checks `99698539528` (formatting, complete locked workspace tests, pinned Docker-backed SIPp scenarios, deterministic signaling/media/WebSocket/combined/short-soak reclamation smokes, and workspace Clippy), Protocol fuzz checks `99698539361` (all address-sanitizer targets), and Dependency audit `99698539653`; schedule/manual-only Signaling capacity matrix `99698539970` and Two-hour lifecycle soak `99698540251` correctly skipped for the pull-request event.
+blockers: This remains provider-neutral offline evidence. Provider credentials/runtime access, sanitized provider captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated; Asterisk remains the fallback.
+next_action: Continue the next bounded offline acceptance slice from exact head `35a6cb12c` without enabling Rust traffic; retain the hosted PR/main test contract and Asterisk fallback.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #72 or revert the in-dialog request admission slice if its contract is superseded.
+notes: The final hosted ordinary suite includes the focused in-dialog INFO/UPDATE/REFER/NOTIFY admission tests through the complete locked workspace invocation. Every pull-request event (`opened`, `reopened`, or `synchronize`) and every push to `aistack/main` runs that ordinary suite on hosted `ubuntu-latest`; affected-module-only selection is not configured. Larger capacity, extended property, multi-hour soak, and credentialed provider/live-call evidence remain scheduled/manual or approval-gated. Docker remains limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-224 — PR #72 final ledger head hosted validation green
+
+~~~yaml
+checkpoint_id: CP-224
+recorded_at_utc: 2026-09-01T01:06:13Z
+status: hosted_green
+phase: Phase 1 — Rust media engine
+milestone: In-dialog SIP request interoperability and Asterisk fallback
+scope: Verify the complete ordinary hosted suite for the final PR #72 ledger-head documentation reconciliation
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-72-in-dialog-requests
+branch: in-dialog-requests
+base_branch: bridge-terminalization
+pr: https://github.com/W3Mirror/asterisk/pull/72
+head_sha: 890d98fb448187128622b5b3e7c7d37e36793d58
+evidence: Local HEAD, `origin/in-dialog-requests`, and `gh pr view 72 --json headRefOid` report `890d98fb448187128622b5b3e7c7d37e36793d58`. PR #72 is OPEN, non-draft, CLEAN, and MERGEABLE against `bridge-terminalization`. Final ledger-head hosted Rust quality run `33457172531` passed Workspace checks `99699510911` (formatting, complete locked workspace tests including the 38 call-engine tests, pinned Docker-backed SIPp scenarios, deterministic signaling/media/WebSocket/combined/short-soak reclamation smokes, and workspace Clippy), Protocol fuzz checks `99699510962` (all address-sanitizer targets), and Dependency audit `99699510747`; schedule/manual-only Signaling capacity matrix `99699511789` and Two-hour lifecycle soak `99699511851` correctly skipped for the pull-request event.
+blockers: This remains provider-neutral offline evidence. Provider credentials/runtime access, sanitized provider captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated; Asterisk remains the fallback.
+next_action: Continue the next bounded offline acceptance slice from exact head `890d98fb4` without enabling Rust traffic; retain the hosted PR/main test contract and Asterisk fallback.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #72 or revert the in-dialog request admission slice if its contract is superseded.
+notes: Focused in-dialog INFO/UPDATE/REFER/NOTIFY admission tests are shipped in the affected call-engine PR and exercised by the complete hosted workspace invocation. Every pull-request event (`opened`, `reopened`, or `synchronize`) and every push to `aistack/main` runs that ordinary suite on hosted `ubuntu-latest`; affected-module-only selection is not configured. Larger capacity, extended property, multi-hour soak, and credentialed provider/live-call evidence remain scheduled/manual or approval-gated. Docker remains limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-225 — PR #72 final hosted validation reconciled
+
+~~~yaml
+checkpoint_id: CP-225
+recorded_at_utc: 2026-09-01T01:16:47Z
+status: hosted_green
+phase: Phase 1 — Rust media engine
+milestone: In-dialog SIP request interoperability and Asterisk fallback
+scope: Reconcile the final PR #72 head after documenting the broader acceptance and test contract
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-72-in-dialog-requests
+branch: in-dialog-requests
+base_branch: bridge-terminalization
+pr: https://github.com/W3Mirror/asterisk/pull/72
+head_sha: 5c9ea200aa6767fd1c2c57cb9c6d74d84464c925
+evidence: Local HEAD, `origin/in-dialog-requests`, and `gh pr view 72 --json headRefOid` report `5c9ea200aa6767fd1c2c57cb9c6d74d84464c925`. PR #72 is OPEN, non-draft, CLEAN, and MERGEABLE against `bridge-terminalization`. Hosted Rust quality run `33457519516` passed Workspace checks `99700547129`, Protocol fuzz checks `99700547130`, and Dependency audit `99700546905`; schedule/manual-only Signaling capacity matrix `99700547969` and Two-hour lifecycle soak `99700547945` correctly skipped for the pull-request event.
+blockers: This remains provider-neutral offline evidence. Provider credentials/runtime access, sanitized provider captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated; Asterisk remains the fallback.
+next_action: Continue the next bounded offline acceptance slice from exact head `5c9ea200a` without enabling Rust traffic; retain the hosted PR/main test contract and Asterisk fallback.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #72 or revert the in-dialog request admission slice if its contract is superseded.
+notes: The goal now explicitly requires relevant tests in the same implementation change across unit/state-machine, contract/integration, protocol, security, resilience, resource, and operational layers. Pull-request opened/reopened/synchronize events run the complete ordinary hosted suite, which includes focused affected-module tests through the workspace invocation; they do not currently select a module-only subset. Every push to `aistack/main` repeats that same ordinary suite. Scheduled/manual capacity, extended property, multi-hour soak, and credentialed provider/live-call checks remain separate gates. All workflow runners remain hosted `ubuntu-latest`; Docker remains limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-226 — PR #72 synchronized hosted validation green
+
+~~~yaml
+checkpoint_id: CP-226
+recorded_at_utc: 2026-09-01T01:20:43Z
+status: hosted_green
+phase: Phase 1 — Rust media engine
+milestone: In-dialog SIP request interoperability and Asterisk fallback
+scope: Verify the synchronized PR #72 head after the goal test-contract reconciliation
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-72-in-dialog-requests
+branch: in-dialog-requests
+base_branch: bridge-terminalization
+pr: https://github.com/W3Mirror/asterisk/pull/72
+head_sha: 8a0badb8231a0bffb1759290bb08df51482cddaf
+evidence: Local HEAD, `origin/in-dialog-requests`, and `gh pr view 72 --json headRefOid` report `8a0badb8231a0bffb1759290bb08df51482cddaf`. PR #72 is OPEN, non-draft, CLEAN, and MERGEABLE against `bridge-terminalization`. Hosted Rust quality run `33458154385` passed Workspace checks `99702429897`, Protocol fuzz checks `99702429964`, and Dependency audit `99702429738`; schedule/manual-only Signaling capacity matrix `99702430619` and Two-hour lifecycle soak `99702430770` correctly skipped for the pull-request event.
+blockers: This remains provider-neutral offline evidence. Provider credentials/runtime access, sanitized provider captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated; Asterisk remains the fallback.
+next_action: Continue the next bounded offline acceptance slice from exact head `8a0badb82` without enabling Rust traffic; retain the hosted PR/main test contract and Asterisk fallback.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #72 or revert the in-dialog request admission slice if its contract is superseded.
+notes: The complete ordinary hosted suite exercised the focused affected-module tests through the locked workspace invocation, along with formatting, SIPp/reclamation smokes, Clippy, fuzz checks, and dependency audit. Pull-request events and pushes to `aistack/main` run this ordinary hosted suite; scheduled/manual capacity, extended property, multi-hour soak, and credentialed provider/live-call checks remain separate gates. All workflow runners remain hosted `ubuntu-latest`; Docker remains limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-227 — Generic outbound in-dialog requests locally green
+
+~~~yaml
+checkpoint_id: CP-227
+recorded_at_utc: 2026-09-01T01:42:59Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: In-dialog SIP request interoperability and Asterisk fallback
+scope: Add bounded generic outbound INFO, UPDATE, REFER, and NOTIFY request construction for confirmed UAC/UAS dialogs, transport delivery, response completion, and authorization/audit coverage
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-72-in-dialog-requests
+branch: in-dialog-requests
+base_branch: bridge-terminalization
+pr: https://github.com/W3Mirror/asterisk/pull/72
+head_sha: local uncommitted implementation/tests on `53fb6fabf14ecb43e54b1081f3e7f0c48e7ce08b`
+evidence: Added `AuditOperation::InDialogRequest`, transactional `CallEngine::send_in_dialog_request` and authorized variant, runtime transport wrappers, dialog-correct UAS response tag handling, and generated dialog-owned Via/From/To/Call-ID/CSeq/Route/request-URI/transaction state. The focused call-engine suite passes 44 tests covering UAC route/body/method-header construction, UAS role-oriented tags, non-INVITE response completion and Timer K reclamation, protected/unsupported atomic rejection, outstanding-request and transaction-capacity bounds, and authorization/audit outcomes. The focused call-runtime suite passes 53 tests, including a UDP integration that delivers an outbound INFO and processes its 200 response. Complete `cargo test --workspace --locked` passes, `cargo fmt --all -- --check` passes, workspace Clippy exits 0 with existing repository documentation/pedantic warnings, `tests/rust-sipp/run.sh` passes all three pinned scenarios, and `git diff --check` passes.
+blockers: Commit/publication, hosted Workspace/fuzz/dependency-audit validation, and final local/origin/GitHub parity remain pending. Provider credentials/runtime access, sanitized provider captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated; Asterisk remains the fallback.
+next_action: Commit the implementation and focused tests normally, push `in-dialog-requests`, then reconcile the resulting hosted PR #72 checks and exact local/origin/GitHub parity before continuing the next bounded offline acceptance slice.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #72 or revert the generic in-dialog request slice if its contract is superseded.
+notes: Tests are part of this implementation slice. Pull-request opened/reopened/synchronize events run the complete ordinary hosted suite rather than a changed-module-only selector, so the focused call-engine/runtime tests are exercised through `cargo test --workspace --locked`. Every push to `aistack/main` repeats that same ordinary suite. Scheduled/manual capacity, extended property, multi-hour soak, and credentialed provider/live-call checks remain separate gates. All workflow runners remain hosted `ubuntu-latest`; Docker remains limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-228 — PR #72 generic outbound in-dialog request hosted validation green
+
+~~~yaml
+checkpoint_id: CP-228
+recorded_at_utc: 2026-09-01T01:47:49Z
+status: hosted_green
+phase: Phase 1 — Rust media engine
+milestone: In-dialog SIP request interoperability and Asterisk fallback
+scope: Verify the complete ordinary hosted Rust quality suite for PR #72's generic outbound in-dialog request implementation and focused tests
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-72-in-dialog-requests
+branch: in-dialog-requests
+base_branch: bridge-terminalization
+pr: https://github.com/W3Mirror/asterisk/pull/72
+head_sha: 498f9bb83dfe02b3d3688e5af71976d5538b4b94
+evidence: Local HEAD, `origin/in-dialog-requests`, and `gh pr view 72 --json headRefOid` report `498f9bb83dfe02b3d3688e5af71976d5538b4b94`. PR #72 is OPEN, non-draft, CLEAN, and MERGEABLE against `bridge-terminalization` at `4ee7cab2811292fcc19590df188c444f8ce1ea78`. Hosted Rust quality run `33459849812` passed Workspace checks `99707535300` (formatting, complete locked workspace tests including 44 call-engine and 53 call-runtime tests, pinned Docker-backed SIPp scenarios, deterministic signaling/media/WebSocket/combined/short-soak reclamation smokes, and workspace Clippy), Protocol fuzz checks `99707535125` (all address-sanitizer targets), and Dependency audit `99707535231`; schedule/manual-only Signaling capacity matrix `99707536354` and Two-hour lifecycle soak `99707535840` correctly skipped for the pull-request event.
+blockers: This ledger reconciliation changes the PR head and requires one final hosted-head validation. Provider credentials/runtime access, sanitized provider captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated; Asterisk remains the fallback.
+next_action: Commit and push this hosted-validation ledger reconciliation, verify the resulting synchronized PR #72 head and hosted checks, then continue the next bounded offline acceptance slice without enabling Rust traffic.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #72 or revert the generic in-dialog request slice if its contract is superseded.
+notes: The hosted PR run confirms that focused affected-module tests ship in the implementation PR but are executed through the complete ordinary workspace invocation. Every pull-request opened/reopened/synchronize event and every push to `aistack/main` uses hosted `ubuntu-latest` runners for that ordinary suite; no changed-module-only selector is configured. Larger capacity, extended property, multi-hour soak, and credentialed provider/live-call evidence remain scheduled/manual or approval-gated. Docker remains limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-229 — PR #72 ledger-head hosted validation green
+
+~~~yaml
+checkpoint_id: CP-229
+recorded_at_utc: 2026-09-01T01:51:36Z
+status: hosted_green
+phase: Phase 1 — Rust media engine
+milestone: In-dialog SIP request interoperability and Asterisk fallback
+scope: Reconcile the goal ledger after hosted validation of the final PR #72 ledger head
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-72-in-dialog-requests
+branch: in-dialog-requests
+base_branch: bridge-terminalization
+pr: https://github.com/W3Mirror/asterisk/pull/72
+head_sha: d3b575e96cdb330cf2744074137ade8e6116ef3a
+evidence: Hosted Rust quality run `33460150619` for `d3b575e96cdb330cf2744074137ade8e6116ef3a` passed Workspace checks `99708414665` (formatting, complete locked workspace tests, pinned Docker-backed SIPp scenarios, deterministic signaling/media/WebSocket/combined/short-soak reclamation smokes, and workspace Clippy), Protocol fuzz checks `99708414655` (all address-sanitizer targets), and Dependency audit `99708414500`; schedule/manual-only Signaling capacity matrix `99708415383` and Two-hour lifecycle soak `99708415223` correctly skipped for the pull-request event. PR #72 remains OPEN, non-draft, CLEAN, and MERGEABLE against `bridge-terminalization`; local HEAD, `origin/in-dialog-requests`, and the PR head are synchronized at `d3b575e96cdb330cf2744074137ade8e6116ef3a`.
+blockers: Provider credentials/runtime access, sanitized provider captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated; Asterisk remains the fallback.
+next_action: Continue the next bounded offline acceptance slice from exact head `d3b575e96` without enabling Rust traffic.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #72 or revert the generic in-dialog request slice if its contract is superseded.
+notes: The final hosted run confirms that relevant focused tests ship with the implementation PR and are exercised through the complete ordinary workspace invocation. Pull-request opened/reopened/synchronize events and pushes to `aistack/main` use hosted `ubuntu-latest` runners for that ordinary suite; no changed-module-only selector is configured. Larger capacity, extended property, multi-hour soak, and credentialed provider/live-call checks remain scheduled/manual or approval-gated. Docker remains limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-230 — PR #72 final ledger-head hosted validation green
+
+~~~yaml
+checkpoint_id: CP-230
+recorded_at_utc: 2026-09-01T01:56:47Z
+status: hosted_green
+phase: Phase 1 — Rust media engine
+milestone: In-dialog SIP request interoperability and Asterisk fallback
+scope: Verify the final hosted PR checks after publishing the CP-229 ledger reconciliation
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-72-in-dialog-requests
+branch: in-dialog-requests
+base_branch: bridge-terminalization
+pr: https://github.com/W3Mirror/asterisk/pull/72
+head_sha: 959d4846fc8de068e21e79baa2da0efcd25775c3
+evidence: Hosted Rust quality run `33460469661` for `959d4846fc8de068e21e79baa2da0efcd25775c3` passed Workspace checks `99709341825` (formatting, complete locked workspace tests, pinned Docker-backed SIPp scenarios, deterministic signaling/media/WebSocket/combined/short-soak reclamation smokes, and workspace Clippy), Protocol fuzz checks `99709341665` (all address-sanitizer targets), and Dependency audit `99709341896`; schedule/manual-only Signaling capacity matrix `99709342965` and Two-hour lifecycle soak `99709342512` correctly skipped for the pull-request event. PR #72 remains OPEN, non-draft, CLEAN, and MERGEABLE against `bridge-terminalization`; local HEAD, `origin/in-dialog-requests`, and the PR head are synchronized at `959d4846fc8de068e21e79baa2da0efcd25775c3`.
+blockers: Provider credentials/runtime access, sanitized provider captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated; Asterisk remains the fallback.
+next_action: Continue the next bounded offline acceptance slice from exact head `959d4846f` without enabling Rust traffic.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #72 or revert the generic in-dialog request slice if its contract is superseded.
+notes: The final hosted PR validation confirms the complete ordinary suite on hosted `ubuntu-latest` runners, including the focused tests shipped in this implementation PR through `cargo test --workspace --locked`. Pull-request opened/reopened/synchronize events and pushes to `aistack/main` use this ordinary suite; no changed-module-only selector is configured. Larger capacity, extended property, multi-hour soak, and credentialed provider/live-call checks remain scheduled/manual or approval-gated. Docker remains limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-231 — PR #72 final PR-check parity reconciled
+
+~~~yaml
+checkpoint_id: CP-231
+recorded_at_utc: 2026-09-01T02:23:46Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: In-dialog SIP request interoperability and Asterisk fallback
+scope: Reconcile the active goal ledger with the latest PR #72 documentation head and hosted checks before starting another offline acceptance slice
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-72-in-dialog-requests
+branch: in-dialog-requests
+base_branch: bridge-terminalization
+pr: https://github.com/W3Mirror/asterisk/pull/72
+head_sha: cd7cb77cd4c54fdb43a21656b8e7077e8b7348d7
+evidence: Local HEAD, `origin/in-dialog-requests`, and `gh pr view 72 --json headRefOid` all report `cd7cb77cd4c54fdb43a21656b8e7077e8b7348d7`. PR #72 is OPEN, non-draft, CLEAN, and MERGEABLE against `bridge-terminalization`. Hosted Rust quality run `33460855198` passed Workspace checks (formatting, complete locked workspace tests, pinned Docker-backed SIPp scenarios, deterministic signaling/media/WebSocket/combined/short-soak reclamation smokes, and workspace Clippy), Protocol fuzz checks (all address-sanitizer targets), and Dependency audit; schedule/manual-only Signaling capacity matrix and Two-hour lifecycle soak correctly skipped for the pull-request event.
+blockers: This remains provider-neutral offline evidence. Provider credentials/runtime access, sanitized provider captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated; Asterisk remains the fallback.
+next_action: Create the next tracked worktree from exact head `cd7cb77cd` and add scenario-replay coverage for outbound in-dialog request construction and response completion without enabling Rust traffic.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #72 or revert the in-dialog request slice if its contract is superseded.
+notes: The latest documentation-only head is synchronized and all ordinary hosted checks are green. Pull-request opened/reopened/synchronize events and pushes to `aistack/main` run the complete ordinary hosted suite on `ubuntu-latest`, with no affected-module-only selector; scheduled/manual capacity, extended property, multi-hour soak, and credentialed provider/live-call evidence remain separate gates. Docker remains limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
