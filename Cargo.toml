@@ -15,6 +15,7 @@ members = [
   "crates/call-api",
   "crates/call-engine",
   "crates/call-runtime",
+  "crates/sip-auth",
 ]
 
 [workspace.package]
