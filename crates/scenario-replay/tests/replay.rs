@@ -11,7 +11,8 @@ use call_core::{BridgeId, CallEventKind, CallId, CallState, LegId, StreamId};
 use call_engine::{CallEngine, EngineConfig, EngineError};
 use dtmf::{DtmfDigit, DtmfEvent, Notification, encode as encode_dtmf};
 use media_core::{
-    AudioCodec, AudioFrame, MediaSession, MediaSessionConfig, PushOutcome, ReceivedMedia,
+    AudioCodec, AudioFrame, JitterBufferConfig, JitterPushOutcome, MediaSession,
+    MediaSessionConfig, PushOutcome, ReceivedMedia,
 };
 use rtcp::{ReceiverReport, RtcpPacket, serialize as serialize_rtcp};
 use rtp::{RtpPacket, RtpSessionConfig, serialize as serialize_rtp};
@@ -249,6 +250,87 @@ fn replays_media_fixture_with_bounded_backpressure_and_deterministic_output() {
     };
     assert_eq!(output[1] & 0x7f, 0);
     assert_eq!(report.media.unwrap().audio_frames_received, 1);
+}
+
+#[test]
+fn replays_reordered_audio_and_explicit_jitter_playout() {
+    let media = MediaSession::new(
+        MediaSessionConfig {
+            rtp: RtpSessionConfig {
+                payload_type: 0,
+                remote_ssrc: Some(22),
+                clock_rate: 8_000,
+                ..RtpSessionConfig::default()
+            },
+            jitter_buffer: Some(JitterBufferConfig {
+                max_packets: 2,
+                playout_delay: Duration::from_millis(60),
+            }),
+            ..MediaSessionConfig::default()
+        },
+        7,
+        1_000,
+    )
+    .unwrap();
+    let packet = |sequence_number, timestamp, sample| {
+        serialize_rtp(&RtpPacket {
+            padding: false,
+            marker: false,
+            payload_type: 0,
+            sequence_number,
+            timestamp,
+            ssrc: 22,
+            csrcs: Vec::new(),
+            extension: None,
+            payload: vec![sample; 160],
+        })
+        .unwrap()
+    };
+    let scenario = Scenario::new(
+        "reordered-audio-playout",
+        vec![
+            ScenarioStep::ReceiveRtp {
+                at: Duration::from_millis(20),
+                source: address(10_000),
+                wire: packet(2, 320, 0x7f),
+            },
+            ScenarioStep::ReceiveRtp {
+                at: Duration::from_millis(30),
+                source: address(10_000),
+                wire: packet(1, 160, 0xff),
+            },
+            ScenarioStep::PlayoutAudio {
+                at: Duration::from_millis(59),
+            },
+            ScenarioStep::PlayoutAudio {
+                at: Duration::from_millis(60),
+            },
+            ScenarioStep::PlayoutAudio {
+                at: Duration::from_millis(80),
+            },
+        ],
+    );
+    let report = runner().with_media(media).run(&scenario).unwrap();
+
+    assert!(matches!(
+        report.steps[0].outcome,
+        StepOutcome::MediaReceived(ReceivedMedia::AudioBuffered {
+            outcome: JitterPushOutcome::Accepted,
+            timestamp: 320,
+        })
+    ));
+    assert_eq!(report.steps[2].outcome, StepOutcome::MediaPlayout(None));
+    assert!(matches!(
+        report.steps[3].outcome,
+        StepOutcome::MediaPlayout(Some(ReceivedMedia::Audio { timestamp: 160, .. }))
+    ));
+    assert!(matches!(
+        report.steps[4].outcome,
+        StepOutcome::MediaPlayout(Some(ReceivedMedia::Audio { timestamp: 320, .. }))
+    ));
+    let stats = report.media.unwrap();
+    assert_eq!(stats.audio_frames_received, 2);
+    assert_eq!(stats.jitter_buffer.unwrap().played, 2);
 }
 
 #[test]

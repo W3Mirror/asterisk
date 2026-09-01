@@ -398,6 +398,16 @@ impl MediaUdpRuntime {
         })
     }
 
+    /// Releases the next fixed-delay audio packet whose monotonic deadline is due.
+    ///
+    /// This operation does not read either socket. It returns `None` when
+    /// jitter buffering is disabled, no audio is buffered, or the next packet
+    /// is not yet due. The owning event loop can use
+    /// [`MediaSession::next_playout_deadline`] to schedule the next poll.
+    pub fn playout_audio(&mut self, now: Duration) -> Option<ReceivedMedia> {
+        self.media.playout_audio(now)
+    }
+
     /// Receives and validates one RTCP compound datagram.
     ///
     /// A source endpoint is learned only when all RTCP packets pass session
@@ -593,7 +603,10 @@ mod tests {
     use std::{net::UdpSocket, time::Duration};
 
     use dtmf::{DtmfDigit, DtmfEvent};
-    use media_core::{AudioCodec, AudioFrame, MediaBridgeConfig, MediaSessionConfig};
+    use media_core::{
+        AudioCodec, AudioFrame, JitterBufferConfig, JitterPushOutcome, MediaBridgeConfig,
+        MediaSessionConfig,
+    };
     use rtp::{RtpPacket, RtpSessionConfig, parse, serialize};
     use sip_security::{Cidr, SourceIpPolicy, SourcePolicyConfig};
 
@@ -694,6 +707,63 @@ mod tests {
             ReceivedMedia::Audio { samples: 160, .. }
         ));
         assert_eq!(runtime.remote_rtp(), Some(received.source));
+    }
+
+    #[test]
+    fn releases_buffered_audio_only_at_the_explicit_playout_deadline() {
+        let audio_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let control_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let peer = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let media = MediaSession::new(
+            MediaSessionConfig {
+                rtp: RtpSessionConfig {
+                    payload_type: 0,
+                    remote_ssrc: Some(77),
+                    max_packet_bytes: 1_024,
+                    max_extension_bytes: 256,
+                    ..RtpSessionConfig::default()
+                },
+                jitter_buffer: Some(JitterBufferConfig {
+                    max_packets: 2,
+                    playout_delay: Duration::from_millis(60),
+                }),
+                ..MediaSessionConfig::default()
+            },
+            20,
+            2_000,
+        )
+        .unwrap();
+        let mut runtime = MediaUdpRuntime::from_sockets(
+            audio_socket,
+            control_socket,
+            media,
+            MediaUdpRuntimeConfig {
+                max_datagram_bytes: 1_024,
+                ..MediaUdpRuntimeConfig::default()
+            },
+        )
+        .unwrap();
+        peer.send_to(&audio_packet(), runtime.local_rtp_addr().unwrap())
+            .unwrap();
+        assert!(matches!(
+            runtime
+                .receive_rtp(Duration::from_millis(20))
+                .unwrap()
+                .media,
+            ReceivedMedia::AudioBuffered {
+                outcome: JitterPushOutcome::Accepted,
+                timestamp: 100,
+            }
+        ));
+        assert_eq!(runtime.playout_audio(Duration::from_millis(79)), None);
+        assert!(matches!(
+            runtime.playout_audio(Duration::from_millis(80)),
+            Some(ReceivedMedia::Audio {
+                timestamp: 100,
+                samples: 160,
+                ..
+            })
+        ));
     }
 
     #[test]

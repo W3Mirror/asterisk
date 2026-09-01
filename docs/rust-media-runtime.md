@@ -27,7 +27,8 @@ event loop, or set them non-blocking through the mutable socket accessors:
 
 1. call `receive_rtp` or `receive_rtcp` with the caller's monotonic arrival
    timestamp;
-2. drain `MediaSession`'s AI and DTMF outputs;
+2. when jitter buffering is configured, schedule `playout_audio` from
+   `next_playout_deadline`, then drain the session's AI and DTMF outputs;
 3. call `send_audio`, `send_dtmf`, or `send_rtcp` when a destination is
    configured or learned;
 4. poll `send_sender_report_if_due` with the current monotonic time and its
