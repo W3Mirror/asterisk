@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**  
-**Current checkpoint:** CP-015 — PR #1 hosted validation and mergeability confirmed
-**Last checkpoint (UTC):** 2026-08-31T19:33:31Z
+**Current checkpoint:** CP-016 — Confirm hosted PR test contract on the implementation stack
+**Last checkpoint (UTC):** 2026-09-01T13:03:43Z
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
 **Active milestone:** Milestone 1 — Scope Baseline  
 **Next resume action:** Update PR #2's base branch in stack order, run its focused and hosted checks, and record the resulting head and mergeability
@@ -2451,6 +2451,27 @@ blockers: Production deployment identity, effective configuration, provider cred
 next_action: Update PR #2's base branch in stack order, run its focused and hosted checks, and record the resulting head and mergeability
 rollback: Asterisk remains the active/fallback engine; no routing was changed
 notes: The first stack boundary is now current and mergeable; no production routing or provider traffic was attempted.
+```
+
+### CP-016 — Confirm hosted PR test contract on the implementation stack
+
+```yaml
+checkpoint_id: CP-016
+recorded_at_utc: 2026-09-01T13:03:43Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 1 — Scope Baseline
+scope: Confirm PR-triggered hosted test execution and preserve the affected-module test obligation
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-48
+branch: provider-route-runtime
+base_branch: provider-digest-runtime
+pr: "#48 https://github.com/W3Mirror/asterisk/pull/48"
+head_sha: df6bbac63a97f62a8c23eacbaa86fff049ab02c3
+evidence: Hosted Rust quality run 33510769239 (https://github.com/W3Mirror/asterisk/actions/runs/33510769239) completed successfully for a pull_request event. Workspace checks (formatting, workspace tests, SIPp/deterministic offline checks, and Clippy), protocol fuzz checks, and dependency audit passed; the signaling capacity matrix and two-hour lifecycle soak were skipped as scheduled/extended gates. This confirms that PR CI runs the complete ordinary hosted suite rather than an automatically selected affected-module-only job.
+blockers: Production deployment identity, effective configuration, provider credentials, and sanitized inbound/outbound captures remain unavailable; downstream branches require sequential revalidation
+next_action: Update PR #2's base branch in stack order, run its focused and hosted checks, and record the resulting head and mergeability
+rollback: Asterisk remains the active/fallback engine; no routing was changed
+notes: Focused tests for every affected crate/module remain required in the implementation PR; every push to aistack/main repeats the complete ordinary offline workspace suite, while credentialed, long-running, capacity, and live-provider checks remain scheduled/manual gates.
 ```
 
 ### Checkpoint template
