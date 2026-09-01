@@ -171,6 +171,8 @@ dependencies = [
  "call-api",
  "call-core",
  "call-engine",
+ "media-core",
+ "rtp",
  "sip-transaction",
  "sip-types",
 ]
