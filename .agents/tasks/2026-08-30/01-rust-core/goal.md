@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-230 — PR #72 final ledger-head hosted validation green
-**Last checkpoint (UTC):** 2026-09-01T01:56:47Z
+**Current checkpoint:** CP-231 — PR #72 final PR-check parity reconciled
+**Last checkpoint (UTC):** 2026-09-01T02:23:46Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** In-dialog SIP request interoperability and Asterisk fallback<br>
-**Next resume action:** Continue the next bounded offline acceptance slice from exact head `959d4846f` without enabling Rust traffic
+**Next resume action:** Create the next tracked worktree from exact head `cd7cb77cd` and add replay coverage for outbound in-dialog requests without enabling Rust traffic
 **Active PR:** #72 — `in-dialog-requests` targets `bridge-terminalization` (final ledger-head hosted validation green; open and mergeable)
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-72-in-dialog-requests`
@@ -7108,6 +7108,27 @@ blockers: Provider credentials/runtime access, sanitized provider captures, live
 next_action: Continue the next bounded offline acceptance slice from exact head `959d4846f` without enabling Rust traffic.
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #72 or revert the generic in-dialog request slice if its contract is superseded.
 notes: The final hosted PR validation confirms the complete ordinary suite on hosted `ubuntu-latest` runners, including the focused tests shipped in this implementation PR through `cargo test --workspace --locked`. Pull-request opened/reopened/synchronize events and pushes to `aistack/main` use this ordinary suite; no changed-module-only selector is configured. Larger capacity, extended property, multi-hour soak, and credentialed provider/live-call checks remain scheduled/manual or approval-gated. Docker remains limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-231 — PR #72 final PR-check parity reconciled
+
+~~~yaml
+checkpoint_id: CP-231
+recorded_at_utc: 2026-09-01T02:23:46Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: In-dialog SIP request interoperability and Asterisk fallback
+scope: Reconcile the active goal ledger with the latest PR #72 documentation head and hosted checks before starting another offline acceptance slice
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-72-in-dialog-requests
+branch: in-dialog-requests
+base_branch: bridge-terminalization
+pr: https://github.com/W3Mirror/asterisk/pull/72
+head_sha: cd7cb77cd4c54fdb43a21656b8e7077e8b7348d7
+evidence: Local HEAD, `origin/in-dialog-requests`, and `gh pr view 72 --json headRefOid` all report `cd7cb77cd4c54fdb43a21656b8e7077e8b7348d7`. PR #72 is OPEN, non-draft, CLEAN, and MERGEABLE against `bridge-terminalization`. Hosted Rust quality run `33460855198` passed Workspace checks (formatting, complete locked workspace tests, pinned Docker-backed SIPp scenarios, deterministic signaling/media/WebSocket/combined/short-soak reclamation smokes, and workspace Clippy), Protocol fuzz checks (all address-sanitizer targets), and Dependency audit; schedule/manual-only Signaling capacity matrix and Two-hour lifecycle soak correctly skipped for the pull-request event.
+blockers: This remains provider-neutral offline evidence. Provider credentials/runtime access, sanitized provider captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated; Asterisk remains the fallback.
+next_action: Create the next tracked worktree from exact head `cd7cb77cd` and add scenario-replay coverage for outbound in-dialog request construction and response completion without enabling Rust traffic.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #72 or revert the in-dialog request slice if its contract is superseded.
+notes: The latest documentation-only head is synchronized and all ordinary hosted checks are green. Pull-request opened/reopened/synchronize events and pushes to `aistack/main` run the complete ordinary hosted suite on `ubuntu-latest`, with no affected-module-only selector; scheduled/manual capacity, extended property, multi-hour soak, and credentialed provider/live-call evidence remain separate gates. Docker remains limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
