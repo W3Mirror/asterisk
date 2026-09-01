@@ -17,6 +17,18 @@ name = "call-core"
 version = "0.1.0"
 
 [[package]]
+name = "call-engine"
+version = "0.1.0"
+dependencies = [
+ "call-api",
+ "call-core",
+ "sdp",
+ "sip-dialog",
+ "sip-transaction",
+ "sip-types",
+]
+
+[[package]]
 name = "dtmf"
 version = "0.1.0"
 

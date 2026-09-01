@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**
-**Current checkpoint:** CP-029 — PR #6 hosted validation and mergeability confirmed
-**Last checkpoint (UTC): 2026-09-01T13:53:08Z
+**Current checkpoint:** CP-030 — Reconcile PR #7 onto the current PR #6 head
+**Last checkpoint (UTC): 2026-09-01T13:55:00Z
 **Active phase:** Phase 2 — SIP edge shadow mode
 **Active milestone:** Milestone 4 — Dialog + SDP + Basic Calls
-**Next resume action:** Update PR #7 onto the validated PR #6 head, run focused call-engine tests plus full workspace checks, then verify hosted checks and mergeability
+**Next resume action:** Run focused call-engine tests plus full workspace checks, publish the reconciled PR #7 head, then verify hosted checks and mergeability
 **Active PR:** [#7](https://github.com/W3Mirror/asterisk/pull/7); branch `call-engine-core` targets `sdp-media-core`
 **Stack root/base branch:** `aistack/main`
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-6-sdp-media`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-7-call-engine`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -2119,7 +2119,7 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 | --- | --- | --- | --- | --- |
 | Phase 0 — current Asterisk surface | in_progress | CP-015; PR #1 hosted run 33431290927 passed and GitHub reports CLEAN/MERGEABLE at `8dbd0082823b9444e72a6ceebee27328bd0f506d` | #1 | Keep the verified Asterisk inventory and production-evidence gate in force |
 | Phase 1 — Rust media engine | in_progress | CP-018; PR #2 hosted run 33432577814 passed and GitHub reports CLEAN/MERGEABLE at `ddb50f1b4adaca8e3a099578ef053294a5958cc0` | [#2](https://github.com/W3Mirror/asterisk/pull/2) | Keep the verified Rust foundation contract in force |
-| Phase 2 — SIP edge shadow mode | in_progress | CP-024; PR #5 hosted run 33435184066 passed and GitHub reports CLEAN/MERGEABLE at `7d83ff214730f92b9b8ba637e934c5ec5b41ffbe` | [#5](https://github.com/W3Mirror/asterisk/pull/5) | Publish and validate PR #6's SDP/media slice |
+| Phase 2 — SIP edge shadow mode | in_progress | CP-025; PR #6 hosted run 33436047369 passed and GitHub reports CLEAN/MERGEABLE at `58171bca82804be7a4062cd7e31525a0939edddb` | [#6](https://github.com/W3Mirror/asterisk/pull/6) | Publish and validate PR #7's call-engine slice |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
 | Phase 4 — expanded provider coverage | not_started | — | — | Add one provider compatibility suite per rollout target |
 | Phase 5 — Rust primary engine | not_started | — | — | Confirm production SLO, telemetry, and rollback gates |
@@ -2789,6 +2789,69 @@ rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain 
 notes: Repository and host state are unchanged from CP-014; no provider credentials, runtime configuration, or live traffic were modified
 ```
 
+### CP-016 — Provider-neutral call engine implementation committed
+
+```yaml
+checkpoint_id: CP-016
+recorded_at_utc: 2026-08-30T13:29:49Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 4 — Dialog + SDP + Basic Calls
+scope: Add bounded provider-neutral call-engine orchestration over the SIP registry, dialogs, transactions, and SDP media binding without changing Asterisk routing
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-7-call-engine
+branch: call-engine-core
+base_branch: sdp-media-core
+pr: https://github.com/W3Mirror/asterisk/pull/7
+head_sha: 8ff05688420ab26320d13cea67a4133f54fa7448
+evidence: cargo fmt --all -- --check passed; cargo test --workspace passed; cargo clippy --workspace --all-targets exited 0 with existing documentation/pedantic warnings only; git diff --cached --check passed before implementation commit; call-engine suite has 12 passing tests covering inbound/outbound calls, ACK/BYE/CANCEL, duplicate responses, timeouts, OPTIONS, malformed CSeq, transaction limits, invalid config, atomic errors, and wrong CANCEL branch
+blockers: No Asterisk binary, provider credentials/runtime, SIPp/live-call path, or sanitized SIP/SDP/RTP fixtures are available from this host; Asterisk routing remains the fallback
+next_action: Publish PR #7 from call-engine-core and verify stacked remote parity
+rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
+notes: Added the ServerTransaction reliability accessor required by call-engine retransmission behavior; no provider credentials, runtime configuration, or live traffic were modified
+```
+
+### CP-017 — PR7 published and stacked remote parity verified
+
+```yaml
+checkpoint_id: CP-017
+recorded_at_utc: 2026-08-30T13:33:22Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 4 — Dialog + SDP + Basic Calls
+scope: Publish the provider-neutral call-engine implementation as stacked PR7 and reconcile branch, base, head, and worktree state
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-7-call-engine
+branch: call-engine-core
+base_branch: sdp-media-core
+pr: https://github.com/W3Mirror/asterisk/pull/7
+head_sha: e5fc7a241571e0f88f70ced14522a96adf968ba5
+evidence: `git push -u origin call-engine-core` succeeded; local HEAD equals origin/call-engine-core at e5fc7a241; `gh pr view 7` reports OPEN, non-draft, base sdp-media-core at c983cb86f, and matching head; `gh pr checks 7` reports no checks; all migration worktrees and the root checkout are clean
+blockers: No Asterisk binary, provider credentials/runtime, SIPp/live-call path, or sanitized SIP/SDP/RTP fixtures are available from this host; Asterisk routing remains the fallback
+next_action: Collect redacted runtime/provider evidence and sanitized SIP/SDP/RTP fixtures on the actual Asterisk host
+rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
+notes: PR7 is stacked directly on PR6; no provider credentials, runtime configuration, or live traffic were modified
+```
+
+### CP-018 — PR7 ledger reconciliation published
+
+```yaml
+checkpoint_id: CP-018
+recorded_at_utc: 2026-08-30T13:36:16Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 4 — Dialog + SDP + Basic Calls
+scope: Reconcile the PR7 checkpoint commit with the subsequent ledger commit and publish the current exact head SHA
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-7-call-engine
+branch: call-engine-core
+base_branch: sdp-media-core
+pr: https://github.com/W3Mirror/asterisk/pull/7
+head_sha: 32c5fb5a9c633afccac08d8fed096f9cc3b98c00
+evidence: local HEAD equals origin/call-engine-core at 32c5fb5a; `git diff --check origin/sdp-media-core...HEAD` passed; `gh pr view 7` reports OPEN/non-draft with base sdp-media-core at c983cb86f and matching head; no PR checks are configured
+blockers: No Asterisk binary, provider credentials/runtime, SIPp/live-call path, or sanitized SIP/SDP/RTP fixtures are available from this host; Asterisk routing remains the fallback
+next_action: Create the next stacked worktree from call-engine-core for bounded RTP/AI media-session and recording work while preserving the runtime evidence gate
+rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
+notes: All existing migration worktrees and the root checkout are clean; PR7 remains independently reviewable and unmerged
+```
+
 ### CP-021 — Reconcile PR #4 onto the validated PR #3 head
 
 ```yaml
@@ -2850,6 +2913,27 @@ blockers: Production deployment identity, effective configuration, provider cred
 next_action: Publish the reconciled PR #6 head, verify hosted checks and mergeability, then update the next stack branch
 rollback: Asterisk remains the active/fallback engine; no routing was changed
 notes: The merge commit preserves the stacked ancestry; focused SDP/media tests remain required PR content and are exercised by the complete hosted workspace invocation.
+```
+
+### CP-025 — Reconcile PR #7 onto the validated PR #6 head
+
+```yaml
+checkpoint_id: CP-025
+recorded_at_utc: 2026-08-31T20:35:00Z
+status: in_progress
+phase: Phase 2 — SIP edge shadow mode
+milestone: Milestone 4 — Dialog + SDP + Basic Calls
+scope: Merge the validated PR #6 head into PR #7 while preserving call-engine implementation history and the expanded offline test contract
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-7-call-engine
+branch: call-engine-core
+base_branch: sdp-media-core
+pr: "#7 https://github.com/W3Mirror/asterisk/pull/7"
+head_sha: 41182282b
+evidence: Merged origin/sdp-media-core at 58171bca into PR #7 and resolved the shared goal ledger. Local cargo fmt --all -- --check, cargo test -p call-engine --locked, cargo clippy -p call-engine --all-targets --locked, and git diff --check passed. Hosted run 33436047369 passed for the validated PR #6 head; PR #7 hosted validation is pending on this merged head.
+blockers: Production deployment identity, effective configuration, provider credentials, and sanitized inbound/outbound captures remain unavailable; hosted PR #7 validation is pending
+next_action: Publish the reconciled PR #7 head, verify hosted checks and mergeability, then update the next stack branch
+rollback: Asterisk remains the active/fallback engine; no routing was changed
+notes: The merge commit preserves the stacked ancestry; focused call-engine tests remain required PR content and are exercised by the complete hosted workspace invocation.
 ```
 
 ### CP-023 — Reconcile PR #4 with the current PR #3 head
@@ -2957,6 +3041,27 @@ rollback: Asterisk remains the active/fallback engine; do not enable Rust traffi
 notes: The ordinary hosted workspace invocation exercises the focused SDP/media tests through call-api; scheduled/manual capacity, extended property, soak, and live-provider evidence remain separate gates.
 ```
 
+### CP-026 — PR #7 hosted validation and mergeability confirmed
+
+```yaml
+checkpoint_id: CP-026
+recorded_at_utc: 2026-09-01T04:20:32Z
+status: in_progress
+phase: Phase 2 — SIP edge shadow mode
+milestone: Milestone 4 — Dialog + SDP + Basic Calls
+scope: Validate the reconciled PR #7 call-engine slice on local and hosted checks
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-7-call-engine
+branch: call-engine-core
+base_branch: sdp-media-core
+pr: "#7 https://github.com/W3Mirror/asterisk/pull/7"
+head_sha: 0edb861556584a2fddb0bdbd0279f7e3aa71d64a
+evidence: Local cargo fmt --all -- --check, cargo test --workspace --locked, cargo clippy --workspace --all-targets --locked, and git diff --check passed. Hosted pull_request run 33469052092 completed successfully for this exact head: Workspace checks, Protocol fuzz checks, and Dependency audit all passed. GitHub reports PR #7 OPEN, CLEAN, and MERGEABLE. The PR contains focused call-engine tests, which are exercised by the complete hosted workspace invocation.
+blockers: Production deployment identity, effective configuration, provider credentials, and sanitized inbound/outbound captures remain unavailable; Asterisk routing remains the fallback
+next_action: Reconcile PR #8 onto this validated PR #7 head, run focused media-session tests, and publish the updated branch
+rollback: Asterisk remains the active/fallback engine; do not enable Rust traffic
+notes: Extended fuzzing, SIPp/interoperability, capacity, property, soak, credentialed-provider, and live real-time-call evidence remain scheduled or manually gated.
+```
+
 ### CP-026 — Reconcile PR #5 onto the current PR #4 head
 
 ```yaml
@@ -3039,6 +3144,27 @@ blockers: Production deployment identity, effective configuration, provider cred
 next_action: Update PR #7 onto this validated head, run focused call-engine tests plus full local/hosted checks, and record its resulting head and mergeability
 rollback: Asterisk remains the active/fallback engine; no routing was changed
 notes: The SDP/media stack boundary is green for offline and hosted checks; extended fuzzing, capacity, soak, provider-credential, and live-call gates remain scheduled/manual acceptance work.
+```
+
+### CP-030 — Reconcile PR #7 onto the current PR #6 head
+
+```yaml
+checkpoint_id: CP-030
+recorded_at_utc: 2026-09-01T13:55:00Z
+status: in_progress
+phase: Phase 2 — SIP edge shadow mode
+milestone: Milestone 4 — Dialog + SDP + Basic Calls
+scope: Merge the validated current PR #6 head into PR #7 while preserving call-engine implementation history and the expanded offline test contract
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-7-call-engine
+branch: call-engine-core
+base_branch: sdp-media-core
+pr: "#7 https://github.com/W3Mirror/asterisk/pull/7"
+head_sha: ff7c1e9c4
+evidence: Merged `origin/sdp-media-core` at `1478f91aa` into PR #7 and resolved the shared goal ledger. Focused `call-engine` tests, full workspace tests, `cargo fmt --all -- --check`, workspace Clippy, and `git diff --check` passed locally after the merge.
+blockers: Hosted validation and GitHub mergeability for the reconciled head are pending; production deployment identity, effective configuration, provider credentials, and sanitized inbound/outbound captures remain unavailable
+next_action: Publish the reconciled PR #7 head, then verify hosted checks and PR #7 OPEN/CLEAN/MERGEABLE for the exact published SHA
+rollback: Asterisk remains the active/fallback engine; no routing was changed
+notes: PR #8 must remain paused until this updated PR #7 base is validated.
 ```
 
 ### Checkpoint template
@@ -3126,8 +3252,9 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 2 | [#2](https://github.com/W3Mirror/asterisk/pull/2) | `rust-core-foundation` | `sip-rtp-engine-rust` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-2-rust-foundation` | Provider-neutral bounded SIP/SDP/RTP/RTCP/DTMF/media/call foundations | in_progress | `ddb50f1b4adaca8e3a099578ef053294a5958cc0` | Hosted run [33432577814](https://github.com/W3Mirror/asterisk/actions/runs/33432577814) passed; GitHub reports CLEAN/MERGEABLE; local focused cargo fmt/test/clippy pass | Validate PR #3 on this base |
 | 3 | [#3](https://github.com/W3Mirror/asterisk/pull/3) | `sip-transaction-core` | `rust-core-foundation` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-3-sip-transactions` | SIP transaction state machines and bounded transport adapters | in_progress | `6cbc88fad2a0d0ab019ab1c0ff787ef55e94a58a` | Hosted run [33432999749](https://github.com/W3Mirror/asterisk/actions/runs/33432999749) passed; GitHub reports CLEAN/MERGEABLE; local focused cargo fmt/test/clippy pass | Update PR #4's base branch in stack order |
 | 4 | [#4](https://github.com/W3Mirror/asterisk/pull/4) | `sip-dialog-core` | `sip-transaction-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-4-sip-dialog` | Dialog identity and state: bounded tags, route sets, remote targets, CSeq sequencing, UAC/UAS lifecycle | in_progress | `0feefabe57ccb9f09a87a34df8d26c6e282ae1a5` | Hosted run [33514194076](https://github.com/W3Mirror/asterisk/actions/runs/33514194076) passed (workspace, protocol fuzz, dependency audit); GitHub reports OPEN/CLEAN/MERGEABLE; local focused/full workspace tests, format, Clippy, and diff check passed | Validate PR #5 on this base |
-| 5 | [#5](https://github.com/W3Mirror/asterisk/pull/5) | `call-api-core` | `sip-dialog-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-5-call-api` | Call-control/API boundary: bounded registry, validated lifecycle commands, stable IDs/events, dialog binding, deterministic snapshots, and terminal reclamation | in_progress | `7720782bc8fb4ace71f66132aec29bb40c3b4787` | Hosted validation run [33515078535](https://github.com/W3Mirror/asterisk/actions/runs/33515078535) passed (workspace, protocol fuzz, dependency audit); GitHub reports OPEN/CLEAN/MERGEABLE; local focused/full workspace tests, format, Clippy, and diff check passed | Validate PR #6 on this base |
-| 6 | [#6](https://github.com/W3Mirror/asterisk/pull/6) | `sdp-media-core` | `call-api-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-6-sdp-media` | SDP/media binding: negotiated audio codec mappings, direction, remote RTP endpoint, and safe SDP update replacement in `call-api` | in_progress | `80b6431aea69f355b364473d278587095a631bb9` | Hosted pull_request run [33515767802](https://github.com/W3Mirror/asterisk/actions/runs/33515767802) passed (workspace, protocol fuzz, dependency audit); manual run [33515768162](https://github.com/W3Mirror/asterisk/actions/runs/33515768162) also passed; GitHub reports OPEN/CLEAN/MERGEABLE; local focused/full workspace tests, format, Clippy, and diff check passed | Update PR #7 onto this validated head |
+| 5 | [#5](https://github.com/W3Mirror/asterisk/pull/5) | `call-api-core` | `sip-dialog-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-5-call-api` | Call-control/API boundary: bounded registry, validated lifecycle commands, stable IDs/events, dialog binding, deterministic snapshots, and terminal reclamation | in_progress | `7720782bc8fb4ace71f66132aec29bb40c3b4787` | Hosted run [33515078535](https://github.com/W3Mirror/asterisk/actions/runs/33515078535) passed (workspace, protocol fuzz, dependency audit); GitHub reports OPEN/CLEAN/MERGEABLE; local focused/full workspace tests, format, Clippy, and diff check passed | Validate PR #6 on this base |
+| 6 | [#6](https://github.com/W3Mirror/asterisk/pull/6) | `sdp-media-core` | `call-api-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-6-sdp-media` | SDP/media binding: negotiated audio codec mappings, direction, remote RTP endpoint, and safe SDP update replacement in `call-api` | in_progress | `1478f91aa53c2b34ca24de69cfcbe9fe3e8e3c14` | Hosted pull_request run [33515767802](https://github.com/W3Mirror/asterisk/actions/runs/33515767802) passed for the prior published head; current ledger follow-up is docs-only and local focused/full checks passed | Validate PR #7 on this base |
+| 7 | [#7](https://github.com/W3Mirror/asterisk/pull/7) | `call-engine-core` | `sdp-media-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-7-call-engine` | Provider-neutral call engine: bounded registry/dialog/transaction orchestration, INVITE/ACK/BYE/CANCEL/OPTIONS handling, retransmission, and deterministic timeout polling | in_progress | `ff7c1e9c4` | Reconciled onto `origin/sdp-media-core` at `1478f91aa`; local focused `call-engine` tests, full workspace tests, format, Clippy, and diff check passed; hosted validation is pending for this new head | Publish this reconciled head, then verify hosted checks and mergeability before updating PR #8 |
 
 ## 59.4 Stacked-PR Checkpoints
 

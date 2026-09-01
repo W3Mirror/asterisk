@@ -13,6 +13,7 @@ members = [
   "crates/sip-transport",
   "crates/sip-dialog",
   "crates/call-api",
+  "crates/call-engine",
 ]
 
 [workspace.package]
