@@ -1,12 +1,12 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**
-**Current checkpoint:** CP-071 — PR #28 restack locally validated
-**Last checkpoint (UTC):** 2026-09-01T19:24:15Z
+**Current checkpoint:** CP-072 — PR #28 hosted validation confirmed after restack
+**Last checkpoint (UTC):** 2026-09-01T19:30:00Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Offline deterministic verification foundation across Milestones 2–5<br>
-**Next resume action:** Publish the restacked PR #28 head with an exact force-with-lease, then verify hosted checks and mergeability
-**Active PR:** Pre-publication branch `call-bridge-core` targets [#27](https://github.com/W3Mirror/asterisk/pull/27)'s branch `sip-scenario-transfer-reclamation`
+**Next resume action:** Reconcile PR #29 onto the validated PR #28 head and run focused bridge-scenario replay checks
+**Active PR:** [#28](https://github.com/W3Mirror/asterisk/pull/28); branch `call-bridge-core` targets [#27](https://github.com/W3Mirror/asterisk/pull/27)'s branch `sip-scenario-transfer-reclamation`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-28`
 **Primary language:** Rust  
@@ -2140,10 +2140,10 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 | Workstream | Status | Evidence / checkpoint | PR | Next action |
 | --- | --- | --- | --- | --- |
 | Phase 0 — current Asterisk surface | in_progress | CP-015; PR #1 hosted run 33431290927 passed and GitHub reports CLEAN/MERGEABLE at `8dbd0082823b9444e72a6ceebee27328bd0f506d` | #1 | Keep the verified Asterisk inventory and production-evidence gate in force |
-| Phase 1 — Rust media engine | in_progress | CP-018/CP-026/CP-047/CP-049/CP-050/CP-054/CP-056/CP-058/CP-059/CP-060/CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067/CP-068/CP-069/CP-070/CP-071; PR #2 foundation, PR #8 media/DTMF/recording, PR #18 bounded WebSocket adapter, PR #19 bounded stream driver, PR #20 UDP runtime, PR #21 parser fuzz harnesses, PR #22 hosted CI/offline verification contract, PR #25 deterministic SIP scenario replay, PR #26 deterministic fault corpus, PR #27 transfer/reclamation tests, and PR #28 call-bridge state model; focused and full offline workspace tests pass | [#28](https://github.com/W3Mirror/asterisk/pull/28) | Publish and verify PR #28, then implement deterministic bridge/runtime integration |
-| Offline deterministic verification | in_progress | CP-058/CP-059/CP-060/CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067/CP-068/CP-069/CP-070/CP-071 define focused per-module tests, synthetic SIP replay, property invariants, API/event contracts, media fault injection, bridge/transfer state tests, differential tooling, load/soak/reclamation tiers, and hosted PR/main-push execution semantics | [#28](https://github.com/W3Mirror/asterisk/pull/28) | Extend the replay foundation with deterministic bridge/runtime scenarios in PR #29 |
-| Synthetic SIP scenario replay | in_progress | CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067/CP-068/CP-069/CP-070/CP-071; PR #25 provides bounded atomic normal-call replay, PR #26 adds signaling/media faults, PR #27 adds transfer-command and terminal-reclamation replay, and PR #28 adds a bounded AI-to-human bridge state model with five focused bridge tests; local full workspace (144 tests) passes | [#28](https://github.com/W3Mirror/asterisk/pull/28) | Publish PR #28 and verify hosted checks plus mergeability |
-| Call bridge state model | in_progress | CP-067/CP-068/CP-071; PR #28 adds provider-neutral bounded bridge ownership, AI/human routing transitions, failure fail-back, event backpressure atomicity, endpoint reclamation, and five focused tests | [#28](https://github.com/W3Mirror/asterisk/pull/28) | Integrate the bridge state model with call/runtime signaling and media |
+| Phase 1 — Rust media engine | in_progress | CP-018/CP-026/CP-047/CP-049/CP-050/CP-054/CP-056/CP-058/CP-059/CP-060/CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067/CP-068/CP-069/CP-070/CP-071/CP-072; PR #2 foundation, PR #8 media/DTMF/recording, PR #18 bounded WebSocket adapter, PR #19 bounded stream driver, PR #20 UDP runtime, PR #21 parser fuzz harnesses, PR #22 hosted CI/offline verification contract, PR #25 deterministic SIP scenario replay, PR #26 deterministic fault corpus, PR #27 transfer/reclamation tests, and PR #28 call-bridge state model; focused and full offline workspace tests pass, and hosted PR #28 checks pass | [#28](https://github.com/W3Mirror/asterisk/pull/28) | Reconcile PR #29 onto the validated PR #28 head and implement deterministic bridge/runtime integration |
+| Offline deterministic verification | in_progress | CP-058/CP-059/CP-060/CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067/CP-068/CP-069/CP-070/CP-071/CP-072 define focused per-module tests, synthetic SIP replay, property invariants, API/event contracts, media fault injection, bridge/transfer state tests, differential tooling, load/soak/reclamation tiers, and hosted PR/main-push execution semantics | [#28](https://github.com/W3Mirror/asterisk/pull/28) | Extend the replay foundation with deterministic bridge/runtime scenarios in PR #29 |
+| Synthetic SIP scenario replay | in_progress | CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067/CP-068/CP-069/CP-070/CP-071/CP-072; PR #25 provides bounded atomic normal-call replay, PR #26 adds signaling/media faults, PR #27 adds transfer-command and terminal-reclamation replay, and PR #28 adds a bounded AI-to-human bridge state model with five focused bridge tests; local full workspace (144 tests) and hosted PR #28 checks pass | [#28](https://github.com/W3Mirror/asterisk/pull/28) | Reconcile PR #29 and add focused bridge-scenario replay tests |
+| Call bridge state model | in_progress | CP-067/CP-068/CP-071/CP-072; PR #28 adds provider-neutral bounded bridge ownership, AI/human routing transitions, failure fail-back, event backpressure atomicity, endpoint reclamation, and five focused tests; hosted validation is green | [#28](https://github.com/W3Mirror/asterisk/pull/28) | Integrate the bridge state model with call/runtime signaling and media |
 | Phase 2 — SIP edge shadow mode | in_progress | CP-026; PR #7 hosted run 33436951454 passed and GitHub reports CLEAN/MERGEABLE at `fe87301a5322e278a8fb39404d675c6372d87ad9` | [#7](https://github.com/W3Mirror/asterisk/pull/7) | Publish and validate PR #8's media-session slice |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
 | Phase 4 — expanded provider coverage | not_started | — | — | Add one provider compatibility suite per rollout target |
@@ -5098,6 +5098,27 @@ head_sha: d94c2ba51
 evidence: Restacked PR #28 onto the current PR #27 head `dbe56b64f`, preserving the bounded call-bridge implementation, bridge documentation, and prior PR #25/#26/#27 ledger records. Local `cargo test -p call-bridge --locked` (5 passed), `cargo test --workspace --locked` (144 passed), `cargo fmt --all -- --check`, strict call-bridge Clippy with `--no-deps -- -D warnings`, workspace Clippy, and `git diff --check` passed. Shared goal-ledger conflict markers were removed while retaining both PR #27 and PR #28 checkpoint histories. The remote PR #28 head remains `9b318a7d1` and requires exact SHA-pinned force-with-lease publication before hosted revalidation.
 blockers: Runtime SIP/media bridge integration, provider/Asterisk runtime identity, credentials, sanitized real captures, and live interoperability remain unavailable; they block later runtime and traffic-evidence gates, not the offline bridge state model
 next_action: Publish PR #28 with a pinned force-with-lease using remote head `9b318a7d1` as the lease, then verify hosted checks and OPEN/CLEAN/MERGEABLE state
+rollback: Asterisk remains the active/fallback engine; no routing was changed
+notes: Every implementation PR must include focused tests for each affected crate/module. Hosted pull_request events run the complete ordinary workspace suite (not automatic module-only selection), and pushes to `aistack/main` repeat that complete ordinary hosted suite; extended fuzzing, SIPp/interoperability, capacity, property, soak, credentialed-provider, and real-time checks remain scheduled, manually dispatched, or approval-gated.
+```
+
+### CP-072 — PR #28 hosted validation confirmed after restack
+
+```yaml
+checkpoint_id: CP-072
+recorded_at_utc: 2026-09-01T19:30:00Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Offline deterministic verification foundation across Milestones 2–5
+scope: Publish and validate the restacked call-bridge state-model slice on hosted CI
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-28
+branch: call-bridge-core
+base_branch: sip-scenario-transfer-reclamation
+pr: "#28 https://github.com/W3Mirror/asterisk/pull/28"
+head_sha: a634c86a4
+evidence: Published PR #28 with an exact SHA-pinned force-with-lease replacing remote head `9b318a7d1`. Hosted Rust quality run [33549462516](https://github.com/W3Mirror/asterisk/actions/runs/33549462516) completed successfully on hosted `ubuntu-latest`: Workspace checks (formatting, 144 locked workspace tests, and Clippy), protocol fuzz checks, and dependency audit passed. GitHub reports PR #28 OPEN, CLEAN, and MERGEABLE against `sip-scenario-transfer-reclamation`; local and remote heads match.
+blockers: Runtime SIP/media bridge integration, provider/Asterisk runtime identity, credentials, sanitized real captures, and live interoperability remain unavailable; they block later runtime and traffic-evidence gates, not the offline bridge state model
+next_action: Reconcile PR #29 onto the validated PR #28 head `a634c86a4` and run focused bridge-scenario replay checks
 rollback: Asterisk remains the active/fallback engine; no routing was changed
 notes: Every implementation PR must include focused tests for each affected crate/module. Hosted pull_request events run the complete ordinary workspace suite (not automatic module-only selection), and pushes to `aistack/main` repeat that complete ordinary hosted suite; extended fuzzing, SIPp/interoperability, capacity, property, soak, credentialed-provider, and real-time checks remain scheduled, manually dispatched, or approval-gated.
 ```
