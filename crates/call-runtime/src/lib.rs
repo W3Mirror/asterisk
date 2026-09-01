@@ -21,7 +21,9 @@ use std::{
     time::Duration,
 };
 
-use call_api::{AuditRecord, AuthenticatedPrincipal, CallCommand};
+use call_api::{
+    AuditOutcome, AuditRecord, AuthenticatedPrincipal, BridgeControlOperation, CallCommand,
+};
 use call_bridge::{BridgeError, BridgeEvent, BridgeRegistry, BridgeState};
 use call_core::{BridgeId, CallEventKind, CallId, CommandId, LegId, LifecycleEvent};
 use call_engine::{
@@ -779,8 +781,31 @@ impl CallRuntime {
         destination: SocketAddr,
         now: Duration,
     ) -> Result<(CallId, RuntimeOutput), RuntimeError> {
-        authorize_bridge_command(principal, CallCommand::BeginTransfer)?;
-        self.originate_human_leg(bridge_id, leg_id, request, destination, now)
+        if let Err(error) = principal.authorize(CallCommand::BeginTransfer) {
+            self.engine.record_bridge_audit(
+                principal,
+                None,
+                BridgeControlOperation::OriginateHuman,
+                AuditOutcome::Rejected(error.code()),
+            );
+            return Err(RuntimeError::Engine(EngineError::CallApi(error)));
+        }
+        let result = self.originate_human_leg(bridge_id, leg_id, request, destination, now);
+        let call_id = result
+            .as_ref()
+            .ok()
+            .map(|(call_id, _)| call_id.clone())
+            .or_else(|| bridge_call_id(self.bridges.as_ref(), bridge_id));
+        self.engine.record_bridge_audit(
+            principal,
+            call_id.as_ref(),
+            BridgeControlOperation::OriginateHuman,
+            result.as_ref().map_or_else(
+                |error| AuditOutcome::Rejected(runtime_error_code(error)),
+                |_| AuditOutcome::Succeeded,
+            ),
+        );
+        result
     }
 
     /// Completes a pending human bridge transition transactionally.
@@ -798,8 +823,13 @@ impl CallRuntime {
         principal: &AuthenticatedPrincipal,
         bridge_id: &BridgeId,
     ) -> Result<RuntimeOutput, RuntimeError> {
-        authorize_bridge_command(principal, CallCommand::CompleteTransfer)?;
-        self.complete_human(bridge_id)
+        self.apply_authorized_bridge_transition(
+            principal,
+            bridge_id,
+            CallCommand::CompleteTransfer,
+            BridgeControlOperation::CompleteHuman,
+            move |bridges| bridges.complete_human(bridge_id),
+        )
     }
 
     /// Fails a pending or active human leg and restores AI routing
@@ -814,8 +844,13 @@ impl CallRuntime {
         principal: &AuthenticatedPrincipal,
         bridge_id: &BridgeId,
     ) -> Result<RuntimeOutput, RuntimeError> {
-        authorize_bridge_command(principal, CallCommand::BeginTransfer)?;
-        self.fail_human(bridge_id)
+        self.apply_authorized_bridge_transition(
+            principal,
+            bridge_id,
+            CallCommand::BeginTransfer,
+            BridgeControlOperation::FailHuman,
+            move |bridges| bridges.fail_human(bridge_id),
+        )
     }
 
     /// Restores AI routing from an active human bridge transactionally.
@@ -829,13 +864,60 @@ impl CallRuntime {
         principal: &AuthenticatedPrincipal,
         bridge_id: &BridgeId,
     ) -> Result<RuntimeOutput, RuntimeError> {
-        authorize_bridge_command(principal, CallCommand::CompleteTransfer)?;
-        self.resume_ai(bridge_id)
+        self.apply_authorized_bridge_transition(
+            principal,
+            bridge_id,
+            CallCommand::CompleteTransfer,
+            BridgeControlOperation::ResumeAi,
+            move |bridges| bridges.resume_ai(bridge_id),
+        )
     }
 
     /// Ends bridge forwarding and releases its retained human endpoints.
     pub fn end_bridge(&mut self, bridge_id: &BridgeId) -> Result<RuntimeOutput, RuntimeError> {
-        self.apply_bridge_transition(|bridges| bridges.end(bridge_id))
+        self.end_bridge_at(bridge_id, Duration::ZERO)
+    }
+
+    /// Ends bridge forwarding at a deterministic time, sending BYE to any
+    /// active or pending human leg before releasing the bridge endpoints.
+    pub fn end_bridge_at(
+        &mut self,
+        bridge_id: &BridgeId,
+        now: Duration,
+    ) -> Result<RuntimeOutput, RuntimeError> {
+        let mut working_bridges = self
+            .bridges
+            .clone()
+            .ok_or(RuntimeError::BridgeRegistryNotConfigured)?;
+        let snapshot = working_bridges.snapshot(bridge_id)?;
+        let human_calls = [snapshot.pending_human, snapshot.active_human]
+            .into_iter()
+            .flatten()
+            .map(|human| human.call_id)
+            .collect::<Vec<_>>();
+        let mut working_engine = self.engine.clone();
+        let mut output = RuntimeOutput::default();
+        for call_id in human_calls {
+            let state = working_engine.snapshot(&call_id)?.state;
+            if matches!(
+                state,
+                call_core::CallState::Ended | call_core::CallState::Failed
+            ) {
+                continue;
+            }
+            output.append(working_engine.hangup(&call_id, now, self.transport.reliability())?);
+        }
+        let _ = working_bridges.end(bridge_id)?;
+        output
+            .bridge_events
+            .extend(working_bridges.drain_events(usize::MAX)?);
+        let mut working_provider_authentication = self.provider_authentication.clone();
+        synchronize_provider_authentication(&mut working_provider_authentication, &output.events);
+        self.deliver(&output)?;
+        self.engine = working_engine;
+        self.bridges = Some(working_bridges);
+        self.provider_authentication = working_provider_authentication;
+        Ok(output)
     }
 
     /// Ends bridge forwarding after hangup authorization.
@@ -844,8 +926,27 @@ impl CallRuntime {
         principal: &AuthenticatedPrincipal,
         bridge_id: &BridgeId,
     ) -> Result<RuntimeOutput, RuntimeError> {
-        authorize_bridge_command(principal, CallCommand::Hangup)?;
-        self.end_bridge(bridge_id)
+        if let Err(error) = principal.authorize(CallCommand::Hangup) {
+            self.engine.record_bridge_audit(
+                principal,
+                None,
+                BridgeControlOperation::EndBridge,
+                AuditOutcome::Rejected(error.code()),
+            );
+            return Err(RuntimeError::Engine(EngineError::CallApi(error)));
+        }
+        let call_id = bridge_call_id(self.bridges.as_ref(), bridge_id);
+        let result = self.end_bridge(bridge_id);
+        self.engine.record_bridge_audit(
+            principal,
+            call_id.as_ref(),
+            BridgeControlOperation::EndBridge,
+            result.as_ref().map_or_else(
+                |error| AuditOutcome::Rejected(runtime_error_code(error)),
+                |_| AuditOutcome::Succeeded,
+            ),
+        );
+        result
     }
 
     /// Applies one application call command and delivers any resulting action.
@@ -1191,7 +1292,7 @@ impl CallRuntime {
         if let Some(bridges) = working_bridges.as_mut() {
             bridge_events.extend(bridges.drain_events(usize::MAX)?);
             for event in engine_handoff.events() {
-                synchronize_bridge_lifecycle(bridges, std::slice::from_ref(event))?;
+                synchronize_bridge_events(bridges, std::slice::from_ref(event))?;
                 bridge_events.extend(bridges.drain_events(usize::MAX)?);
             }
             end_all_bridges(bridges, &mut bridge_events)?;
@@ -1242,13 +1343,20 @@ impl CallRuntime {
 
     fn commit_runtime_output(
         &mut self,
-        working_engine: CallEngine,
+        mut working_engine: CallEngine,
         mut output: RuntimeOutput,
     ) -> Result<RuntimeOutput, RuntimeError> {
         let mut working_bridges = self.bridges.clone();
         let mut working_provider_authentication = self.provider_authentication.clone();
         if let Some(bridges) = working_bridges.as_mut() {
-            synchronize_bridge_lifecycle(bridges, &output.events)?;
+            let lifecycle_events = output.events.clone();
+            synchronize_bridge_lifecycle(
+                &mut working_engine,
+                bridges,
+                &lifecycle_events,
+                self.transport.reliability(),
+                &mut output,
+            )?;
             output
                 .bridge_events
                 .extend(bridges.drain_events(usize::MAX)?);
@@ -1277,18 +1385,70 @@ impl CallRuntime {
         self.bridges = Some(working_bridges);
         Ok(output)
     }
+
+    fn apply_authorized_bridge_transition<F>(
+        &mut self,
+        principal: &AuthenticatedPrincipal,
+        bridge_id: &BridgeId,
+        permission_command: CallCommand,
+        operation: BridgeControlOperation,
+        transition: F,
+    ) -> Result<RuntimeOutput, RuntimeError>
+    where
+        F: FnOnce(&mut BridgeRegistry) -> Result<BridgeEvent, BridgeError>,
+    {
+        if let Err(error) = principal.authorize(permission_command) {
+            self.engine.record_bridge_audit(
+                principal,
+                None,
+                operation,
+                AuditOutcome::Rejected(error.code()),
+            );
+            return Err(RuntimeError::Engine(EngineError::CallApi(error)));
+        }
+        let call_id = bridge_call_id(self.bridges.as_ref(), bridge_id);
+        let result = self.apply_bridge_transition(transition);
+        self.engine.record_bridge_audit(
+            principal,
+            call_id.as_ref(),
+            operation,
+            result.as_ref().map_or_else(
+                |error| AuditOutcome::Rejected(runtime_error_code(error)),
+                |_| AuditOutcome::Succeeded,
+            ),
+        );
+        result
+    }
 }
 
-fn authorize_bridge_command(
-    principal: &AuthenticatedPrincipal,
-    command: CallCommand,
-) -> Result<(), RuntimeError> {
-    principal
-        .authorize(command)
-        .map_err(|error| RuntimeError::Engine(EngineError::CallApi(error)))
+fn runtime_error_code(error: &RuntimeError) -> &'static str {
+    match error {
+        RuntimeError::Engine(EngineError::CallApi(error)) => error.code(),
+        RuntimeError::Bridge(_) => "bridge_error",
+        RuntimeError::Engine(_) => "engine_error",
+        RuntimeError::Transport(_) => "transport_error",
+        RuntimeError::DestinationMismatch { .. } => "destination_mismatch",
+        RuntimeError::ConnectionClosed { .. } => "connection_closed",
+        RuntimeError::SourceAddressDenied { .. } => "source_address_denied",
+        RuntimeError::NotDatagram => "not_datagram",
+        RuntimeError::BridgeRegistryNotConfigured => "bridge_registry_not_configured",
+        RuntimeError::ProviderRouteFallback { .. } => "provider_route_fallback",
+        RuntimeError::ProviderTransportUnsupported => "provider_transport_unsupported",
+        RuntimeError::ProviderAddressUnavailable => "provider_address_unavailable",
+    }
 }
 
-fn synchronize_bridge_lifecycle(
+fn bridge_call_id(bridges: Option<&BridgeRegistry>, bridge_id: &BridgeId) -> Option<CallId> {
+    let snapshot = bridges?.snapshot(bridge_id).ok()?;
+    snapshot
+        .active_human
+        .as_ref()
+        .or(snapshot.pending_human.as_ref())
+        .map(|human| human.call_id.clone())
+        .or(Some(snapshot.caller_call_id))
+}
+
+fn synchronize_bridge_events(
     bridges: &mut BridgeRegistry,
     events: &[LifecycleEvent],
 ) -> Result<(), BridgeError> {
@@ -1308,6 +1468,47 @@ fn synchronize_bridge_lifecycle(
             }
             _ => {}
         }
+    }
+    Ok(())
+}
+
+fn synchronize_bridge_lifecycle(
+    engine: &mut CallEngine,
+    bridges: &mut BridgeRegistry,
+    events: &[LifecycleEvent],
+    reliability: TransportReliability,
+    output: &mut RuntimeOutput,
+) -> Result<(), RuntimeError> {
+    for event in events {
+        let caller_bridge = bridges
+            .list(bridges.config().max_bridges)?
+            .into_iter()
+            .find(|bridge| bridge.caller_call_id == event.call_id);
+        if let Some(snapshot) = caller_bridge {
+            if matches!(
+                event.kind,
+                CallEventKind::Hangup | CallEventKind::Failed | CallEventKind::Ended
+            ) && snapshot.state != BridgeState::Ended
+            {
+                let human_calls = [snapshot.pending_human, snapshot.active_human]
+                    .into_iter()
+                    .flatten()
+                    .map(|human| human.call_id)
+                    .collect::<Vec<_>>();
+                for call_id in human_calls {
+                    let state = engine.snapshot(&call_id)?.state;
+                    if !matches!(
+                        state,
+                        call_core::CallState::Ended | call_core::CallState::Failed
+                    ) {
+                        output.append(engine.hangup(&call_id, Duration::ZERO, reliability)?);
+                    }
+                }
+                let _ = bridges.end(&snapshot.id)?;
+                continue;
+            }
+        }
+        synchronize_bridge_events(bridges, std::slice::from_ref(event))?;
     }
     Ok(())
 }
@@ -1370,7 +1571,9 @@ fn provider_transport_matches(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use call_api::{ApiError, AuditOperation, AuditOutcome, ControlPermission};
+    use call_api::{
+        ApiError, AuditOperation, AuditOutcome, BridgeControlOperation, ControlPermission,
+    };
     use call_bridge::{BridgeEventKind, BridgeRegistryConfig};
     use call_core::{CallEventKind, CallState, CommandId, StreamId};
     use call_engine::EngineConfig;
@@ -3376,6 +3579,185 @@ mod tests {
     }
 
     #[test]
+    fn ending_active_bridge_sends_bye_and_waits_for_human_terminal_response() {
+        let (mut runtime, bridge_id, _) = runtime_with_inbound_bridge();
+        let human = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 2_048).unwrap();
+        let runtime_address = runtime.transport().local_addr().unwrap();
+        let (human_call_id, _) = runtime
+            .originate_human_leg(
+                &bridge_id,
+                LegId::from_sequence(2),
+                invite(),
+                human.local_addr().unwrap(),
+                Duration::ZERO,
+            )
+            .unwrap();
+        let (message, _) = human.recv().unwrap();
+        let SipMessage::Request(outbound_invite) = message else {
+            panic!("expected outbound human INVITE");
+        };
+        human
+            .send_to(&response_for_invite(&outbound_invite, 200), runtime_address)
+            .unwrap();
+        let _ = runtime.receive_once(Duration::from_millis(10)).unwrap();
+        let _ = human.recv().unwrap();
+
+        let ending = runtime
+            .end_bridge_at(&bridge_id, Duration::from_millis(20))
+            .unwrap();
+        assert_eq!(ending.bridge_events()[0].kind, BridgeEventKind::Ended);
+        assert!(ending.actions().iter().any(|action| matches!(
+            action.message,
+            SipMessage::Request(SipRequest {
+                method: SipMethod::Bye,
+                ..
+            })
+        )));
+        let (message, _) = human.recv().unwrap();
+        let SipMessage::Request(bye) = message else {
+            panic!("expected human-leg BYE");
+        };
+        assert_eq!(bye.method, SipMethod::Bye);
+        assert_eq!(
+            runtime.engine().snapshot(&human_call_id).unwrap().state,
+            CallState::Ending
+        );
+        assert_eq!(
+            runtime
+                .bridge_registry()
+                .unwrap()
+                .snapshot(&bridge_id)
+                .unwrap()
+                .state,
+            BridgeState::Ended
+        );
+
+        human
+            .send_to(&response_for_invite(&bye, 200), runtime_address)
+            .unwrap();
+        let completed = runtime.receive_once(Duration::from_millis(30)).unwrap();
+        assert!(
+            completed.events().iter().any(|event| {
+                event.call_id == human_call_id && event.kind == CallEventKind::Ended
+            })
+        );
+        assert_eq!(
+            runtime.engine().snapshot(&human_call_id).unwrap().state,
+            CallState::Ended
+        );
+    }
+
+    #[test]
+    fn caller_hangup_ends_bridge_and_sends_bye_to_active_human_leg() {
+        let (mut runtime, bridge_id, caller_id) = runtime_with_inbound_bridge();
+        let inbound = inbound_invite();
+        let answered = runtime
+            .respond_to_invite(&caller_id, 200, "OK", Vec::new(), Duration::ZERO)
+            .unwrap();
+        let SipMessage::Response(response) = &answered.actions()[0].message else {
+            panic!("expected inbound 200 response");
+        };
+        let caller = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 2_048).unwrap();
+        let mut ack_headers = Headers::new();
+        ack_headers.push(
+            "Via",
+            "SIP/2.0/UDP caller.invalid;branch=caller-confirm-ack",
+        );
+        ack_headers.push("From", inbound.headers.get("From").unwrap());
+        ack_headers.push("To", response.headers.get("To").unwrap());
+        ack_headers.push("Call-ID", inbound.headers.get("Call-ID").unwrap());
+        ack_headers.push("CSeq", "1 ACK");
+        caller
+            .send_to(
+                &SipMessage::Request(SipRequest {
+                    method: SipMethod::Ack,
+                    request_uri: inbound.request_uri.clone(),
+                    version: "SIP/2.0".to_owned(),
+                    headers: ack_headers,
+                    body: Vec::new(),
+                }),
+                runtime.transport().local_addr().unwrap(),
+            )
+            .unwrap();
+        let _ = runtime.receive_once(Duration::from_millis(1)).unwrap();
+        let human = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 2_048).unwrap();
+        let runtime_address = runtime.transport().local_addr().unwrap();
+        let (human_call_id, _) = runtime
+            .originate_human_leg(
+                &bridge_id,
+                LegId::from_sequence(2),
+                invite(),
+                human.local_addr().unwrap(),
+                Duration::ZERO,
+            )
+            .unwrap();
+        let (message, _) = human.recv().unwrap();
+        let SipMessage::Request(outbound_invite) = message else {
+            panic!("expected outbound human INVITE");
+        };
+        human
+            .send_to(&response_for_invite(&outbound_invite, 200), runtime_address)
+            .unwrap();
+        let _ = runtime.receive_once(Duration::from_millis(10)).unwrap();
+        let _ = human.recv().unwrap();
+
+        let mut headers = Headers::new();
+        headers.push(
+            "Via",
+            "SIP/2.0/UDP caller.invalid;branch=caller-terminal-bye",
+        );
+        headers.push("From", "Alice <sip:alice@example.com>;tag=client-2");
+        headers.push("To", "Bob <sip:bob@example.com>;tag=rust-1");
+        headers.push("Call-ID", "runtime-inbound@example.com");
+        headers.push("CSeq", "2 BYE");
+        caller
+            .send_to(
+                &SipMessage::Request(SipRequest {
+                    method: SipMethod::Bye,
+                    request_uri: "sip:bob@example.com".to_owned(),
+                    version: "SIP/2.0".to_owned(),
+                    headers,
+                    body: Vec::new(),
+                }),
+                runtime_address,
+            )
+            .unwrap();
+        let ended = runtime.receive_once(Duration::from_millis(20)).unwrap();
+        assert_eq!(
+            runtime
+                .bridge_registry()
+                .unwrap()
+                .snapshot(&bridge_id)
+                .unwrap()
+                .state,
+            BridgeState::Ended
+        );
+        assert_eq!(
+            runtime.engine().snapshot(&caller_id).unwrap().state,
+            CallState::Ended
+        );
+        assert_eq!(
+            runtime.engine().snapshot(&human_call_id).unwrap().state,
+            CallState::Ending
+        );
+        assert!(ended.actions().iter().any(|action| matches!(
+            action.message,
+            SipMessage::Request(SipRequest {
+                method: SipMethod::Bye,
+                ..
+            })
+        )));
+        let (message, _) = human.recv().unwrap();
+        assert!(matches!(
+            message,
+            SipMessage::Request(SipRequest {
+                method: SipMethod::Bye,
+                ..
+            })
+        ));
+    }
+
+    #[test]
     fn failed_human_response_restores_ai_and_ends_outbound_call() {
         let (mut runtime, bridge_id, _) = runtime_with_inbound_bridge();
         let human = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 2_048).unwrap();
@@ -3658,7 +4040,7 @@ mod tests {
                 .active_human
                 .as_ref()
                 .map(|human| human.call_id.clone()),
-            Some(human_call_id)
+            Some(human_call_id.clone())
         );
 
         let denied = runtime
@@ -3690,7 +4072,7 @@ mod tests {
                 .snapshot(&bridge_id)
                 .unwrap()
                 .caller_call_id,
-            caller_id
+            caller_id.clone()
         );
 
         let ended = runtime.end_bridge_authorized(&hangup, &bridge_id).unwrap();
@@ -3704,5 +4086,30 @@ mod tests {
                 .state,
             BridgeState::Ended
         );
+
+        let audit = runtime.drain_audit_records(&read_only, 16).unwrap();
+        assert!(audit.iter().any(|record| {
+            record.operation
+                == AuditOperation::BridgeControl {
+                    operation: BridgeControlOperation::OriginateHuman,
+                }
+                && record.call_id == Some(human_call_id.clone())
+                && record.outcome == AuditOutcome::Succeeded
+        }));
+        assert!(audit.iter().any(|record| {
+            record.operation
+                == AuditOperation::BridgeControl {
+                    operation: BridgeControlOperation::EndBridge,
+                }
+                && record.outcome == AuditOutcome::Rejected("permission_denied")
+        }));
+        assert!(audit.iter().any(|record| {
+            record.operation
+                == AuditOperation::BridgeControl {
+                    operation: BridgeControlOperation::EndBridge,
+                }
+                && record.call_id == Some(caller_id.clone())
+                && record.outcome == AuditOutcome::Succeeded
+        }));
     }
 }

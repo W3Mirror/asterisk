@@ -199,6 +199,25 @@ fn required_permission(command: CallCommand) -> ControlPermission {
     }
 }
 
+/// A bridge-control operation represented in the bounded audit trail.
+///
+/// Bridge state is owned by the runtime bridge registry rather than the call
+/// registry, but the audit trail deliberately keeps one stable operation
+/// vocabulary for all application-originated control-plane mutations.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BridgeControlOperation {
+    /// Start an outbound human second leg for a bridge.
+    OriginateHuman,
+    /// Promote a pending human leg to the active destination.
+    CompleteHuman,
+    /// Fail a human leg and restore AI routing.
+    FailHuman,
+    /// Restore AI routing from an active human leg.
+    ResumeAi,
+    /// End bridge forwarding and release its retained endpoints.
+    EndBridge,
+}
+
 /// A control-plane operation represented in the bounded audit trail.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuditOperation {
@@ -217,6 +236,11 @@ pub enum AuditOperation {
     ReclaimTerminal,
     /// Negotiate or update the call's audio media.
     NegotiateAudio,
+    /// Apply an authorized bridge-control operation.
+    BridgeControl {
+        /// Bridge operation requested by the caller.
+        operation: BridgeControlOperation,
+    },
 }
 
 /// Outcome recorded for one control-plane audit operation.
