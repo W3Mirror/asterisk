@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-226 — PR #72 synchronized hosted validation green
-**Last checkpoint (UTC):** 2026-09-01T01:20:43Z
+**Current checkpoint:** CP-228 — PR #72 generic outbound in-dialog request validation green
+**Last checkpoint (UTC):** 2026-09-01T01:47:49Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** In-dialog SIP request interoperability and Asterisk fallback<br>
-**Next resume action:** Continue the next bounded offline acceptance slice from exact head `8a0badb82` without enabling Rust traffic
+**Next resume action:** Continue the next bounded offline acceptance slice from exact head `498f9bb83` without enabling Rust traffic
 **Active PR:** #72 — `in-dialog-requests` targets `bridge-terminalization` (final ledger-head hosted validation green; open and mergeable)
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-72-in-dialog-requests`
@@ -7045,6 +7045,27 @@ blockers: Commit/publication, hosted Workspace/fuzz/dependency-audit validation,
 next_action: Commit the implementation and focused tests normally, push `in-dialog-requests`, then reconcile the resulting hosted PR #72 checks and exact local/origin/GitHub parity before continuing the next bounded offline acceptance slice.
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #72 or revert the generic in-dialog request slice if its contract is superseded.
 notes: Tests are part of this implementation slice. Pull-request opened/reopened/synchronize events run the complete ordinary hosted suite rather than a changed-module-only selector, so the focused call-engine/runtime tests are exercised through `cargo test --workspace --locked`. Every push to `aistack/main` repeats that same ordinary suite. Scheduled/manual capacity, extended property, multi-hour soak, and credentialed provider/live-call checks remain separate gates. All workflow runners remain hosted `ubuntu-latest`; Docker remains limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-228 — PR #72 generic outbound in-dialog request hosted validation green
+
+~~~yaml
+checkpoint_id: CP-228
+recorded_at_utc: 2026-09-01T01:47:49Z
+status: hosted_green
+phase: Phase 1 — Rust media engine
+milestone: In-dialog SIP request interoperability and Asterisk fallback
+scope: Verify the complete ordinary hosted Rust quality suite for PR #72's generic outbound in-dialog request implementation and focused tests
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-72-in-dialog-requests
+branch: in-dialog-requests
+base_branch: bridge-terminalization
+pr: https://github.com/W3Mirror/asterisk/pull/72
+head_sha: 498f9bb83dfe02b3d3688e5af71976d5538b4b94
+evidence: Local HEAD, `origin/in-dialog-requests`, and `gh pr view 72 --json headRefOid` report `498f9bb83dfe02b3d3688e5af71976d5538b4b94`. PR #72 is OPEN, non-draft, CLEAN, and MERGEABLE against `bridge-terminalization` at `4ee7cab2811292fcc19590df188c444f8ce1ea78`. Hosted Rust quality run `33459849812` passed Workspace checks `99707535300` (formatting, complete locked workspace tests including 44 call-engine and 53 call-runtime tests, pinned Docker-backed SIPp scenarios, deterministic signaling/media/WebSocket/combined/short-soak reclamation smokes, and workspace Clippy), Protocol fuzz checks `99707535125` (all address-sanitizer targets), and Dependency audit `99707535231`; schedule/manual-only Signaling capacity matrix `99707536354` and Two-hour lifecycle soak `99707535840` correctly skipped for the pull-request event.
+blockers: This ledger reconciliation changes the PR head and requires one final hosted-head validation. Provider credentials/runtime access, sanitized provider captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated; Asterisk remains the fallback.
+next_action: Commit and push this hosted-validation ledger reconciliation, verify the resulting synchronized PR #72 head and hosted checks, then continue the next bounded offline acceptance slice without enabling Rust traffic.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #72 or revert the generic in-dialog request slice if its contract is superseded.
+notes: The hosted PR run confirms that focused affected-module tests ship in the implementation PR but are executed through the complete ordinary workspace invocation. Every pull-request opened/reopened/synchronize event and every push to `aistack/main` uses hosted `ubuntu-latest` runners for that ordinary suite; no changed-module-only selector is configured. Larger capacity, extended property, multi-hour soak, and credentialed provider/live-call evidence remain scheduled/manual or approval-gated. Docker remains limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
