@@ -160,6 +160,7 @@ dependencies = [
  "media-core",
  "scenario-replay",
  "sdp",
+ "sip-parser",
  "sip-transaction",
  "sip-types",
 ]

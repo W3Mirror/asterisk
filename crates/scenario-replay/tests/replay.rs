@@ -205,6 +205,34 @@ fn replays_all_outbound_in_dialog_methods_with_dynamic_responses_and_timer_k_rec
 }
 
 #[test]
+fn retains_inbound_sip_fixtures_for_differential_replay() {
+    let mut replay = runner();
+    let call_id = CallId::from_sequence(1);
+    let peer = address(5060);
+    let report = replay
+        .run(&Scenario::new(
+            "retained-inbound-sip",
+            vec![ScenarioStep::ReceiveSip {
+                at: Duration::ZERO,
+                source: peer,
+                reliability: TransportReliability::Unreliable,
+                wire: sip_fixture(include_str!("fixtures/inbound_answered/invite.sip")),
+            }],
+        ))
+        .unwrap();
+
+    let received = report.received_sip();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].source, peer);
+    let SipMessage::Request(request) = &received[0].message else {
+        panic!("expected inbound INVITE");
+    };
+    assert_eq!(request.method, SipMethod::Invite);
+    assert_eq!(request.headers.get("Call-ID"), Some("fixture-call-1"));
+    assert_eq!(report.calls[0].id, call_id);
+}
+
+#[test]
 fn rejects_unsupported_and_protected_replay_requests_atomically() {
     let mut replay = runner();
     let call_id = confirm_inbound_dialog(&mut replay);

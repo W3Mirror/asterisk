@@ -1,0 +1,21 @@
+version	1
+scenario	in-dialog-differential
+fact	timing order-only
+fact	sip 1 endpoint-1 received request INVITE cseq=1/INVITE sip-call-1 body=none
+fact	sip 2 endpoint-1 sent response 100 cseq=1/INVITE sip-call-1 body=none
+fact	sip 3 endpoint-1 sent response 200 cseq=1/INVITE sip-call-1 body=none
+fact	sip 4 endpoint-1 received request ACK cseq=1/ACK sip-call-1 body=none
+fact	sip 5 endpoint-1 sent request INFO cseq=1/INFO sip-call-1 body=opaque:bytes=9
+fact	sip 6 endpoint-1 received response 200 cseq=1/INFO sip-call-1 body=none
+fact	sip 7 endpoint-1 sent request UPDATE cseq=2/UPDATE sip-call-1 body=opaque:bytes=11
+fact	sip 8 endpoint-1 received response 200 cseq=2/UPDATE sip-call-1 body=none
+fact	sip 9 endpoint-1 sent request REFER cseq=3/REFER sip-call-1 body=opaque:bytes=10
+fact	sip 10 endpoint-1 received response 200 cseq=3/REFER sip-call-1 body=none
+fact	sip 11 endpoint-1 sent request NOTIFY cseq=4/NOTIFY sip-call-1 body=opaque:bytes=11
+fact	sip 12 endpoint-1 received response 200 cseq=4/NOTIFY sip-call-1 body=none
+fact	event 1 call-1 created
+fact	event 2 call-1 invite-received
+fact	event 3 call-1 answered
+fact	call call-1 retained answered dialog=true codec=none
+fact	media none
+fact	cleanup calls=1 bridges=0 transactions=0 to-ai=na from-ai=na dtmf=na

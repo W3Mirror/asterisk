@@ -16,6 +16,7 @@ sip-types = { path = "../sip-types" }
 
 [dev-dependencies]
 call-engine = { path = "../call-engine" }
+sip-parser = { path = "../sip-parser" }
 sip-transaction = { path = "../sip-transaction" }
 
 [lints]

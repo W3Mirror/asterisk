@@ -233,7 +233,7 @@ pub fn normalize_replay(
     validate_scenario(&report.scenario)?;
     let mut normalizer = Normalizer::new(config);
     normalizer.push("timing order-only".to_owned())?;
-    normalizer.add_sip_actions(report)?;
+    normalizer.add_sip_traffic(report)?;
     normalizer.add_events(report)?;
     normalizer.add_bridges_events(report)?;
     normalizer.add_calls(report)?;
@@ -440,11 +440,30 @@ impl Normalizer {
         Ok(())
     }
 
-    fn add_sip_actions(&mut self, report: &ReplayReport) -> Result<(), DifferentialError> {
-        for (index, action) in report.actions().into_iter().enumerate() {
-            let endpoint = self.endpoints.alias(&action.destination);
-            let message = self.normalize_sip(&action.message);
-            self.push(format!("sip {} endpoint-{endpoint} {message}", index + 1))?;
+    fn add_sip_traffic(&mut self, report: &ReplayReport) -> Result<(), DifferentialError> {
+        let mut index = 0;
+        for step in &report.steps {
+            let StepOutcome::Engine {
+                received, actions, ..
+            } = &step.outcome
+            else {
+                continue;
+            };
+
+            if let Some(received) = received {
+                index += 1;
+                let endpoint = self.endpoints.alias(&received.source);
+                let message = self.normalize_sip(&received.message);
+                self.push(format!(
+                    "sip {index} endpoint-{endpoint} received {message}"
+                ))?;
+            }
+            for action in actions {
+                index += 1;
+                let endpoint = self.endpoints.alias(&action.destination);
+                let message = self.normalize_sip(&action.message);
+                self.push(format!("sip {index} endpoint-{endpoint} sent {message}"))?;
+            }
         }
         Ok(())
     }
@@ -772,10 +791,12 @@ mod tests {
     use call_engine::{CallEngine, EngineConfig};
     use scenario_replay::{ReplayConfig, ReplayRunner, Scenario, ScenarioStep};
     use sip_transaction::TransportReliability;
+    use sip_types::{Headers, SipMessage, SipMethod, SipRequest, SipResponse};
 
     use super::*;
 
     const ORACLE: &str = include_str!("../tests/fixtures/inbound_cancelled.oracle");
+    const OUTBOUND_ORACLE: &str = include_str!("../tests/fixtures/in_dialog_requests.oracle");
 
     fn sip_fixture(value: &str) -> Vec<u8> {
         format!("{}\r\n\r\n", value.trim_end().replace('\n', "\r\n")).into_bytes()
@@ -823,6 +844,145 @@ mod tests {
         .unwrap()
     }
 
+    fn response_wire_for_request(request: &SipRequest) -> Vec<u8> {
+        let mut headers = Headers::new();
+        for name in ["Via", "From", "To", "Call-ID", "CSeq"] {
+            headers.push(name, request.headers.get(name).unwrap());
+        }
+        sip_parser::serialize(&SipMessage::Response(SipResponse {
+            version: "SIP/2.0".to_owned(),
+            status_code: 200,
+            reason: "OK".to_owned(),
+            headers,
+            body: Vec::new(),
+        }))
+    }
+
+    fn outbound_in_dialog_report() -> ReplayReport {
+        let peer = "127.0.0.1:5060".parse::<SocketAddr>().unwrap();
+        let call_id = CallId::from_sequence(1);
+        let mut replay = ReplayRunner::new(
+            ReplayConfig::default(),
+            CallEngine::new(EngineConfig::default()).unwrap(),
+        )
+        .unwrap();
+        let mut steps = Vec::new();
+        let initial = replay
+            .run(&Scenario::new(
+                "in-dialog-differential-initial",
+                vec![
+                    ScenarioStep::ReceiveSip {
+                        at: Duration::ZERO,
+                        source: peer,
+                        reliability: TransportReliability::Unreliable,
+                        wire: sip_fixture(include_str!(
+                            "../../scenario-replay/tests/fixtures/inbound_answered/invite.sip"
+                        )),
+                    },
+                    ScenarioStep::RespondToInvite {
+                        at: Duration::from_millis(10),
+                        call_id: call_id.clone(),
+                        status_code: 200,
+                        reason: "OK".to_owned(),
+                        body: Vec::new(),
+                    },
+                    ScenarioStep::ReceiveSip {
+                        at: Duration::from_millis(20),
+                        source: peer,
+                        reliability: TransportReliability::Unreliable,
+                        wire: sip_fixture(include_str!(
+                            "../../scenario-replay/tests/fixtures/inbound_answered/ack.sip"
+                        )),
+                    },
+                ],
+            ))
+            .unwrap();
+        steps.extend(initial.steps.clone());
+
+        let methods = [
+            (
+                SipMethod::Info,
+                "info",
+                "Info-Package",
+                "dtmf",
+                b"info-body".to_vec(),
+            ),
+            (
+                SipMethod::Update,
+                "update",
+                "Supported",
+                "timer",
+                b"update-body".to_vec(),
+            ),
+            (
+                SipMethod::Refer,
+                "refer",
+                "Refer-To",
+                "<sip:carol@example.com>",
+                b"refer-body".to_vec(),
+            ),
+            (
+                SipMethod::Notify,
+                "notify",
+                "Event",
+                "refer",
+                b"notify-body".to_vec(),
+            ),
+        ];
+
+        let mut final_report = initial;
+        for (index, (method, label, header_name, header_value, body)) in
+            methods.into_iter().enumerate()
+        {
+            let at = Duration::from_secs(1 + index as u64 * 10);
+            let mut extra_headers = Headers::new();
+            extra_headers.push(header_name, header_value);
+            let sent = replay
+                .run(&Scenario::new(
+                    format!("send-{label}"),
+                    vec![ScenarioStep::SendInDialogRequest {
+                        at,
+                        call_id: call_id.clone(),
+                        method,
+                        extra_headers,
+                        body,
+                        reliability: TransportReliability::Unreliable,
+                    }],
+                ))
+                .unwrap();
+            let request = sent
+                .actions()
+                .first()
+                .and_then(|action| match &action.message {
+                    SipMessage::Request(request) => Some(request.clone()),
+                    SipMessage::Response(_) => None,
+                })
+                .unwrap();
+            steps.extend(sent.steps);
+
+            final_report = replay
+                .run(&Scenario::new(
+                    format!("complete-{label}"),
+                    vec![
+                        ScenarioStep::ReceiveSip {
+                            at: at + Duration::from_secs(1),
+                            source: peer,
+                            reliability: TransportReliability::Unreliable,
+                            wire: response_wire_for_request(&request),
+                        },
+                        ScenarioStep::Poll {
+                            at: at + Duration::from_secs(6),
+                        },
+                    ],
+                ))
+                .unwrap();
+            steps.extend(final_report.steps.clone());
+        }
+        final_report.scenario = "in-dialog-differential".to_owned();
+        final_report.steps = steps;
+        final_report
+    }
+
     #[test]
     fn synthetic_rust_observation_matches_checked_in_oracle() {
         let actual = normalize_replay(&report(), NormalizationConfig::default()).unwrap();
@@ -852,7 +1012,7 @@ mod tests {
             assert!(!fixture.contains(raw), "raw value leaked: {raw}");
         }
         assert!(fixture.contains("timing order-only"));
-        assert!(fixture.contains("response 100 cseq=1/INVITE"));
+        assert!(fixture.contains("received request INVITE cseq=1/INVITE"));
         assert!(fixture.contains("codec=PCMU/8000/1:fmtp=false"));
         assert!(fixture.contains("cleanup calls=0 bridges=0 transactions=0"));
     }
@@ -910,5 +1070,16 @@ mod tests {
             ),
             Err(DifferentialError::InvalidConfig)
         );
+    }
+
+    #[test]
+    fn outbound_in_dialog_observation_matches_checked_in_oracle() {
+        let actual =
+            normalize_replay(&outbound_in_dialog_report(), NormalizationConfig::default()).unwrap();
+        let expected = parse_oracle_fixture(OUTBOUND_ORACLE, FixtureConfig::default()).unwrap();
+        let comparison = compare(&actual, &expected, ComparisonConfig::default()).unwrap();
+
+        assert!(comparison.matched, "differential mismatch: {comparison:?}");
+        assert_eq!(comparison.total_differences, 0);
     }
 }
