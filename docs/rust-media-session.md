@@ -1,10 +1,10 @@
 # Rust media session
 
 `media-core::MediaSession` is the provider-neutral boundary between a
-negotiated G.711 RTP stream and an AI application. It owns one bounded
-`RtpSession`, a bidirectional `AudioBridge`, and a bounded DTMF notification
-queue. Socket ownership, WebSocket framing, persistence, and call routing stay
-outside the crate.
+negotiated G.711 RTP/RTCP stream and an AI application. It owns one bounded
+`RtpSession`, one bounded `RtcpSession`, a bidirectional `AudioBridge`, and a
+bounded DTMF notification queue. Socket ownership, WebSocket framing,
+persistence, and call routing stay outside the crate.
 
 ## Receive path
 
@@ -33,6 +33,14 @@ The adapter pushes decoded AI frames into the bounded return queue and calls
 size, and RTP packet bounds are checked before a frame is removed from the
 queue. `send_dtmf` emits a telephone-event packet with an explicit timestamp
 increment so retransmissions can reuse the event timestamp.
+
+## RTCP path
+
+Call `receive_rtcp` or `receive_rtcp_from` for remote RTCP datagrams and
+`send_rtcp` for locally generated reports. The RTCP session shares the RTP
+packet bound, expected remote SSRC, and observed-source policy. Its statistics
+are exposed under `MediaSessionStats::rtcp`, including report-derived loss,
+jitter, and matching Sender Report/Reception Report RTT estimates.
 
 ## Recording
 
