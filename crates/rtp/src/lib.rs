@@ -287,6 +287,19 @@ pub struct RtpReceptionSnapshot {
     pub jitter: u32,
 }
 
+/// Send-side values needed to construct an RTCP Sender Report.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RtpSenderSnapshot {
+    /// Synchronization source used by locally generated RTP packets.
+    pub source_ssrc: u32,
+    /// RTP timestamp that will be used by the next regular-media packet.
+    pub rtp_timestamp: u32,
+    /// Total RTP packets serialized by this session.
+    pub packets_sent: u64,
+    /// Total RTP payload octets serialized by this session.
+    pub octets_sent: u64,
+}
+
 impl RtpStats {
     pub fn observe(
         &mut self,
@@ -897,6 +910,23 @@ impl RtpSession {
         self.received.reception_snapshot()
     }
 
+    /// Returns the bounded send counters used by RTCP Sender Reports.
+    ///
+    /// A participant is not an RTP sender until at least one RTP packet has
+    /// been serialized, so no snapshot is returned before the first send.
+    #[must_use]
+    pub const fn sender_snapshot(&self) -> Option<RtpSenderSnapshot> {
+        if self.packets_sent == 0 {
+            return None;
+        }
+        Some(RtpSenderSnapshot {
+            source_ssrc: self.config.local_ssrc,
+            rtp_timestamp: self.next_timestamp,
+            packets_sent: self.packets_sent,
+            octets_sent: self.octets_sent,
+        })
+    }
+
     /// Returns whether no packet has arrived within `timeout` at `now`.
     pub fn is_inactive(&self, now: Duration, timeout: Duration) -> bool {
         match self.last_received {
@@ -1180,5 +1210,34 @@ mod tests {
         assert_eq!(audio.sequence_number, 13);
         assert_eq!(audio.timestamp, 9_160);
         assert_eq!(session.next_timestamp(), 9_320);
+    }
+
+    #[test]
+    fn sender_snapshot_starts_after_rtp_and_tracks_payload_octets_and_clock() {
+        let mut session = RtpSession::new(
+            RtpSessionConfig {
+                payload_type: 0,
+                local_ssrc: 42,
+                ..RtpSessionConfig::default()
+            },
+            7,
+            4_000,
+        )
+        .unwrap();
+        assert_eq!(session.sender_snapshot(), None);
+
+        session.send(&[1, 2, 3], 160, false).unwrap();
+        session
+            .send_with_payload_type_at_timestamp(101, &[5, 0x8a, 0, 80], 4_160, true)
+            .unwrap();
+        assert_eq!(
+            session.sender_snapshot(),
+            Some(RtpSenderSnapshot {
+                source_ssrc: 42,
+                rtp_timestamp: 4_160,
+                packets_sent: 2,
+                octets_sent: 7,
+            })
+        );
     }
 }

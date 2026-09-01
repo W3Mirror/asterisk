@@ -19,6 +19,12 @@ jitter to generate a Receiver Report. Report fractions are interval-scoped and
 reset when the RTP source SSRC changes; cumulative loss and sequence/jitter
 values remain scoped to the current RTP source.
 
+Outbound Sender Reports are assembled from the local RTP session's constant-size
+send snapshot: local SSRC, next regular-media timestamp, packet count, and RTP
+payload-octet count. Counts saturate at the RTCP 32-bit field width. The caller
+supplies the correlated NTP seconds and fractional words explicitly; no hidden
+wall-clock read occurs in the protocol or media layer.
+
 Use `new_with_source_policy` or `with_source_policy` to apply the shared
 `sip-security::SourceIpPolicy`. `receive_from` evaluates the observed
 `SocketAddr` before size checks or parsing. A denied peer therefore cannot

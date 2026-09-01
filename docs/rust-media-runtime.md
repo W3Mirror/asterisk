@@ -29,12 +29,22 @@ event loop, or set them non-blocking through the mutable socket accessors:
    timestamp;
 2. drain `MediaSession`'s AI and DTMF outputs;
 3. call `send_audio`, `send_dtmf`, or `send_rtcp` when a destination is
-   configured or learned.
+   configured or learned;
+4. poll `send_sender_report_if_due` with the current monotonic time and its
+   correlated NTP seconds/fraction words.
 
 `send_receiver_report` checks the leg's RTCP destination before advancing its
 report interval, builds a Receiver Report from that leg's accepted RTP/RTCP
 state, and sends it on the RTCP socket. It fails explicitly until both an RTCP
 destination and a valid remote RTP source exist.
+
+`MediaUdpRuntimeConfig::sender_report_interval` defaults to five seconds and
+must be non-zero. A Sender Report becomes due after the first serialized RTP
+packet, then only after each successful interval. Missing RTP send state or an
+interval that is not due returns `Ok(None)`. Missing endpoints, serialization
+errors, and socket failures do not advance the schedule, so the same instant
+can be retried safely. The runtime does not spawn a timer or read wall-clock
+time; the owning event loop supplies both clocks.
 
 The runtime deliberately has no async-runtime, TLS/DTLS, SRTP, provider, call
 routing, or Asterisk dependency. DTLS-SRTP and live provider interoperability
