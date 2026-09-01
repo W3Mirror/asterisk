@@ -1,12 +1,12 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**
-**Current checkpoint:** CP-067 — deterministic transfer/reclamation tests locally validated
-**Last checkpoint (UTC):** 2026-09-01T07:53:03Z
+**Current checkpoint:** CP-068 — PR #27 hosted validation confirmed
+**Last checkpoint (UTC):** 2026-09-01T07:57:42Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Offline deterministic verification foundation across Milestones 2–5<br>
-**Next resume action:** Publish PR #27 with a pinned force-with-lease and verify hosted checks plus mergeability
-**Active PR:** Pre-publication branch `sip-scenario-transfer-reclamation` targets [#26](https://github.com/W3Mirror/asterisk/pull/26)'s branch `sip-scenario-faults`
+**Next resume action:** Reconcile PR #28 onto the validated PR #27 head and run focused call-bridge checks
+**Active PR:** [#27](https://github.com/W3Mirror/asterisk/pull/27); branch `sip-scenario-transfer-reclamation` targets `sip-scenario-faults`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-27`
 **Primary language:** Rust  
@@ -2140,9 +2140,9 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 | Workstream | Status | Evidence / checkpoint | PR | Next action |
 | --- | --- | --- | --- | --- |
 | Phase 0 — current Asterisk surface | in_progress | CP-015; PR #1 hosted run 33431290927 passed and GitHub reports CLEAN/MERGEABLE at `8dbd0082823b9444e72a6ceebee27328bd0f506d` | #1 | Keep the verified Asterisk inventory and production-evidence gate in force |
-| Phase 1 — Rust media engine | in_progress | CP-018/CP-026/CP-047/CP-049/CP-050/CP-054/CP-056/CP-058/CP-059/CP-060/CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067; PR #2 foundation, PR #8 media/DTMF/recording, PR #18 bounded WebSocket adapter, PR #19 bounded stream driver, PR #20 UDP runtime, PR #21 parser fuzz harnesses, PR #22 hosted CI/offline verification contract, PR #25 deterministic SIP scenario replay, PR #26 deterministic fault corpus, and PR #27 transfer/reclamation tests; focused and full offline workspace tests pass | [#27](https://github.com/W3Mirror/asterisk/pull/27) | Publish and verify PR #27, then implement deterministic bridge coverage |
-| Offline deterministic verification | in_progress | CP-058/CP-059/CP-060/CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067 define focused per-module tests, synthetic SIP replay, property invariants, API/event contracts, media fault injection, bridge/transfer state tests, differential tooling, load/soak/reclamation tiers, and hosted PR/main-push execution semantics | [#27](https://github.com/W3Mirror/asterisk/pull/27) | Extend the replay foundation with deterministic bridge scenarios |
-| Synthetic SIP scenario replay | in_progress | CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067; PR #25 provides bounded atomic normal-call replay, PR #26 adds signaling/media faults, and PR #27 adds transfer-command and terminal-reclamation replay with ten focused scenario tests; local full workspace (136 tests) passes and ordinary workspace Clippy is green | [#27](https://github.com/W3Mirror/asterisk/pull/27) | Publish PR #27 and verify hosted checks plus mergeability |
+| Phase 1 — Rust media engine | in_progress | CP-018/CP-026/CP-047/CP-049/CP-050/CP-054/CP-056/CP-058/CP-059/CP-060/CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067/CP-068; PR #2 foundation, PR #8 media/DTMF/recording, PR #18 bounded WebSocket adapter, PR #19 bounded stream driver, PR #20 UDP runtime, PR #21 parser fuzz harnesses, PR #22 hosted CI/offline verification contract, PR #25 deterministic SIP scenario replay, PR #26 deterministic fault corpus, and PR #27 transfer/reclamation tests; focused and full offline workspace tests pass | [#27](https://github.com/W3Mirror/asterisk/pull/27) | Reconcile PR #28 onto PR #27 and implement deterministic call-bridge coverage |
+| Offline deterministic verification | in_progress | CP-058/CP-059/CP-060/CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067/CP-068 define focused per-module tests, synthetic SIP replay, property invariants, API/event contracts, media fault injection, bridge/transfer state tests, differential tooling, load/soak/reclamation tiers, and hosted PR/main-push execution semantics | [#27](https://github.com/W3Mirror/asterisk/pull/27) | Extend the replay foundation with deterministic call-bridge scenarios |
+| Synthetic SIP scenario replay | in_progress | CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067/CP-068; PR #25 provides bounded atomic normal-call replay, PR #26 adds signaling/media faults, and PR #27 adds transfer-command and terminal-reclamation replay with ten focused scenario tests; local full workspace (136 tests) and hosted PR #25/#26/#27 checks pass | [#27](https://github.com/W3Mirror/asterisk/pull/27) | Reconcile PR #28 onto PR #27 and add call-bridge replay tests |
 | Phase 2 — SIP edge shadow mode | in_progress | CP-026; PR #7 hosted run 33436951454 passed and GitHub reports CLEAN/MERGEABLE at `fe87301a5322e278a8fb39404d675c6372d87ad9` | [#7](https://github.com/W3Mirror/asterisk/pull/7) | Publish and validate PR #8's media-session slice |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
 | Phase 4 — expanded provider coverage | not_started | — | — | Add one provider compatibility suite per rollout target |
@@ -4973,6 +4973,27 @@ blockers: Provider/Asterisk runtime identity, credentials, sanitized real captur
 next_action: Publish PR #27 with a pinned force-with-lease and verify hosted checks plus OPEN/CLEAN/MERGEABLE state
 rollback: Asterisk remains the active/fallback engine; no routing was changed
 notes: Every implementation PR ships focused tests for each affected crate/module. Hosted pull_request events run the complete ordinary workspace suite (not automatic module-only selection), and pushes to `aistack/main` repeat that complete ordinary hosted suite; extended fuzzing, SIPp/interoperability, capacity, property, soak, credentialed-provider, and real-time checks remain scheduled, manually dispatched, or approval-gated.
+```
+
+### CP-068 — PR #27 hosted validation confirmed
+
+```yaml
+checkpoint_id: CP-068
+recorded_at_utc: 2026-09-01T07:57:42Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Offline deterministic verification foundation across Milestones 2–5
+scope: Publish and validate deterministic transfer and terminal-reclamation replay on hosted CI
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-27
+branch: sip-scenario-transfer-reclamation
+base_branch: sip-scenario-faults
+pr: "#27 https://github.com/W3Mirror/asterisk/pull/27"
+head_sha: bc0afb280c5af1e5250d6fed991b16ff466b5fbc
+evidence: Published PR #27 with an exact SHA-pinned force-with-lease replacing stale remote head `bfb0d7421`; hosted Rust quality run [33484342109](https://github.com/W3Mirror/asterisk/actions/runs/33484342109) completed successfully on hosted `ubuntu-latest`: Workspace checks, all six protocol-fuzz target checks, and dependency audit passed. GitHub reports PR #27 OPEN, CLEAN, and MERGEABLE against `sip-scenario-faults`; local status and origin parity are clean.
+blockers: Provider/Asterisk runtime identity, credentials, sanitized real captures, and live interoperability remain unavailable; they block only the later interoperability/traffic-evidence gate, not offline transfer/reclamation replay
+next_action: Reconcile PR #28 onto the validated PR #27 head and run focused call-bridge checks
+rollback: Asterisk remains the active/fallback engine; no routing was changed
+notes: Focused affected-module tests are mandatory implementation-PR content. Hosted pull_request events run the complete ordinary workspace suite (not automatic module-only selection), and pushes to `aistack/main` repeat that complete ordinary hosted suite; extended fuzzing, SIPp/interoperability, capacity, property, soak, credentialed-provider, and real-time checks remain scheduled, manually dispatched, or approval-gated.
 ```
 
 ## 59.4 Stacked-PR Checkpoints
