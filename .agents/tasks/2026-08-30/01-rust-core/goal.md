@@ -1,12 +1,12 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**
-**Current checkpoint:** CP-070 — PR #29 hosted validation confirmed
-**Last checkpoint (UTC):** 2026-09-01T08:22:40Z
+**Current checkpoint:** CP-073 — PR #29 rebased and locally validated
+**Last checkpoint (UTC):** 2026-09-01T19:41:32Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Deterministic multi-leg bridge replay and failure verification<br>
-**Next resume action:** Reconcile PR #30 onto the validated PR #29 head and run focused property-invariant checks
-**Active PR:** [#29](https://github.com/W3Mirror/asterisk/pull/29) branch `call-bridge-scenario-replay` targets `call-bridge-core`
+**Next resume action:** Publish the rebased PR #29 head with an exact SHA-pinned force-with-lease and verify hosted checks plus mergeability
+**Active PR:** [#29](https://github.com/W3Mirror/asterisk/pull/29) branch `call-bridge-scenario-replay` targets `call-bridge-core`; hosted validation is pending for the rebased head
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-29`
 **Primary language:** Rust  
@@ -5161,6 +5161,27 @@ blockers: This replay layer does not originate the runtime human SIP transaction
 next_action: Reconcile PR #30 onto the validated PR #29 head and run focused property-invariant checks
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the replay PR if the scenario contract is superseded
 notes: Tests ship in the same branch as the relevant replay code. Hosted pull_request events and pushes to `aistack/main` run the complete ordinary workspace suite rather than affected-module selection; extended fuzzing, SIPp/interoperability, capacity, property, soak, credentialed-provider, and real-time checks remain scheduled, manually dispatched, or approval-gated.
+```
+
+### CP-073 — PR #29 rebased and locally validated
+
+```yaml
+checkpoint_id: CP-073
+recorded_at_utc: 2026-09-01T19:41:32Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Deterministic multi-leg bridge replay and failure verification
+scope: Reconcile deterministic bridge transition replay onto the validated PR #28 head and confirm the focused/full test contract
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-29
+branch: call-bridge-scenario-replay
+base_branch: call-bridge-core
+pr: "#29 https://github.com/W3Mirror/asterisk/pull/29"
+head_sha: 26c0687260b31ebbeeecbad475a3e2d5fb6ac80c
+evidence: Rebased PR #29 onto PR #28 head `c34fabe87e1aa74748c3b1093f8ee42dc6b32781` and resolved the shared goal-ledger conflict while preserving the PR #28 history and bridge-replay records. Focused `cargo test -p scenario-replay --locked` (13 passed), full `cargo test --workspace --locked` (147 passed), `cargo fmt --all -- --check`, workspace Clippy, and `git diff --check` pass. The hosted workflow remains on `ubuntu-latest`; pull requests run the complete ordinary workspace suite, including focused tests shipped in the PR, and pushes to `aistack/main` repeat that complete ordinary suite.
+blockers: Hosted validation has not yet run for this rebased head; runtime SIP/media bridge integration, provider/Asterisk runtime identity, credentials, sanitized real captures, and live interoperability remain later gates. Asterisk remains the fallback.
+next_action: Publish PR #29 with an exact SHA-pinned force-with-lease against the verified remote head, then verify hosted checks and OPEN/CLEAN/MERGEABLE state
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the replay PR if the scenario contract is superseded
+notes: Every implementation PR must include focused tests for each affected crate/module. GitHub Actions does not infer a changed-module-only subset today; the complete workspace invocation exercises the focused tests. Extended fuzzing, SIPp/interoperability, property, capacity, soak, credentialed-provider, and real-time checks remain scheduled, manually dispatched, or approval-gated.
 ```
 
 ## 59.4 Stacked-PR Checkpoints
