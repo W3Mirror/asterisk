@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**
-**Current checkpoint:** CP-047 — Reconcile PR #15 onto the current PR #14 head
-**Last checkpoint (UTC):** 2026-09-01T16:35:00Z
+**Current checkpoint:** CP-048 — PR #15 hosted validation confirmed
+**Last checkpoint (UTC):** 2026-09-01T16:41:51Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Milestone 4 — Dialog + SDP + Basic Calls<br>
 **Next resume action:** Reconcile PR #16 onto the validated PR #15 head and run focused RTCP-quality checks
@@ -4385,6 +4385,48 @@ head_sha: 43685d3b35dac11a130ee5d35bdc2b4003b39953
 evidence: Hosted Rust quality run [33531754707](https://github.com/W3Mirror/asterisk/actions/runs/33531754707) completed successfully for the final published ledger head on hosted `ubuntu-latest`: Workspace checks, Protocol fuzz checks, and Dependency audit all passed. GitHub reports PR #14 OPEN, CLEAN, and MERGEABLE against PR #13 head `2f8a9c4a7`.
 blockers: Production deployment identity, effective configuration, provider credentials, sanitized SIP/SDP/RTP fixtures, and live-provider calls remain unavailable; Asterisk routing remains the fallback
 next_action: Reconcile PR #15 onto the validated PR #14 head, run focused RTCP-security checks, publish, and verify hosted CI and mergeability
+rollback: Asterisk remains the active/fallback engine; do not enable Rust traffic
+notes: Focused affected-module tests remain required in every implementation PR; hosted pull_request and aistack/main pushes run the complete ordinary hosted workspace/offline suite when manifests exist; extended fuzzing, SIPp/interoperability, capacity, property, soak, credentialed-provider, and live real-time-call gates remain scheduled or manually gated.
+```
+
+### CP-047 — PR #15 reconciled onto the current PR #14 head
+
+```yaml
+checkpoint_id: CP-047
+recorded_at_utc: 2026-09-01T16:35:00Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Milestone 4 — Dialog + SDP + Basic Calls
+scope: Reconcile the RTCP source-policy enforcement slice with the current hosted-green RTP-security head while preserving focused RTCP coverage
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-15-rtcp-security
+branch: sip-rtcp-security
+base_branch: sip-rtp-security
+pr: "#15 https://github.com/W3Mirror/asterisk/pull/15"
+head_sha: e92589bfa60aa00f05918c21f93188bafbdb79ee
+evidence: Merged `origin/sip-rtp-security` at current PR #14 head `811d2a452c04f650f529e19a089877f5ee47bf05`; the only merge conflict was the shared goal ledger. Local `cargo fmt --all -- --check`, focused `cargo test -p rtcp --locked` (8 passed), `cargo test --workspace --locked`, focused and workspace Clippy, and both `git diff --check` commands passed. The merge commit was pushed with exact remote parity.
+blockers: Hosted PR #15 validation was pending at checkpoint creation; production deployment identity, effective configuration, provider credentials, sanitized SIP/SDP/RTP fixtures, and live-provider calls remain unavailable; Asterisk routing remains the fallback
+next_action: Verify hosted PR #15 Rust-quality checks and GitHub mergeability
+rollback: Asterisk remains the active/fallback engine; do not enable Rust traffic
+notes: Focused affected-module tests remain required in every implementation PR; hosted pull_request and aistack/main pushes run the complete ordinary hosted workspace/offline suite when manifests exist; extended fuzzing, SIPp/interoperability, capacity, property, soak, credentialed-provider, and live real-time-call gates remain scheduled or manually gated.
+```
+
+### CP-048 — PR #15 hosted validation confirmed
+
+```yaml
+checkpoint_id: CP-048
+recorded_at_utc: 2026-09-01T16:41:51Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Milestone 4 — Dialog + SDP + Basic Calls
+scope: Publish and validate the reconciled RTCP source-policy enforcement slice on hosted CI
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-15-rtcp-security
+branch: sip-rtcp-security
+base_branch: sip-rtp-security
+pr: "#15 https://github.com/W3Mirror/asterisk/pull/15"
+head_sha: e92589bfa60aa00f05918c21f93188bafbdb79ee
+evidence: Hosted Rust quality run [33533054042](https://github.com/W3Mirror/asterisk/actions/runs/33533054042) completed successfully for this exact head on hosted `ubuntu-latest`: Workspace checks, Protocol fuzz checks, and Dependency audit all passed. GitHub reports PR #15 OPEN, CLEAN, and MERGEABLE against PR #14 head `811d2a452`.
+blockers: Production deployment identity, effective configuration, provider credentials, sanitized SIP/SDP/RTP fixtures, and live-provider calls remain unavailable; Asterisk routing remains the fallback
+next_action: Reconcile PR #16 onto the validated PR #15 head, run focused RTCP-quality checks, publish, and verify hosted CI and mergeability
 rollback: Asterisk remains the active/fallback engine; do not enable Rust traffic
 notes: Focused affected-module tests remain required in every implementation PR; hosted pull_request and aistack/main pushes run the complete ordinary hosted workspace/offline suite when manifests exist; extended fuzzing, SIPp/interoperability, capacity, property, soak, credentialed-provider, and live real-time-call gates remain scheduled or manually gated.
 ```
