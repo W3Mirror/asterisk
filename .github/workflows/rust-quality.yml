@@ -45,6 +45,9 @@ jobs:
       - name: Run workspace tests
         if: steps.rust-workspace.outputs.available == 'true'
         run: cargo test --workspace --locked
+      - name: Run local SIPp integration scenarios
+        if: steps.rust-workspace.outputs.available == 'true'
+        run: tests/rust-sipp/run.sh
       - name: Run extended property tests
         if: steps.rust-workspace.outputs.available == 'true' && github.event_name == 'schedule'
         env:
