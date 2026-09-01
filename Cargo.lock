@@ -36,6 +36,7 @@ dependencies = [
  "call-core",
  "call-engine",
  "sip-parser",
+ "sip-security",
  "sip-transaction",
  "sip-transport",
  "sip-types",

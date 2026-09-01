@@ -16,6 +16,7 @@ use std::{
 use call_api::CallCommand;
 use call_core::CallId;
 use call_engine::{CallEngine, EngineError, EngineOutput, SendAction};
+use sip_security::SourceIpPolicy;
 use sip_transaction::TransportReliability;
 use sip_transport::{TcpTransport, TransportError, UdpTransport};
 use sip_types::{SipMessage, SipRequest};
@@ -122,6 +123,11 @@ pub enum RuntimeError {
         /// Peer whose stream closed.
         peer: SocketAddr,
     },
+    /// The observed peer address was rejected by the source-address policy.
+    SourceAddressDenied {
+        /// Observed peer address that failed the policy.
+        source: SocketAddr,
+    },
     /// A local-address query was made for a TCP endpoint.
     NotDatagram,
 }
@@ -138,6 +144,9 @@ impl Display for RuntimeError {
                 )
             }
             Self::ConnectionClosed { peer } => write!(formatter, "TCP peer {peer} closed"),
+            Self::SourceAddressDenied { source } => {
+                write!(formatter, "source address {source} is not allowed")
+            }
             Self::NotDatagram => formatter.write_str("endpoint does not expose a UDP address"),
         }
     }
@@ -197,25 +206,56 @@ impl RuntimeOutput {
 pub struct CallRuntime {
     engine: CallEngine,
     transport: RuntimeTransport,
+    source_policy: SourceIpPolicy,
 }
 
 impl CallRuntime {
     /// Creates a UDP runtime. UDP transactions use retransmission timers.
     #[must_use]
     pub fn udp(engine: CallEngine, transport: UdpTransport) -> Self {
+        Self::udp_with_source_policy(engine, transport, SourceIpPolicy::default())
+    }
+
+    /// Creates a UDP runtime with an explicit observed-source policy.
+    #[must_use]
+    pub fn udp_with_source_policy(
+        engine: CallEngine,
+        transport: UdpTransport,
+        source_policy: SourceIpPolicy,
+    ) -> Self {
         Self {
             engine,
             transport: RuntimeTransport::Udp(transport),
+            source_policy,
         }
     }
 
     /// Creates a TCP runtime for an already-connected stream.
     #[must_use]
     pub fn tcp(engine: CallEngine, transport: TcpTransport, peer: SocketAddr) -> Self {
+        Self::tcp_with_source_policy(engine, transport, peer, SourceIpPolicy::default())
+    }
+
+    /// Creates a TCP runtime with an explicit observed-source policy.
+    #[must_use]
+    pub fn tcp_with_source_policy(
+        engine: CallEngine,
+        transport: TcpTransport,
+        peer: SocketAddr,
+        source_policy: SourceIpPolicy,
+    ) -> Self {
         Self {
             engine,
             transport: RuntimeTransport::Tcp { transport, peer },
+            source_policy,
         }
+    }
+
+    /// Replaces the observed-source policy while preserving the runtime state.
+    #[must_use]
+    pub fn with_source_policy(mut self, source_policy: SourceIpPolicy) -> Self {
+        self.source_policy = source_policy;
+        self
     }
 
     /// Borrows the current call engine.
@@ -228,6 +268,12 @@ impl CallRuntime {
     #[must_use]
     pub fn transport(&self) -> &RuntimeTransport {
         &self.transport
+    }
+
+    /// Borrows the policy applied to observed UDP/TCP peer addresses.
+    #[must_use]
+    pub fn source_policy(&self) -> &SourceIpPolicy {
+        &self.source_policy
     }
 
     /// Mutably borrows the call engine for application commands or negotiation.
@@ -309,6 +355,11 @@ impl CallRuntime {
     /// fails.
     pub fn receive_once(&mut self, now: Duration) -> Result<RuntimeOutput, RuntimeError> {
         let messages = self.transport.receive()?;
+        for (_, source) in &messages {
+            if !self.source_policy.allows_socket(*source) {
+                return Err(RuntimeError::SourceAddressDenied { source: *source });
+            }
+        }
         let reliability = self.transport.reliability();
         let mut working_engine = self.engine.clone();
         let mut output = RuntimeOutput::default();
@@ -425,10 +476,13 @@ mod tests {
         let server_address = server_transport.local_addr().unwrap();
         let client = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 2_048).unwrap();
         client.send_to(&options(), server_address).unwrap();
+        let mut source_policy = SourceIpPolicy::default();
+        source_policy.add_allow("127.0.0.1/8").unwrap();
         let mut runtime = CallRuntime::udp(
             CallEngine::new(EngineConfig::default()).unwrap(),
             server_transport,
-        );
+        )
+        .with_source_policy(source_policy);
         let output = runtime.receive_once(Duration::ZERO).unwrap();
         assert_eq!(output.actions().len(), 1);
         assert!(output.events().is_empty());
@@ -440,6 +494,29 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn udp_runtime_rejects_source_before_engine_dispatch() {
+        let server_transport = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 2_048).unwrap();
+        let server_address = server_transport.local_addr().unwrap();
+        let client = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 2_048).unwrap();
+        client.send_to(&options(), server_address).unwrap();
+
+        let mut policy = SourceIpPolicy::default();
+        policy.add_allow("192.0.2.0/24").unwrap();
+        let mut runtime = CallRuntime::udp_with_source_policy(
+            CallEngine::new(EngineConfig::default()).unwrap(),
+            server_transport,
+            policy,
+        );
+        let error = runtime.receive_once(Duration::ZERO).unwrap_err();
+        assert!(matches!(
+            error,
+            RuntimeError::SourceAddressDenied { source }
+                if source.ip() == "127.0.0.1".parse::<std::net::IpAddr>().unwrap()
+        ));
+        assert!(runtime.engine().list(10).unwrap().is_empty());
     }
 
     #[test]
@@ -471,6 +548,35 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn tcp_runtime_rejects_connected_peer_before_engine_dispatch() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let client_thread = thread::spawn(move || {
+            let mut stream = TcpStream::connect(address).unwrap();
+            stream
+                .write_all(&sip_parser::serialize(&options()))
+                .unwrap();
+        });
+        let (stream, peer) = listener.accept().unwrap();
+        let transport = TcpTransport::from_stream(stream, 2_048).unwrap();
+        let mut policy = SourceIpPolicy::default();
+        policy.add_allow("192.0.2.0/24").unwrap();
+        let mut runtime = CallRuntime::tcp_with_source_policy(
+            CallEngine::new(EngineConfig::default()).unwrap(),
+            transport,
+            peer,
+            policy,
+        );
+        let error = runtime.receive_once(Duration::ZERO).unwrap_err();
+        assert!(matches!(
+            error,
+            RuntimeError::SourceAddressDenied { source } if source == peer
+        ));
+        assert!(runtime.engine().list(10).unwrap().is_empty());
+        client_thread.join().unwrap();
     }
 
     #[test]
