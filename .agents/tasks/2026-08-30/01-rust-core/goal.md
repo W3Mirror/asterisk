@@ -1,12 +1,12 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**
-**Current checkpoint:** CP-026 — Reconcile PR #5 onto the current PR #4 head
-**Last checkpoint (UTC): 2026-09-01T13:40:00Z
+**Current checkpoint:** CP-027 — PR #5 hosted validation and mergeability confirmed
+**Last checkpoint (UTC): 2026-09-01T13:41:51Z
 **Active phase:** Phase 2 — SIP edge shadow mode
 **Active milestone:** Milestone 4 — Dialog + SDP + Basic Calls
-**Next resume action:** Publish the reconciled PR #5 head, verify its hosted checks and mergeability, then update PR #6's base branch in stack order
-**Active PR:** [#5](https://github.com/W3Mirror/asterisk/pull/5); branch `call-api-core` targets `sip-dialog-core`
+**Next resume action:** Update PR #6's base branch to the validated PR #5 head, run focused SDP/media tests and hosted checks, then record its head and mergeability
+**Active PR:** [#6](https://github.com/W3Mirror/asterisk/pull/6); branch `sdp-media-core` targets `call-api-core`
 **Stack root/base branch:** `aistack/main`
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-5-call-api`
 **Primary language:** Rust  
@@ -2894,6 +2894,27 @@ rollback: Asterisk remains the active/fallback engine; no routing was changed
 notes: PR #6 must remain paused until this updated PR #5 base is validated.
 ```
 
+### CP-027 — PR #5 hosted validation and mergeability confirmed
+
+```yaml
+checkpoint_id: CP-027
+recorded_at_utc: 2026-09-01T13:41:51Z
+status: in_progress
+phase: Phase 2 — SIP edge shadow mode
+milestone: Milestone 4 — Dialog + SDP + Basic Calls
+scope: Validate the reconciled PR #5 call-control/API slice on local and hosted checks
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-5-call-api
+branch: call-api-core
+base_branch: sip-dialog-core
+pr: "#5 https://github.com/W3Mirror/asterisk/pull/5"
+head_sha: 45ff017ef6f9144f5d28e98cd65b5ad53dabb580
+evidence: Local focused `call-api` tests, full workspace tests, `cargo fmt --all -- --check`, workspace Clippy, and `git diff --check` passed. Hosted pull_request run [33514626199](https://github.com/W3Mirror/asterisk/actions/runs/33514626199) completed successfully for this exact head: Workspace checks, Protocol fuzz checks (no fuzz workspace present at this layer), and Dependency audit all passed. GitHub reports PR #5 OPEN, CLEAN, and MERGEABLE; local branch equals `origin/call-api-core`.
+blockers: Production deployment identity, effective configuration, provider credentials, and sanitized inbound/outbound captures remain unavailable; no live provider or Asterisk route was exercised
+next_action: Update PR #6 onto this validated head, run focused SDP/media tests plus full local/hosted checks, and record its resulting head and mergeability
+rollback: Asterisk remains the active/fallback engine; no routing was changed
+notes: The call-control/API stack boundary is green for offline and hosted checks; extended fuzzing, capacity, soak, provider-credential, and live-call gates remain scheduled/manual acceptance work.
+```
+
 ### Checkpoint template
 
 Copy this template, assign the next checkpoint ID, fill every field, and append it after each meaningful state change:
@@ -2979,7 +3000,7 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 2 | [#2](https://github.com/W3Mirror/asterisk/pull/2) | `rust-core-foundation` | `sip-rtp-engine-rust` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-2-rust-foundation` | Provider-neutral bounded SIP/SDP/RTP/RTCP/DTMF/media/call foundations | in_progress | `ddb50f1b4adaca8e3a099578ef053294a5958cc0` | Hosted run [33432577814](https://github.com/W3Mirror/asterisk/actions/runs/33432577814) passed; GitHub reports CLEAN/MERGEABLE; local focused cargo fmt/test/clippy pass | Validate PR #3 on this base |
 | 3 | [#3](https://github.com/W3Mirror/asterisk/pull/3) | `sip-transaction-core` | `rust-core-foundation` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-3-sip-transactions` | SIP transaction state machines and bounded transport adapters | in_progress | `6cbc88fad2a0d0ab019ab1c0ff787ef55e94a58a` | Hosted run [33432999749](https://github.com/W3Mirror/asterisk/actions/runs/33432999749) passed; GitHub reports CLEAN/MERGEABLE; local focused cargo fmt/test/clippy pass | Update PR #4's base branch in stack order |
 | 4 | [#4](https://github.com/W3Mirror/asterisk/pull/4) | `sip-dialog-core` | `sip-transaction-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-4-sip-dialog` | Dialog identity and state: bounded tags, route sets, remote targets, CSeq sequencing, UAC/UAS lifecycle | in_progress | `759e7bb8c4306113f42549ac044fa723d5847bb3` | Hosted run [33513778445](https://github.com/W3Mirror/asterisk/actions/runs/33513778445) passed (workspace, protocol fuzz, dependency audit); GitHub reports OPEN/CLEAN/MERGEABLE; local focused/full workspace tests, format, Clippy, and diff check passed | Update PR #5 onto this validated head |
-| 5 | [#5](https://github.com/W3Mirror/asterisk/pull/5) | `call-api-core` | `sip-dialog-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-5-call-api` | Call-control/API boundary: bounded registry, validated lifecycle commands, stable IDs/events, dialog binding, deterministic snapshots, and terminal reclamation | in_progress | `40baaef09` | Reconciled onto `origin/sip-dialog-core` at `0feefabe5`; local focused/full workspace tests, format, Clippy, and diff check passed; hosted validation is pending for this new head | Publish this reconciled head, then verify hosted checks and mergeability before updating PR #6 |
+| 5 | [#5](https://github.com/W3Mirror/asterisk/pull/5) | `call-api-core` | `sip-dialog-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-5-call-api` | Call-control/API boundary: bounded registry, validated lifecycle commands, stable IDs/events, dialog binding, deterministic snapshots, and terminal reclamation | in_progress | `45ff017ef6f9144f5d28e98cd65b5ad53dabb580` | Hosted run [33514626199](https://github.com/W3Mirror/asterisk/actions/runs/33514626199) passed (workspace, protocol fuzz, dependency audit); GitHub reports OPEN/CLEAN/MERGEABLE; local focused/full workspace tests, format, Clippy, and diff check passed | Update PR #6 onto this validated head |
 
 ## 59.4 Stacked-PR Checkpoints
 
