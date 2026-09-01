@@ -533,17 +533,55 @@ impl RtpSession {
         })
     }
 
-    /// Serializes one RTP payload and advances sequence/timestamp state.
+    /// Serializes one RTP payload using the configured payload type and
+    /// advances sequence/timestamp state.
     pub fn send(
         &mut self,
         payload: &[u8],
         timestamp_increment: u32,
         marker: bool,
     ) -> Result<Vec<u8>, SessionError> {
+        self.send_with_payload_type(
+            self.config.payload_type,
+            payload,
+            timestamp_increment,
+            marker,
+        )
+    }
+
+    /// Serializes one RTP payload with an explicitly selected payload type.
+    ///
+    /// This is useful for sessions that negotiate a telephone-event payload
+    /// type alongside an audio payload type. Sequence and timestamp state are
+    /// shared with regular audio packets, while the caller controls whether
+    /// the timestamp advances (for example, DTMF retransmissions use zero).
+    pub fn send_with_payload_type(
+        &mut self,
+        payload_type: u8,
+        payload: &[u8],
+        timestamp_increment: u32,
+        marker: bool,
+    ) -> Result<Vec<u8>, SessionError> {
+        if payload_type > 127 {
+            return Err(SessionError::InvalidPayloadType(payload_type));
+        }
+        let packet_bytes =
+            12usize
+                .checked_add(payload.len())
+                .ok_or(SessionError::PacketTooLarge {
+                    actual: usize::MAX,
+                    maximum: self.config.max_packet_bytes,
+                })?;
+        if packet_bytes > self.config.max_packet_bytes {
+            return Err(SessionError::PacketTooLarge {
+                actual: packet_bytes,
+                maximum: self.config.max_packet_bytes,
+            });
+        }
         let packet = RtpPacket {
             padding: false,
             marker,
-            payload_type: self.config.payload_type,
+            payload_type,
             sequence_number: self.next_sequence,
             timestamp: self.next_timestamp,
             ssrc: self.config.local_ssrc,
@@ -580,10 +618,65 @@ impl RtpSession {
                 return Err(error.into());
             }
         };
-        if packet.payload_type != self.config.payload_type {
+        self.receive_packet(packet, arrival, self.config.payload_type)
+    }
+
+    /// Parses and validates one received RTP packet for an alternate payload
+    /// type while preserving the session's shared SSRC and quality metrics.
+    pub fn receive_with_payload_type(
+        &mut self,
+        input: &[u8],
+        arrival: Duration,
+        payload_type: u8,
+    ) -> Result<RtpPacket, SessionError> {
+        if payload_type > 127 {
+            return Err(SessionError::InvalidPayloadType(payload_type));
+        }
+        let packet = match parse_with_config(
+            input,
+            ParseConfig {
+                max_packet_bytes: self.config.max_packet_bytes,
+                max_extension_bytes: self.config.max_extension_bytes,
+            },
+        ) {
+            Ok(packet) => packet,
+            Err(error) => {
+                self.received.invalid_packets = self.received.invalid_packets.saturating_add(1);
+                return Err(error.into());
+            }
+        };
+        self.receive_packet(packet, arrival, payload_type)
+    }
+
+    /// Validates a parsed RTP packet and updates quality metrics.
+    pub fn receive_packet(
+        &mut self,
+        packet: RtpPacket,
+        arrival: Duration,
+        expected_payload_type: u8,
+    ) -> Result<RtpPacket, SessionError> {
+        if expected_payload_type > 127 {
+            return Err(SessionError::InvalidPayloadType(expected_payload_type));
+        }
+        let extension_bytes = packet.extension.as_ref().map_or(0usize, |extension| {
+            4usize.saturating_add(extension.data.len())
+        });
+        let packet_bytes = 12usize
+            .checked_add(packet.csrcs.len().saturating_mul(4))
+            .and_then(|size| size.checked_add(extension_bytes))
+            .and_then(|size| size.checked_add(packet.payload.len()))
+            .unwrap_or(usize::MAX);
+        if packet_bytes > self.config.max_packet_bytes {
+            self.received.invalid_packets = self.received.invalid_packets.saturating_add(1);
+            return Err(SessionError::PacketTooLarge {
+                actual: packet_bytes,
+                maximum: self.config.max_packet_bytes,
+            });
+        }
+        if packet.payload_type != expected_payload_type {
             self.received.invalid_packets = self.received.invalid_packets.saturating_add(1);
             return Err(SessionError::UnexpectedPayloadType {
-                expected: self.config.payload_type,
+                expected: expected_payload_type,
                 actual: packet.payload_type,
             });
         }
@@ -774,5 +867,42 @@ mod tests {
             })
         ));
         assert_eq!(session.stats().received.invalid_packets, 2);
+    }
+
+    #[test]
+    fn session_can_share_sequence_state_with_an_alternate_payload_type() {
+        let mut session = RtpSession::new(
+            RtpSessionConfig {
+                payload_type: 0,
+                ..RtpSessionConfig::default()
+            },
+            12,
+            4_000,
+        )
+        .unwrap();
+        let wire = session
+            .send_with_payload_type(101, &[5, 6, 7, 8], 0, true)
+            .unwrap();
+        let packet = parse(&wire).unwrap();
+        assert_eq!(packet.payload_type, 101);
+        assert_eq!(packet.sequence_number, 12);
+        assert_eq!(session.next_sequence(), 13);
+        let mut receiver = RtpSession::new(
+            RtpSessionConfig {
+                payload_type: 0,
+                ..RtpSessionConfig::default()
+            },
+            1,
+            1,
+        )
+        .unwrap();
+        assert_eq!(
+            receiver
+                .receive_packet(packet, Duration::from_millis(1), 101)
+                .unwrap()
+                .payload_type,
+            101
+        );
+        assert_eq!(receiver.stats().received.packets_received, 1);
     }
 }

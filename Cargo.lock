@@ -36,6 +36,7 @@ version = "0.1.0"
 name = "media-core"
 version = "0.1.0"
 dependencies = [
+ "dtmf",
  "rtp",
 ]
 
