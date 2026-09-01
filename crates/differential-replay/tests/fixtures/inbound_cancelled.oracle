@@ -1,10 +1,12 @@
 version	1
 scenario	inbound-cancelled-differential
 fact	timing order-only
-fact	sip 1 endpoint-1 response 100 cseq=1/INVITE sip-call-1 body=none
-fact	sip 2 endpoint-1 response 180 cseq=1/INVITE sip-call-1 body=none
-fact	sip 3 endpoint-1 response 200 cseq=1/CANCEL sip-call-1 body=none
-fact	sip 4 endpoint-1 response 487 cseq=1/INVITE sip-call-1 body=none
+fact	sip 1 endpoint-1 received request INVITE cseq=1/INVITE sip-call-1 body=none
+fact	sip 2 endpoint-1 sent response 100 cseq=1/INVITE sip-call-1 body=none
+fact	sip 3 endpoint-1 sent response 180 cseq=1/INVITE sip-call-1 body=none
+fact	sip 4 endpoint-1 received request CANCEL cseq=1/CANCEL sip-call-1 body=none
+fact	sip 5 endpoint-1 sent response 200 cseq=1/CANCEL sip-call-1 body=none
+fact	sip 6 endpoint-1 sent response 487 cseq=1/INVITE sip-call-1 body=none
 fact	event 1 call-1 created
 fact	event 2 call-1 invite-received
 fact	event 3 call-1 ringing

@@ -349,6 +349,9 @@ pub enum StepOutcome {
         originated_call: Option<CallId>,
         /// Outbound signaling actions in emission order.
         actions: Vec<SendAction>,
+        /// SIP message observed at the replay boundary, when this operation
+        /// delivered an inbound SIP fixture.
+        received: Option<ReceivedSip>,
         /// Lifecycle events in emission order.
         events: Vec<LifecycleEvent>,
     },
@@ -370,6 +373,15 @@ pub enum StepOutcome {
     AiAudioQueued(PushOutcome),
     /// Serialized RTP output, or `None` when no AI frame was queued.
     AudioRtpEmitted(Option<Vec<u8>>),
+}
+
+/// One bounded inbound SIP message observed while replaying a scenario.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReceivedSip {
+    /// Source selected by the replay fixture.
+    pub source: SocketAddr,
+    /// Parsed SIP message delivered to the engine.
+    pub message: SipMessage,
 }
 
 /// Indexed outcome retained for deterministic assertions and diagnostics.
@@ -458,6 +470,30 @@ impl ReplayReport {
                 | StepOutcome::AudioRtpEmitted(_) => None,
             })
             .flatten()
+            .collect()
+    }
+
+    /// Returns all inbound SIP fixtures in scenario emission order.
+    #[must_use]
+    pub fn received_sip(&self) -> Vec<&ReceivedSip> {
+        self.steps
+            .iter()
+            .filter_map(|step| match &step.outcome {
+                StepOutcome::Engine {
+                    received: Some(received),
+                    ..
+                } => Some(received),
+                StepOutcome::Engine { received: None, .. }
+                | StepOutcome::CallReclaimed(_)
+                | StepOutcome::MediaNegotiated(_)
+                | StepOutcome::BridgeTransition(_)
+                | StepOutcome::BridgeReclaimed(_)
+                | StepOutcome::MediaReceived(_)
+                | StepOutcome::MediaPlayout(_)
+                | StepOutcome::RtcpReceived(_)
+                | StepOutcome::AiAudioQueued(_)
+                | StepOutcome::AudioRtpEmitted(_) => None,
+            })
             .collect()
     }
 }
@@ -688,14 +724,19 @@ impl ReplayRunner {
         reliability: TransportReliability,
         wire: &[u8],
     ) -> Result<StepOutcome, StepError> {
-        let output = match sip_parser::parse(wire)? {
+        let message = sip_parser::parse(wire)?;
+        let output = match &message {
             SipMessage::Request(request) => {
                 self.engine
-                    .receive_request(source, request, at, reliability)?
+                    .receive_request(source, request.clone(), at, reliability)?
             }
-            SipMessage::Response(response) => self.engine.receive_response(response, at)?,
+            SipMessage::Response(response) => self.engine.receive_response(response.clone(), at)?,
         };
-        Ok(engine_outcome(None, output))
+        Ok(engine_outcome_with_received(
+            None,
+            output,
+            Some(ReceivedSip { source, message }),
+        ))
     }
 
     fn originate_sip(
@@ -761,10 +802,19 @@ impl ReplayRunner {
 }
 
 fn engine_outcome(originated_call: Option<CallId>, output: EngineOutput) -> StepOutcome {
+    engine_outcome_with_received(originated_call, output, None)
+}
+
+fn engine_outcome_with_received(
+    originated_call: Option<CallId>,
+    output: EngineOutput,
+    received: Option<ReceivedSip>,
+) -> StepOutcome {
     let (actions, events) = output.into_parts();
     StepOutcome::Engine {
         originated_call,
         actions,
+        received,
         events,
     }
 }

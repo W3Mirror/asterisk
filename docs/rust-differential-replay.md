@@ -16,8 +16,12 @@ Normalization deliberately replaces environment-owned values:
 - SDP payload numbers are reduced to codec name, clock rate, channels, and
   format-parameter presence.
 
-The retained comparison surface includes SIP request/response order and CSeq
-method, lifecycle and bridge events, terminal/retained state, dialog presence,
+The replay report retains each bounded inbound SIP fixture, including its source
+peer and parsed request or response, alongside emitted transport actions. The
+normalizer marks each SIP fact as `received` or `sent` and preserves the order
+in which the replay boundary observed or emitted it. The retained comparison
+surface therefore includes SIP request/response order and CSeq method,
+lifecycle and bridge events, terminal/retained state, dialog presence,
 negotiated codec and direction, media packet/queue/drop counters, and final
 call/bridge/transaction/queue cleanup.
 
@@ -35,7 +39,7 @@ Fixtures are UTF-8, tab-delimited, bounded, and versioned:
 version<TAB>1
 scenario<TAB>scenario-slug
 fact<TAB>timing order-only
-fact<TAB>sip 1 endpoint-1 response 100 cseq=1/INVITE sip-call-1 body=none
+fact<TAB>sip 1 endpoint-1 received request INVITE cseq=1/INVITE sip-call-1 body=none
 ```
 
 Future sanitized Asterisk/provider capture conversion must emit this same
