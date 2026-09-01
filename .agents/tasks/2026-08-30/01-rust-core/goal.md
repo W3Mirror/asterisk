@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**
-**Current checkpoint:** CP-051 — Reconcile PR #17 onto the current PR #16 head
-**Last checkpoint (UTC):** 2026-09-01T16:58:00Z
+**Current checkpoint:** CP-052 — PR #17 hosted validation confirmed
+**Last checkpoint (UTC):** 2026-09-01T17:02:12Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Milestone 2/4 — Media plane + Dialog + SDP + Basic Calls<br>
-**Next resume action:** Finalize the PR #17 merge, run focused media-RTCP checks, publish, and verify hosted CI and mergeability
+**Next resume action:** Reconcile PR #18 onto the validated PR #17 head, run focused WebSocket-media checks, publish, and verify hosted CI and mergeability
 **Active PR:** [#17](https://github.com/W3Mirror/asterisk/pull/17); branch `sip-media-rtcp` targets `sip-rtcp-quality`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-17-media-rtcp`
@@ -4555,6 +4555,48 @@ head_sha: dda620111618e3c3034efb6cb666857c3cd4d0a0
 evidence: Hosted Rust quality run [33534020950](https://github.com/W3Mirror/asterisk/actions/runs/33534020950) completed successfully for this exact head on hosted `ubuntu-latest`: Workspace checks, Protocol fuzz checks, and Dependency audit all passed. GitHub reports PR #16 OPEN, CLEAN, and MERGEABLE against PR #15 head `be7d19dba`.
 blockers: Production deployment identity, effective configuration, provider credentials, sanitized SIP/SDP/RTP fixtures, and live-provider calls remain unavailable; Asterisk routing remains the fallback
 next_action: Reconcile PR #17 onto the validated PR #16 head, run focused media-RTCP checks, publish, and verify hosted CI and mergeability
+rollback: Asterisk remains the active/fallback engine; do not enable Rust traffic
+notes: Focused affected-module tests remain required in every implementation PR; hosted pull_request and aistack/main pushes run the complete ordinary hosted workspace/offline suite when manifests exist; extended fuzzing, SIPp/interoperability, capacity, property, soak, credentialed-provider, and live real-time-call gates remain scheduled or manually gated.
+```
+
+### CP-051 — PR #17 reconciled onto the current PR #16 head
+
+```yaml
+checkpoint_id: CP-051
+recorded_at_utc: 2026-09-01T16:58:00Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Milestone 2/4 — Media plane + Dialog + SDP + Basic Calls
+scope: Reconcile RTCP receive/send integration in MediaSession with the current hosted-green PR #16 head while preserving focused media coverage
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-17-media-rtcp
+branch: sip-media-rtcp
+base_branch: sip-rtcp-quality
+pr: "#17 https://github.com/W3Mirror/asterisk/pull/17"
+head_sha: 7a4f8b23a247b746fa1bf70cc407b18183a11f38
+evidence: Merged `origin/sip-rtcp-quality` at current PR #16 head `13416c664a5541cf2228904dc9ed3f3f74865e90`; the only merge conflict was the shared goal ledger. Local `cargo fmt --all -- --check`, focused `cargo test -p media-core --locked` (10 passed), `cargo test -p rtcp --locked`, `cargo test --workspace --locked`, focused and workspace Clippy, and both `git diff --check` commands passed. The merge commit was pushed with exact remote parity.
+blockers: Hosted PR #17 validation was pending at checkpoint creation; production deployment identity, effective configuration, provider credentials, sanitized SIP/SDP/RTP fixtures, and live-provider calls remain unavailable; Asterisk routing remains the fallback
+next_action: Verify hosted PR #17 Rust-quality checks and GitHub mergeability
+rollback: Asterisk remains the active/fallback engine; do not enable Rust traffic
+notes: Focused affected-module tests remain required in every implementation PR; hosted pull_request and aistack/main pushes run the complete ordinary hosted workspace/offline suite when manifests exist; extended fuzzing, SIPp/interoperability, capacity, property, soak, credentialed-provider, and live real-time-call gates remain scheduled or manually gated.
+```
+
+### CP-052 — PR #17 hosted validation confirmed
+
+```yaml
+checkpoint_id: CP-052
+recorded_at_utc: 2026-09-01T17:02:12Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Milestone 2/4 — Media plane + Dialog + SDP + Basic Calls
+scope: Publish and validate RTCP receive/send integration in MediaSession on hosted CI
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-17-media-rtcp
+branch: sip-media-rtcp
+base_branch: sip-rtcp-quality
+pr: "#17 https://github.com/W3Mirror/asterisk/pull/17"
+head_sha: 7a4f8b23a247b746fa1bf70cc407b18183a11f38
+evidence: Hosted Rust quality run [33535046216](https://github.com/W3Mirror/asterisk/actions/runs/33535046216) completed successfully for this exact head on hosted `ubuntu-latest`: Workspace checks, Protocol fuzz checks, and Dependency audit all passed. GitHub reports PR #17 OPEN, CLEAN, and MERGEABLE against PR #16 head `13416c664`.
+blockers: Production deployment identity, effective configuration, provider credentials, sanitized SIP/SDP/RTP fixtures, and live-provider calls remain unavailable; Asterisk routing remains the fallback
+next_action: Reconcile PR #18 onto the validated PR #17 head, run focused WebSocket-media checks, publish, and verify hosted CI and mergeability
 rollback: Asterisk remains the active/fallback engine; do not enable Rust traffic
 notes: Focused affected-module tests remain required in every implementation PR; hosted pull_request and aistack/main pushes run the complete ordinary hosted workspace/offline suite when manifests exist; extended fuzzing, SIPp/interoperability, capacity, property, soak, credentialed-provider, and live real-time-call gates remain scheduled or manually gated.
 ```
