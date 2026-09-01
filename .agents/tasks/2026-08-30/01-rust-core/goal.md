@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**
-**Current checkpoint:** CP-060 — PR #21 hosted validation confirmed
-**Last checkpoint (UTC):** 2026-09-01T18:13:53Z
+**Current checkpoint:** CP-062 — PR #22 hosted validation confirmed after restack
+**Last checkpoint (UTC):** 2026-09-01T18:32:54Z
 **Active phase:** Phase 1 — Rust media engine
-**Active milestone:** Milestone 4 — Dialog + SDP + Basic Calls<br>
-**Next resume action:** Reconcile PR #22 onto exact published PR #21 head `eee772311`, run focused CI-workflow checks, publish, and verify hosted CI and mergeability
-**Active PR:** [#21](https://github.com/W3Mirror/asterisk/pull/21); branch `protocol-fuzz` targets `media-udp-runtime`
+**Active milestone:** Offline deterministic verification foundation across Milestones 2–5<br>
+**Next resume action:** Reconcile PR #25 onto the validated PR #22 head `c15d89b6f`, then run its focused scenario-replay checks
+**Active PR:** [#22](https://github.com/W3Mirror/asterisk/pull/22); branch `rust-quality-ci` targets `protocol-fuzz`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-21-protocol-fuzz`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-22-rust-quality-ci`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -1862,6 +1862,28 @@ Protocol fuzz-target checks and dependency audits are also configured for these
 events when their respective workspaces exist; stack-layer detection may mark
 them skipped when the Rust workspace has not reached that branch yet.
 
+The current repository behavior is intentionally stronger than a changed-module
+shortcut: every pull request runs formatting, the complete locked workspace test
+suite, workspace Clippy across all targets, dependency auditing, and protocol
+fuzz-target compilation/sanitizer checks whenever those manifests exist. A push
+to `aistack/main` repeats the same complete ordinary hosted suite. The workflow
+does not infer affected files or select only their tests; focused affected-module
+tests remain mandatory PR content and are exercised by the full workspace run.
+
+The offline verification tiers are explicit:
+
+| Tier | Trigger | Required coverage |
+| --- | --- | --- |
+| Fast PR | Every pull request | Focused tests shipped by the change, dependent-module/API-event contracts, deterministic fixtures, short fault/reclamation smoke tests, formatting, and Clippy |
+| Full branch | Every push to `aistack/main` | Complete locked workspace tests, deterministic integration/fixture tests, fuzz-target checks, and dependency/security audit |
+| Scheduled/manual | Nightly, weekly, or dispatch | Extended fuzzing, SIPp/interoperability replay, property/capacity matrices, differential checks, and long-duration soak/memory tests |
+| Traffic evidence gate | Before enabling or expanding Rust routing | Sanitized Asterisk/provider replay, credentialed real-time interoperability, and tested rollback proof |
+
+Provider access is not required to build the replay foundation. Synthetic SIP
+scenarios, timer advancement, RTP/RTCP/DTMF fault injection, fake AI-media peers,
+state/event assertions, and reclamation checks should be implemented offline;
+sanitized Asterisk/provider captures can extend that same corpus later.
+
 Every push to `aistack/main` runs that same complete ordinary hosted suite
 against the integrated stack whenever a Rust workspace is present. “All tests”
 here means the complete ordinary Rust workspace and its offline checks, not
@@ -2118,7 +2140,8 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 | Workstream | Status | Evidence / checkpoint | PR | Next action |
 | --- | --- | --- | --- | --- |
 | Phase 0 — current Asterisk surface | in_progress | CP-015; PR #1 hosted run 33431290927 passed and GitHub reports CLEAN/MERGEABLE at `8dbd0082823b9444e72a6ceebee27328bd0f506d` | #1 | Keep the verified Asterisk inventory and production-evidence gate in force |
-| Phase 1 — Rust media engine | in_progress | CP-038; PR #11 hosted run 33527453388 passed at `31fdb6c1b81a548e05e7afb89e09ef2d2522fda8`; PR #11 is OPEN/CLEAN/MERGEABLE against the validated PR #10 head | [#11](https://github.com/W3Mirror/asterisk/pull/11) | Reconcile PR #12 onto this validated head and run focused SIP-security checks |
+| Phase 1 — Rust media engine | in_progress | CP-018/CP-026/CP-047/CP-049/CP-050/CP-054/CP-056/CP-058/CP-060/CP-061/CP-062; PR #2 foundation, PR #8 media/DTMF/recording, PR #18 bounded WebSocket adapter, PR #19 bounded stream driver, PR #20 UDP runtime, PR #21 parser fuzz harnesses, and PR #22 hosted CI/offline verification contract; hosted and local ordinary checks pass | [#22](https://github.com/W3Mirror/asterisk/pull/22) | Reconcile PR #25 onto this validated head, then run its focused scenario-replay checks |
+| Offline deterministic verification | in_progress | CP-058/CP-061/CP-062 define focused per-module tests, synthetic SIP replay, property invariants, API/event contracts, media fault injection, bridge/transfer state tests, differential tooling, load/soak/reclamation tiers, and hosted PR/main-push execution semantics | [#22](https://github.com/W3Mirror/asterisk/pull/22) | Reconcile PR #25 onto the validated PR #22 head and implement the scenario replay/state assertions |
 | Phase 2 — SIP edge shadow mode | in_progress | CP-026; PR #7 hosted run 33436951454 passed and GitHub reports CLEAN/MERGEABLE at `fe87301a5322e278a8fb39404d675c6372d87ad9` | [#7](https://github.com/W3Mirror/asterisk/pull/7) | Publish and validate PR #8's media-session slice |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
 | Phase 4 — expanded provider coverage | not_started | — | — | Add one provider compatibility suite per rollout target |
@@ -3775,7 +3798,8 @@ Populate one row per PR before implementation begins, then update it at every ch
 
 | 20 | [#20](https://github.com/W3Mirror/asterisk/pull/20) | `media-udp-runtime` | `media-websocket-transport` | /home/ashutosh/.worktrees/w3mirror/asterisk/pr-20-media-udp-runtime | Bounded UDP media runtime: RTP/RTCP datagram bounds, source and SSRC policy, endpoint learning/override, DTMF and RTCP sends, reusable receive buffers, and explicit non-async transport boundaries | in_progress | `a7e9ce9bc6b81994403c2830137d0856cf7c3877` | Hosted run [33541377434](https://github.com/W3Mirror/asterisk/actions/runs/33541377434) passed Workspace, Protocol fuzz, and Dependency audit on hosted `ubuntu-latest`; GitHub reports OPEN/CLEAN against exact PR #19 head `c034292ec`; local focused `cargo test -p media-runtime --locked` (7 passed), dependent `cargo test -p media-core --locked` (10 passed), full workspace tests, formatting, workspace Clippy, and diff checks pass | Validate PR #21 against this published head |
 
-| 21 | [#21](https://github.com/W3Mirror/asterisk/pull/21) | `protocol-fuzz` | `media-udp-runtime` | /home/ashutosh/.worktrees/w3mirror/asterisk/pr-21-protocol-fuzz | Protocol parser fuzz harnesses for SIP, SDP, RTP, RTCP, DTMF, and WebSocket inputs with sanitizer-enabled cargo-fuzz checks | in_progress | `eee7723117e0208f694d0a628b95b9e45ba4cb1f` | Hosted run [33542071808](https://github.com/W3Mirror/asterisk/actions/runs/33542071808) passed Workspace, Protocol fuzz checks (including sanitizer-enabled fuzz targets), and Dependency audit on hosted `ubuntu-latest`; GitHub reports OPEN/CLEAN against exact PR #20 head `a7e9ce9bc`; local `cargo +nightly fuzz check --fuzz-dir fuzz --sanitizer address --no-cfg-fuzzing`, formatting, full workspace tests, workspace Clippy, and diff checks pass | Reconcile PR #22 onto this validated head |
+| 21 | [#21](https://github.com/W3Mirror/asterisk/pull/21) | `protocol-fuzz` | `media-udp-runtime` | /home/ashutosh/.worktrees/w3mirror/asterisk/pr-21-protocol-fuzz | Protocol parser fuzz harnesses for SIP, SDP, RTP, RTCP, DTMF, and WebSocket inputs with sanitizer-enabled cargo-fuzz checks | in_progress | `354f79abcc1fc1913796819e1084b2fa571c9363` | Hosted run [33542485738](https://github.com/W3Mirror/asterisk/actions/runs/33542485738) passed Workspace, Protocol fuzz checks (including sanitizer-enabled fuzz targets), and Dependency audit on hosted `ubuntu-latest`; GitHub reports OPEN/CLEAN against exact PR #20 head `a7e9ce9bc`; local `cargo +nightly fuzz check --fuzz-dir fuzz --sanitizer address --no-cfg-fuzzing`, formatting, full workspace tests, workspace Clippy, and diff checks pass | Validate PR #22 on this current published head |
+| 22 | [#22](https://github.com/W3Mirror/asterisk/pull/22) | `rust-quality-ci` | `protocol-fuzz` | /home/ashutosh/.worktrees/w3mirror/asterisk/pr-22-rust-quality-ci | Hosted Rust CI and offline verification contract: hosted runners, focused affected-module tests in implementation PRs, complete ordinary workspace checks on PR and `aistack/main` pushes, and explicit scheduled/manual extended gates | in_progress | `c15d89b6f7cde3408f62b38da4268fb103457e83` | Hosted run [33543917943](https://github.com/W3Mirror/asterisk/actions/runs/33543917943) passed Workspace checks, Protocol fuzz checks, and Dependency audit on hosted `ubuntu-latest`; GitHub reports OPEN/CLEAN against PR #21 head `354f79abc`; local formatting, full workspace tests, workspace Clippy, sanitizer-backed fuzz checks, and `git diff --check` pass | Reconcile PR #25 onto this validated head |
 
 ### CP-028 — Provider routing profile implementation committed
 
@@ -4761,6 +4785,48 @@ blockers: Production deployment identity, effective configuration, provider cred
 next_action: Reconcile PR #22 onto exact published PR #21 head `eee772311`, run focused CI-workflow checks, publish, and verify hosted CI and mergeability
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic
 notes: Focused affected-module tests remain required in each implementation PR. Pull requests and pushes to `aistack/main` run the complete ordinary hosted workspace/offline suite; extended and credentialed/live-call checks remain scheduled/manual or approval-gated.
+```
+
+### CP-061 — PR #22 restacked onto the current PR #21 head
+
+```yaml
+checkpoint_id: CP-061
+recorded_at_utc: 2026-09-01T18:26:12Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Offline deterministic verification foundation across Milestones 2–5
+scope: Reconcile the PR #22 hosted-CI and offline-verification documentation onto the current published PR #21 head
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-22-rust-quality-ci
+branch: rust-quality-ci
+base_branch: protocol-fuzz
+pr: "#22 https://github.com/W3Mirror/asterisk/pull/22"
+head_sha: 6bca45734
+evidence: Rebased the substantive CI/test-tier documentation onto PR #21 head `354f79abc`, retaining only the intended 23-line documentation delta. Local `cargo fmt --all -- --check`, `cargo test --workspace --locked`, `cargo clippy --workspace --all-targets --locked`, `cargo +nightly fuzz check --fuzz-dir fuzz --sanitizer address --no-cfg-fuzzing`, and `git diff --check` all passed; existing missing-documentation and Clippy warnings remain non-fatal baseline warnings.
+blockers: Production deployment identity, effective configuration, provider credentials, sanitized captures, Asterisk/provider interoperability, rollback execution, and safe production Rust traffic remain unavailable; they block only the later interoperability/traffic-evidence gate
+next_action: Commit and publish PR #22, then verify hosted CI and OPEN/CLEAN/MERGEABLE state against PR #21 head `354f79abc`
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic
+notes: Focused affected-module tests remain mandatory implementation-PR content. Hosted pull_request and `aistack/main` push events execute the complete ordinary offline workspace suite; extended fuzzing, SIPp/interoperability, capacity/load/soak, credentialed-provider, and real-time checks remain scheduled, manually dispatched, or approval-gated.
+```
+
+### CP-062 — PR #22 hosted validation confirmed after restack
+
+```yaml
+checkpoint_id: CP-062
+recorded_at_utc: 2026-09-01T18:32:54Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Offline deterministic verification foundation across Milestones 2–5
+scope: Validate the restacked PR #22 CI and offline-verification contract on hosted checks
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-22-rust-quality-ci
+branch: rust-quality-ci
+base_branch: protocol-fuzz
+pr: "#22 https://github.com/W3Mirror/asterisk/pull/22"
+head_sha: c15d89b6f7cde3408f62b38da4268fb103457e83
+evidence: Hosted Rust quality run [33543917943](https://github.com/W3Mirror/asterisk/actions/runs/33543917943) completed successfully for this exact head on hosted `ubuntu-latest`: Workspace checks, Protocol fuzz checks, and Dependency audit passed. GitHub reports PR #22 OPEN and CLEAN against PR #21 head `354f79abc`; local formatting, full workspace tests, workspace Clippy, sanitizer-backed fuzz checks, and `git diff --check` are green.
+blockers: Production deployment identity, effective configuration, provider credentials, sanitized captures, Asterisk/provider interoperability, rollback execution, and safe production Rust traffic remain unavailable; they block only the later interoperability/traffic-evidence gate
+next_action: Reconcile PR #25 onto the validated PR #22 head `c15d89b6f`, then run its focused scenario-replay checks
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic
+notes: Focused affected-module tests remain mandatory implementation-PR content. Hosted pull_request and `aistack/main` push events execute the complete ordinary offline workspace suite; extended fuzzing, SIPp/interoperability, capacity/load/soak, credentialed-provider, and real-time checks remain scheduled, manually dispatched, or approval-gated. PR #25 is currently DIRTY solely because its base advanced to this new validated PR #22 head.
 ```
 
 ## 59.4 Stacked-PR Checkpoints
