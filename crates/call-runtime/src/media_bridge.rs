@@ -52,6 +52,87 @@ pub enum HumanMediaForward {
     },
 }
 
+#[derive(Clone, Copy, Debug)]
+struct RelayedDtmfEvent {
+    source_timestamp: u32,
+    destination_timestamp: u32,
+    maximum_duration: u16,
+    audio_clock_synchronized: bool,
+}
+
+#[derive(Debug, Default)]
+struct DtmfRelayClock {
+    timestamp_offset: Option<u32>,
+    latest: Option<RelayedDtmfEvent>,
+}
+
+impl DtmfRelayClock {
+    fn map_packet(
+        &mut self,
+        source_timestamp: u32,
+        duration: u16,
+        next_destination_timestamp: u32,
+    ) -> u32 {
+        let offset = *self
+            .timestamp_offset
+            .get_or_insert_with(|| next_destination_timestamp.wrapping_sub(source_timestamp));
+        let destination_timestamp = source_timestamp.wrapping_add(offset);
+        let replace_latest = self
+            .latest
+            .is_none_or(|latest| timestamp_is_newer(source_timestamp, latest.source_timestamp));
+        if replace_latest {
+            self.latest = Some(RelayedDtmfEvent {
+                source_timestamp,
+                destination_timestamp,
+                maximum_duration: duration,
+                audio_clock_synchronized: false,
+            });
+        } else if let Some(latest) = self
+            .latest
+            .as_mut()
+            .filter(|latest| latest.source_timestamp == source_timestamp)
+            && !latest.audio_clock_synchronized
+        {
+            latest.maximum_duration = latest.maximum_duration.max(duration);
+        }
+        destination_timestamp
+    }
+
+    fn synchronize_before_audio(
+        &mut self,
+        source_audio_timestamp: u32,
+        destination: &mut MediaUdpRuntime,
+    ) {
+        let Some(timestamp_offset) = self.timestamp_offset else {
+            return;
+        };
+        let Some(latest) = self.latest.as_mut() else {
+            return;
+        };
+        if latest.audio_clock_synchronized {
+            return;
+        }
+        let event_end = latest
+            .destination_timestamp
+            .wrapping_add(u32::from(latest.maximum_duration));
+        let mapped_audio = source_audio_timestamp.wrapping_add(timestamp_offset);
+        let resumed_timestamp = if timestamp_is_newer(mapped_audio, event_end) {
+            mapped_audio
+        } else {
+            event_end
+        };
+        destination
+            .media_mut()
+            .synchronize_next_rtp_timestamp(resumed_timestamp);
+        latest.audio_clock_synchronized = true;
+    }
+}
+
+fn timestamp_is_newer(candidate: u32, reference: u32) -> bool {
+    let distance = candidate.wrapping_sub(reference);
+    distance != 0 && distance < (1_u32 << 31)
+}
+
 /// Errors raised by state-gated human RTP forwarding.
 #[derive(Debug)]
 pub enum HumanMediaBridgeError {
@@ -134,6 +215,8 @@ pub struct HumanMediaBridgeRuntime {
     human_leg_id: LegId,
     caller: MediaUdpRuntime,
     human: MediaUdpRuntime,
+    caller_to_human_dtmf: DtmfRelayClock,
+    human_to_caller_dtmf: DtmfRelayClock,
 }
 
 impl HumanMediaBridgeRuntime {
@@ -166,6 +249,8 @@ impl HumanMediaBridgeRuntime {
             human_leg_id: leg_id,
             caller,
             human,
+            caller_to_human_dtmf: DtmfRelayClock::default(),
+            human_to_caller_dtmf: DtmfRelayClock::default(),
         })
     }
 
@@ -214,6 +299,7 @@ impl HumanMediaBridgeRuntime {
         forward_one(
             &mut self.caller,
             &mut self.human,
+            &mut self.caller_to_human_dtmf,
             HumanMediaDirection::CallerToHuman,
             arrival,
             marker,
@@ -237,6 +323,7 @@ impl HumanMediaBridgeRuntime {
         forward_one(
             &mut self.human,
             &mut self.caller,
+            &mut self.human_to_caller_dtmf,
             HumanMediaDirection::HumanToCaller,
             arrival,
             marker,
@@ -275,13 +362,17 @@ fn ensure_destination(runtime: &MediaUdpRuntime) -> Result<(), HumanMediaBridgeE
 fn forward_one(
     source: &mut MediaUdpRuntime,
     destination: &mut MediaUdpRuntime,
+    dtmf_clock: &mut DtmfRelayClock,
     direction: HumanMediaDirection,
     arrival: Duration,
     marker: bool,
 ) -> Result<HumanMediaForward, HumanMediaBridgeError> {
     let received = source.receive_rtp(arrival)?;
     match received.media {
-        ReceivedMedia::Audio { queued, .. } => {
+        ReceivedMedia::Audio {
+            queued, timestamp, ..
+        } => {
+            dtmf_clock.synchronize_before_audio(timestamp, destination);
             let frame = source
                 .media_mut()
                 .pop_for_ai()
@@ -301,10 +392,17 @@ fn forward_one(
         ReceivedMedia::Dtmf {
             event,
             marker,
+            timestamp,
             notification,
             ..
         } => {
-            let sent_bytes = destination.send_dtmf(event, 0, marker)?;
+            let destination_timestamp = dtmf_clock.map_packet(
+                timestamp,
+                event.duration,
+                destination.media().next_rtp_timestamp(),
+            );
+            let sent_bytes =
+                destination.send_dtmf_at_timestamp(event, destination_timestamp, marker)?;
             Ok(HumanMediaForward::Dtmf {
                 direction,
                 received_bytes: received.bytes,
@@ -467,6 +565,17 @@ mod tests {
         let mut output = [0_u8; 1_024];
         let (length, _) = peer.recv_from(&mut output).unwrap();
         parse(&output[..length]).unwrap()
+    }
+
+    #[test]
+    fn dtmf_clock_maps_source_timestamp_rollover_monotonically() {
+        let mut clock = DtmfRelayClock::default();
+        assert_eq!(clock.map_packet(u32::MAX - 79, 80, 1_000), 1_000);
+        assert_eq!(clock.map_packet(80, 160, 1_000), 1_160);
+        let latest = clock.latest.unwrap();
+        assert_eq!(latest.source_timestamp, 80);
+        assert_eq!(latest.destination_timestamp, 1_160);
+        assert_eq!(latest.maximum_duration, 160);
     }
 
     #[test]
@@ -874,5 +983,88 @@ mod tests {
         assert_eq!(to_caller.ssrc, 101);
         assert_eq!(to_caller.payload_type, 101);
         assert_eq!(parse_dtmf(&to_caller.payload).unwrap(), human_event);
+    }
+
+    #[test]
+    fn resumes_audio_from_source_clock_when_event_end_is_lost_and_keeps_late_end_packets() {
+        let mut fixture = fixture(false);
+        let start = DtmfEvent {
+            digit: DtmfDigit::Five,
+            end: false,
+            reserved: false,
+            volume: 10,
+            duration: 80,
+        };
+        let end = DtmfEvent {
+            end: true,
+            duration: 160,
+            ..start
+        };
+        let continuation = DtmfEvent {
+            duration: 120,
+            ..start
+        };
+
+        for (sequence, event, marker) in [(1, start, true), (2, continuation, false)] {
+            fixture
+                .caller_peer
+                .send_to(
+                    &dtmf_packet(11, sequence, 500, event, marker),
+                    fixture.media.caller().local_rtp_addr().unwrap(),
+                )
+                .unwrap();
+            fixture
+                .media
+                .forward_caller_once(&fixture.bridges, Duration::from_millis(20), false)
+                .unwrap();
+            assert_eq!(receive_packet(&fixture.human_peer).timestamp, 1_000);
+        }
+
+        fixture
+            .caller_peer
+            .send_to(
+                &audio_packet(11, 3, 660, 0xff),
+                fixture.media.caller().local_rtp_addr().unwrap(),
+            )
+            .unwrap();
+        fixture
+            .media
+            .forward_caller_once(&fixture.bridges, Duration::from_millis(40), false)
+            .unwrap();
+        let resumed_audio = receive_packet(&fixture.human_peer);
+        assert_eq!(resumed_audio.sequence_number, 12);
+        assert_eq!(resumed_audio.timestamp, 1_160);
+
+        for (sequence, expected_outbound_sequence) in [(4, 13), (5, 14)] {
+            fixture
+                .caller_peer
+                .send_to(
+                    &dtmf_packet(11, sequence, 500, end, false),
+                    fixture.media.caller().local_rtp_addr().unwrap(),
+                )
+                .unwrap();
+            fixture
+                .media
+                .forward_caller_once(&fixture.bridges, Duration::from_millis(60), false)
+                .unwrap();
+            let late_end = receive_packet(&fixture.human_peer);
+            assert_eq!(late_end.sequence_number, expected_outbound_sequence);
+            assert_eq!(late_end.timestamp, 1_000);
+        }
+
+        fixture
+            .caller_peer
+            .send_to(
+                &audio_packet(11, 6, 820, 0x7f),
+                fixture.media.caller().local_rtp_addr().unwrap(),
+            )
+            .unwrap();
+        fixture
+            .media
+            .forward_caller_once(&fixture.bridges, Duration::from_millis(80), false)
+            .unwrap();
+        let uninterrupted_audio = receive_packet(&fixture.human_peer);
+        assert_eq!(uninterrupted_audio.sequence_number, 15);
+        assert_eq!(uninterrupted_audio.timestamp, 1_320);
     }
 }

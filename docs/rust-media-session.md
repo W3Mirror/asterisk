@@ -38,6 +38,9 @@ The adapter pushes decoded AI frames into the bounded return queue and calls
 size, and RTP packet bounds are checked before a frame is removed from the
 queue. `send_dtmf` emits a telephone-event packet with an explicit timestamp
 increment so retransmissions can reuse the event timestamp.
+`send_dtmf_at_timestamp` emits at an explicitly mapped event timestamp without
+moving the next regular-media timestamp; callers can synchronize that regular
+clock to the event end before audio resumes.
 
 ## RTCP path
 

@@ -36,6 +36,13 @@ and sequence number while retaining the source marker bit and event fields.
 The source session still deduplicates application notifications independently,
 so relay reliability does not create duplicate start/end events for consumers.
 Packets belonging to one relayed event use a stable destination RTP timestamp.
+Each direction retains a fixed wrapping offset between source and destination
+RTP clocks. A packet is serialized at the mapped event timestamp without
+moving the regular-media clock; when audio resumes, that clock synchronizes to
+the later of the mapped source-audio timestamp and the mapped event timestamp
+plus the largest validated event duration. This covers lost event-end packets,
+keeps late retransmissions on the original timestamp, and never moves subsequent
+audio backward. Source timestamp rollover uses wrapping RTP ordering.
 
 Run the focused verification with:
 
@@ -44,9 +51,8 @@ cargo test -p call-runtime --locked
 cargo clippy -p call-runtime --all-targets --no-deps --locked -- -D warnings
 ```
 
-This localhost composition does not yet advance the destination RTP timeline
-from a DTMF event into subsequent audio. It is also not jitter playout, RTCP
-relay, transcoding beyond the existing negotiated G.711 session behavior,
-provider authentication, Asterisk/carrier interoperability, or load/soak
-evidence. Production traffic remains on Asterisk until the later compatibility,
-reliability, and rollback gates pass.
+This localhost composition is not jitter playout, RTCP relay, transcoding
+beyond the existing negotiated G.711 session behavior, provider authentication,
+Asterisk/carrier interoperability, or load/soak evidence. Production traffic
+remains on Asterisk until the later compatibility, reliability, and rollback
+gates pass.
