@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**
-**Current checkpoint:** CP-025 — PR #7 base reconciliation in progress
-**Last checkpoint (UTC):** 2026-08-31T20:35:00Z
+**Current checkpoint:** CP-026 — PR #7 hosted validation and mergeability confirmed
+**Last checkpoint (UTC):** 2026-09-01T04:20:32Z
 **Active phase:** Phase 2 — SIP edge shadow mode
 **Active milestone:** Milestone 4 — Dialog + SDP + Basic Calls<br>
-**Next resume action:** Finish the PR #7 base merge, run focused call-engine tests and hosted checks, then record its final head and mergeability
+**Next resume action:** Reconcile PR #8 onto the validated PR #7 head, run focused media-session tests, and publish its hosted validation
 **Active PR:** [#7](https://github.com/W3Mirror/asterisk/pull/7); branch `call-engine-core` targets `sdp-media-core`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-7-call-engine`
@@ -2999,6 +2999,27 @@ rollback: Asterisk remains the active/fallback engine; do not enable Rust traffi
 notes: The ordinary hosted workspace invocation exercises the focused SDP/media tests through call-api; scheduled/manual capacity, extended property, soak, and live-provider evidence remain separate gates.
 ```
 
+### CP-026 — PR #7 hosted validation and mergeability confirmed
+
+```yaml
+checkpoint_id: CP-026
+recorded_at_utc: 2026-09-01T04:20:32Z
+status: in_progress
+phase: Phase 2 — SIP edge shadow mode
+milestone: Milestone 4 — Dialog + SDP + Basic Calls
+scope: Validate the reconciled PR #7 call-engine slice on local and hosted checks
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-7-call-engine
+branch: call-engine-core
+base_branch: sdp-media-core
+pr: "#7 https://github.com/W3Mirror/asterisk/pull/7"
+head_sha: 0edb861556584a2fddb0bdbd0279f7e3aa71d64a
+evidence: Local cargo fmt --all -- --check, cargo test --workspace --locked, cargo clippy --workspace --all-targets --locked, and git diff --check passed. Hosted pull_request run 33469052092 completed successfully for this exact head: Workspace checks, Protocol fuzz checks, and Dependency audit all passed. GitHub reports PR #7 OPEN, CLEAN, and MERGEABLE. The PR contains focused call-engine tests, which are exercised by the complete hosted workspace invocation.
+blockers: Production deployment identity, effective configuration, provider credentials, and sanitized inbound/outbound captures remain unavailable; Asterisk routing remains the fallback
+next_action: Reconcile PR #8 onto this validated PR #7 head, run focused media-session tests, and publish the updated branch
+rollback: Asterisk remains the active/fallback engine; do not enable Rust traffic
+notes: Extended fuzzing, SIPp/interoperability, capacity, property, soak, credentialed-provider, and live real-time-call evidence remain scheduled or manually gated.
+```
+
 ### Checkpoint template
 
 Copy this template, assign the next checkpoint ID, fill every field, and append it after each meaningful state change:
@@ -3086,7 +3107,7 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 4 | [#4](https://github.com/W3Mirror/asterisk/pull/4) | `sip-dialog-core` | `sip-transaction-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-4-sip-dialog` | Dialog identity and state: bounded tags, route sets, remote targets, CSeq sequencing, UAC/UAS lifecycle | in_progress | `64a99bd2fe1ab4dc9853699835e7a44540dcdbd0` | Latest hosted run [33434718192](https://github.com/W3Mirror/asterisk/actions/runs/33434718192) passed; GitHub reports CLEAN/MERGEABLE; local focused dialog fmt/test/clippy and diff check passed | Validate PR #5 on this base |
 | 5 | [#5](https://github.com/W3Mirror/asterisk/pull/5) | `call-api-core` | `sip-dialog-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-5-call-api` | Call-control/API boundary: bounded registry, validated lifecycle commands, stable IDs/events, dialog binding, deterministic snapshots, and terminal reclamation | in_progress | `496401b68bbd37b95adcbcab5d4a177ce7305f9d` | Hosted run [33468101760](https://github.com/W3Mirror/asterisk/actions/runs/33468101760) passed; GitHub reports CLEAN/MERGEABLE; local focused call-api fmt/test/clippy and diff check passed | Validate PR #6 on this base |
 | 6 | [#6](https://github.com/W3Mirror/asterisk/pull/6) | `sdp-media-core` | `call-api-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-6-sdp-media` | SDP/media binding: negotiated audio codec mappings, direction, remote RTP endpoint, and safe SDP update replacement in `call-api` | in_progress | `34e16c11fb1442437c7777ef97d8f56d036328ab` | Hosted run [33468751361](https://github.com/W3Mirror/asterisk/actions/runs/33468751361) passed; GitHub reports CLEAN/MERGEABLE; local focused call-api fmt/test/clippy and diff check passed | Validate PR #7 on this base |
-| 7 | [#7](https://github.com/W3Mirror/asterisk/pull/7) | `call-engine-core` | `sdp-media-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-7-call-engine` | Provider-neutral call engine: bounded registry/dialog/transaction orchestration, INVITE/ACK/BYE/CANCEL/OPTIONS handling, retransmission, and deterministic timeout polling | in_progress | `41182282b` | Merged the validated PR #6 head; local focused call-engine fmt/test/clippy and diff check passed; hosted validation pending | Publish and validate PR #7 on this base |
+| 7 | [#7](https://github.com/W3Mirror/asterisk/pull/7) | `call-engine-core` | `sdp-media-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-7-call-engine` | Provider-neutral call engine: bounded registry/dialog/transaction orchestration, INVITE/ACK/BYE/CANCEL/OPTIONS handling, retransmission, and deterministic timeout polling | in_progress | `0edb861556584a2fddb0bdbd0279f7e3aa71d64a` | Hosted run [33469052092](https://github.com/W3Mirror/asterisk/actions/runs/33469052092) passed Workspace, Protocol fuzz, and Dependency audit; GitHub reports CLEAN/MERGEABLE; local focused call-engine fmt/test/clippy and diff check passed | Reconcile and validate PR #8 on this base |
 
 ## 59.4 Stacked-PR Checkpoints
 
