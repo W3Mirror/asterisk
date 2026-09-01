@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**
-**Current checkpoint:** CP-066 — PR #26 hosted validation confirmed after restack
-**Last checkpoint (UTC):** 2026-09-01T18:59:31Z
+**Current checkpoint:** CP-067 — deterministic transfer/reclamation tests locally validated
+**Last checkpoint (UTC):** 2026-09-01T07:53:03Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Offline deterministic verification foundation across Milestones 2–5<br>
-**Next resume action:** Reconcile PR #27 onto the validated PR #26 head `70e718eb6`, then run focused transfer/reclamation checks
-**Active PR:** [#26](https://github.com/W3Mirror/asterisk/pull/26); branch `sip-scenario-faults` targets `sip-scenario-replay`
+**Next resume action:** Publish PR #27 with a pinned force-with-lease and verify hosted checks plus mergeability
+**Active PR:** Pre-publication branch `sip-scenario-transfer-reclamation` targets [#26](https://github.com/W3Mirror/asterisk/pull/26)'s branch `sip-scenario-faults`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-26`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-27`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -2140,9 +2140,9 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 | Workstream | Status | Evidence / checkpoint | PR | Next action |
 | --- | --- | --- | --- | --- |
 | Phase 0 — current Asterisk surface | in_progress | CP-015; PR #1 hosted run 33431290927 passed and GitHub reports CLEAN/MERGEABLE at `8dbd0082823b9444e72a6ceebee27328bd0f506d` | #1 | Keep the verified Asterisk inventory and production-evidence gate in force |
-| Phase 1 — Rust media engine | in_progress | CP-018/CP-026/CP-047/CP-049/CP-050/CP-054/CP-056/CP-058/CP-059/CP-060/CP-061/CP-062/CP-063/CP-064/CP-065/CP-066; PR #2 foundation, PR #8 media/DTMF/recording, PR #18 bounded WebSocket adapter, PR #19 bounded stream driver, PR #20 UDP runtime, PR #21 parser fuzz harnesses, PR #22 hosted CI/offline verification contract, PR #25 deterministic SIP scenario replay, and PR #26 deterministic fault corpus; focused and full offline workspace tests pass | [#26](https://github.com/W3Mirror/asterisk/pull/26) | Reconcile PR #27 onto PR #26 and implement deterministic transfer/bridge coverage |
-| Offline deterministic verification | in_progress | CP-058/CP-059/CP-060/CP-061/CP-062/CP-063/CP-064/CP-065/CP-066 define focused per-module tests, synthetic SIP replay, property invariants, API/event contracts, media fault injection, bridge/transfer state tests, differential tooling, load/soak/reclamation tiers, and hosted PR/main-push execution semantics | [#26](https://github.com/W3Mirror/asterisk/pull/26) | Extend the replay foundation with deterministic transfer and bridge scenarios |
-| Synthetic SIP scenario replay | in_progress | CP-061/CP-062/CP-063/CP-064/CP-065/CP-066; PR #25 provides bounded atomic normal-call replay and PR #26 adds CANCEL/final-response cleanup, INVITE retransmission, RTP loss/reordering, DTMF duplicate suppression, and RTCP receiver-report replay with seven focused tests; local full workspace (136 tests) and hosted PR #25/#26 checks pass | [#26](https://github.com/W3Mirror/asterisk/pull/26) | Reconcile PR #27 onto PR #26 and add transfer/bridge replay tests |
+| Phase 1 — Rust media engine | in_progress | CP-018/CP-026/CP-047/CP-049/CP-050/CP-054/CP-056/CP-058/CP-059/CP-060/CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067; PR #2 foundation, PR #8 media/DTMF/recording, PR #18 bounded WebSocket adapter, PR #19 bounded stream driver, PR #20 UDP runtime, PR #21 parser fuzz harnesses, PR #22 hosted CI/offline verification contract, PR #25 deterministic SIP scenario replay, PR #26 deterministic fault corpus, and PR #27 transfer/reclamation tests; focused and full offline workspace tests pass | [#27](https://github.com/W3Mirror/asterisk/pull/27) | Publish and verify PR #27, then implement deterministic bridge coverage |
+| Offline deterministic verification | in_progress | CP-058/CP-059/CP-060/CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067 define focused per-module tests, synthetic SIP replay, property invariants, API/event contracts, media fault injection, bridge/transfer state tests, differential tooling, load/soak/reclamation tiers, and hosted PR/main-push execution semantics | [#27](https://github.com/W3Mirror/asterisk/pull/27) | Extend the replay foundation with deterministic bridge scenarios |
+| Synthetic SIP scenario replay | in_progress | CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067; PR #25 provides bounded atomic normal-call replay, PR #26 adds signaling/media faults, and PR #27 adds transfer-command and terminal-reclamation replay with ten focused scenario tests; local full workspace (136 tests) passes and ordinary workspace Clippy is green | [#27](https://github.com/W3Mirror/asterisk/pull/27) | Publish PR #27 and verify hosted checks plus mergeability |
 | Phase 2 — SIP edge shadow mode | in_progress | CP-026; PR #7 hosted run 33436951454 passed and GitHub reports CLEAN/MERGEABLE at `fe87301a5322e278a8fb39404d675c6372d87ad9` | [#7](https://github.com/W3Mirror/asterisk/pull/7) | Publish and validate PR #8's media-session slice |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
 | Phase 4 — expanded provider coverage | not_started | — | — | Add one provider compatibility suite per rollout target |
@@ -4954,6 +4954,25 @@ blockers: Provider/Asterisk runtime identity, credentials, sanitized real captur
 next_action: Reconcile PR #27 onto the validated PR #26 head `70e718eb6` and run focused transfer/reclamation checks
 rollback: Asterisk remains the active/fallback engine; no routing was changed
 notes: Every implementation PR must include focused tests for each affected crate/module. Hosted pull_request events run the complete ordinary workspace suite (not automatic module-only selection), and pushes to `aistack/main` repeat that complete ordinary hosted suite; extended fuzzing, SIPp/interoperability, capacity, property, soak, credentialed-provider, and real-time checks remain scheduled, manually dispatched, or approval-gated.
+### CP-067 — Deterministic transfer/reclamation tests locally validated
+
+```yaml
+checkpoint_id: CP-067
+recorded_at_utc: 2026-09-01T07:53:03Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Offline deterministic verification foundation across Milestones 2–5
+scope: Add deterministic transfer-command handling and terminal call/resource reclamation assertions to scenario replay
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-27
+branch: sip-scenario-transfer-reclamation
+base_branch: sip-scenario-faults
+pr: "#27 https://github.com/W3Mirror/asterisk/pull/27"
+head_sha: 274bf706b
+evidence: Rebased the transfer/reclamation implementation onto PR #26 hosted-green head `4bd0b1a2`, preserving the current goal ledger and dropping stale ledger-only commits. Added `CallEngine::reclaim_terminal_call`, transfer command replay, terminal-state/resource cleanup assertions, and three additional scenario tests (ten scenario-replay tests total). Focused `scenario-replay` tests (10) and `call-engine` tests (12) pass; full locked workspace tests pass (136 tests, 0 failures); formatting, workspace Clippy, and `git diff --check` pass. Strict `call-engine` Clippy with `-D warnings` remains blocked by pre-existing documentation/pedantic warnings outside this slice; strict scenario-replay Clippy remains green.
+blockers: Provider/Asterisk runtime identity, credentials, sanitized real captures, and live interoperability remain unavailable; they block only the later interoperability/traffic-evidence gate, not offline transfer/reclamation tests
+next_action: Publish PR #27 with a pinned force-with-lease and verify hosted checks plus OPEN/CLEAN/MERGEABLE state
+rollback: Asterisk remains the active/fallback engine; no routing was changed
+notes: Every implementation PR ships focused tests for each affected crate/module. Hosted pull_request events run the complete ordinary workspace suite (not automatic module-only selection), and pushes to `aistack/main` repeat that complete ordinary hosted suite; extended fuzzing, SIPp/interoperability, capacity, property, soak, credentialed-provider, and real-time checks remain scheduled, manually dispatched, or approval-gated.
 ```
 
 ## 59.4 Stacked-PR Checkpoints
