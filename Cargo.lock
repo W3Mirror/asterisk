@@ -67,6 +67,7 @@ name = "call-runtime"
 version = "0.1.0"
 dependencies = [
  "call-api",
+ "call-bridge",
  "call-core",
  "call-engine",
  "sip-parser",
