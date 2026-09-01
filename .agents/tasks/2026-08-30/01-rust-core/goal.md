@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-097 — PR #35 hosted validation confirmed
-**Last checkpoint (UTC):** 2026-09-01T21:41:00Z
+**Current checkpoint:** CP-099 — PR #36 hosted validation confirmed
+**Last checkpoint (UTC):** 2026-09-01T21:53:42Z
 **Active phase:** Phase 1 — Rust media engine
-**Active milestone:** Runtime caller/human RTP audio composition<br>
-**Next resume action:** Publish PR #35 from the current PR #34 head, then verify every ordinary hosted Rust quality gate on the final head
-**Active PR:** [#35](https://github.com/W3Mirror/asterisk/pull/35); branch `runtime-rtp-leg-bridge` targets `runtime-human-leg-bridge`
+**Active milestone:** Runtime caller/human DTMF relay composition<br>
+**Next resume action:** Continue with the next bounded RTCP/media-reliability slice, adding focused tests before publication
+**Active PR:** [#36](https://github.com/W3Mirror/asterisk/pull/36); branch `runtime-dtmf-leg-bridge` targets `runtime-rtp-leg-bridge`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-35`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-36`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -2140,8 +2140,8 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 | Workstream | Status | Evidence / checkpoint | PR | Next action |
 | --- | --- | --- | --- | --- |
 | Phase 0 — current Asterisk surface | in_progress | CP-015; PR #1 hosted run 33431290927 passed and GitHub reports CLEAN/MERGEABLE at `8dbd0082823b9444e72a6ceebee27328bd0f506d` | #1 | Keep the verified Asterisk inventory and production-evidence gate in force |
-| Phase 1 — Rust media engine | in_progress | CP-018/CP-026/CP-047/CP-049/CP-050/CP-054/CP-056/CP-058/CP-059/CP-060/CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067/CP-068/CP-069/CP-070/CP-071/CP-072/CP-073/CP-074/CP-075/CP-076/CP-082/CP-083/CP-084/CP-085/CP-086/CP-087/CP-092/CP-093/CP-094/CP-095/CP-096/CP-097; PR #2 foundation, PR #8 media/DTMF/recording, PR #18 bounded WebSocket adapter, PR #19 bounded stream driver, PR #20 UDP runtime, PR #21 parser fuzz harnesses, PR #22 hosted CI/offline verification contract, PR #25 deterministic SIP scenario replay, PR #26 deterministic fault corpus, PR #27 transfer/reclamation tests, PR #28 call-bridge state model, PR #29 bridge scenario replay, PR #30 cross-crate property invariants, PR #31 local SIPp integration, PR #32 signaling load/reclamation smoke, PR #33 synthetic differential replay, PR #34 runtime human-leg signaling, and PR #35 caller/human RTP bridge; focused and full offline workspace tests pass and PR #34/#35 hosted checks are green | [#35](https://github.com/W3Mirror/asterisk/pull/35) | Continue with DTMF/RTCP and media reliability slices, each with focused tests |
-| Offline deterministic verification | in_progress | CP-058/CP-059/CP-060/CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067/CP-068/CP-069/CP-070/CP-071/CP-072/CP-073/CP-074/CP-075/CP-076/CP-082/CP-083/CP-084/CP-085/CP-086/CP-087/CP-096 define focused per-module tests, synthetic SIP replay, property invariants, API/event contracts, media fault injection, bridge/transfer state tests, local SIPp scenarios, differential tooling, load/soak/reclamation tiers, RTP bridge forwarding, and hosted PR/main-push execution semantics | [#35](https://github.com/W3Mirror/asterisk/pull/35) | Verify hosted PR checks, then add the next media-control slice with focused tests |
+| Phase 1 — Rust media engine | in_progress | CP-018/CP-026/CP-047/CP-049/CP-050/CP-054/CP-056/CP-058/CP-059/CP-060/CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067/CP-068/CP-069/CP-070/CP-071/CP-072/CP-073/CP-074/CP-075/CP-076/CP-082/CP-083/CP-084/CP-085/CP-086/CP-087/CP-092/CP-093/CP-094/CP-095/CP-096/CP-097/CP-098/CP-099; PR #2 foundation, PR #8 media/DTMF/recording, PR #18 bounded WebSocket adapter, PR #19 bounded stream driver, PR #20 UDP runtime, PR #21 parser fuzz harnesses, PR #22 hosted CI/offline verification contract, PR #25 deterministic SIP scenario replay, PR #26 deterministic fault corpus, PR #27 transfer/reclamation tests, PR #28 call-bridge state model, PR #29 bridge scenario replay, PR #30 cross-crate property invariants, PR #31 local SIPp integration, PR #32 signaling load/reclamation smoke, PR #33 synthetic differential replay, PR #34 runtime human-leg signaling, PR #35 caller/human RTP bridge, and PR #36 DTMF relay; focused and full offline workspace tests pass and PR #34/#35/#36 hosted checks are green | [#36](https://github.com/W3Mirror/asterisk/pull/36) | Continue with RTCP and media reliability slices, each with focused tests |
+| Offline deterministic verification | in_progress | CP-058/CP-059/CP-060/CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067/CP-068/CP-069/CP-070/CP-071/CP-072/CP-073/CP-074/CP-075/CP-076/CP-082/CP-083/CP-084/CP-085/CP-086/CP-087/CP-096/CP-098 define focused per-module tests, synthetic SIP replay, property invariants, API/event contracts, media fault injection, bridge/transfer state tests, local SIPp scenarios, differential tooling, load/soak/reclamation tiers, RTP bridge forwarding, DTMF relay, and hosted PR/main-push execution semantics | [#36](https://github.com/W3Mirror/asterisk/pull/36) | Verify hosted PR checks, then add the next RTCP/media-reliability slice with focused tests |
 | Synthetic SIP scenario replay | in_progress | CP-061/CP-062/CP-063/CP-064/CP-065/CP-066/CP-067/CP-068/CP-069/CP-070/CP-071/CP-072/CP-073/CP-074/CP-075/CP-076/CP-085/CP-086/CP-087; PR #25 provides bounded atomic normal-call replay, PR #26 adds signaling/media faults, PR #27 adds transfer-command and terminal-reclamation replay, PR #28 adds a bounded AI-to-human bridge state model with five focused bridge tests, PR #29 adds bridge transition replay with three focused scenarios, PR #30 adds 13 cross-crate property tests, PR #31 adds three pinned SIPp UDP scenarios, and PR #33 adds a bounded synthetic semantic oracle comparator; local full workspace (170 tests) passes, all three SIPp scenarios pass, ordinary workspace Clippy is green, and differential/scenario focused tests pass | [#33](https://github.com/W3Mirror/asterisk/pull/33) | Keep the synthetic comparator as a regression gate while adding explained real-capture comparisons |
 | Local SIPp integration | in_progress | CP-074/CP-075/CP-076; PR #31 adds a Rust UDP UAS fixture, success/busy/cancel SIPp XML scenarios, a digest-pinned Ubuntu/SIPp Docker image, and an executable runner with terminal reclamation assertions; hosted Docker-backed SIPp checks pass | [#31](https://github.com/W3Mirror/asterisk/pull/31) | Keep the SIPp matrix as a regression gate while extending load/reclamation coverage |
 | Call bridge state model | in_progress | CP-067/CP-068; PR #28 adds provider-neutral bounded bridge ownership, AI/human routing transitions, failure fail-back, event backpressure atomicity, endpoint reclamation, and five focused tests; hosted validation is green | [#28](https://github.com/W3Mirror/asterisk/pull/28) | Integrate the bridge state model with call/runtime signaling and media |
@@ -5809,6 +5809,48 @@ evidence: Hosted Rust quality run [33562048490](https://github.com/W3Mirror/aste
 blockers: RTP forwarding is covered for negotiated G.711 audio, but DTMF relay, RTCP relay, jitter playout, broader codec/transcoding support, media/WebSocket load, long-duration soak/memory, sanitized captures, provider/Asterisk compatibility, rollback proof, and approved real-time calls remain active goal work. Rust traffic remains disabled and Asterisk remains the fallback.
 next_action: Continue the next bounded DTMF/RTCP/media-reliability slice with focused affected-module tests; preserve the ordinary hosted PR and `aistack/main` test contract.
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the RTP bridge PR or restore `backup/runtime-rtp-leg-bridge-before-restack-20260901-213351` if its contract is superseded.
+notes: Hosted checks execute the complete ordinary workspace suite and do not infer a changed-module-only set. Extended, credentialed, long-running, capacity, differential, deployment, rollback, and live-provider tiers remain scheduled/manual or approval-gated. Docker is limited to the pinned SIPp dependency.
+~~~
+
+### CP-098 — PR #36 DTMF relay locally validated
+
+~~~yaml
+checkpoint_id: CP-098
+recorded_at_utc: 2026-09-01T21:48:40Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Runtime caller/human DTMF relay composition
+scope: Relay validated RFC 4733 telephone events across the active caller/human bridge while preserving destination RTP identity, retransmission timing, notification deduplication, and fail-back safety
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-36
+branch: runtime-dtmf-leg-bridge
+base_branch: runtime-rtp-leg-bridge
+pr: "#36 https://github.com/W3Mirror/asterisk/pull/36"
+head_sha: 3f5edf361
+evidence: `HumanMediaBridgeRuntime` now forwards validated telephone-event packets in both directions, preserves source marker/event fields, emits destination-leg payload type/SSRC/sequence, keeps one stable timestamp for retransmissions, and returns deduplicated application notifications. `MediaSession` exposes the validated event/marker/timestamp needed for relay, while scenario replay assertions cover the expanded shape. `cargo test -p call-runtime --locked` passed 20 tests; full workspace tests, formatting, workspace Clippy, YAML/shell checks, and all three Docker-backed SIPp scenarios passed. Strict affected-package Clippy with `-D warnings` still reports the pre-existing missing-docs baseline in `media-core` and is not the repository workflow gate.
+blockers: RTCP relay, jitter playout, broader codec/transcoding support, media/WebSocket load, long-duration soak/memory, sanitized captures, provider/Asterisk compatibility, rollback proof, and approved real-time calls remain active goal work. Rust traffic remains disabled and Asterisk remains the fallback.
+next_action: Publish PR #36 against PR #35 with an exact SHA-pinned lease, then verify all hosted Rust quality gates and mergeability on the final head.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; restore `backup/runtime-dtmf-leg-bridge-before-restack-20260901-214707` if this restack must be abandoned.
+notes: The implementation PR ships focused tests for the changed runtime/media/replay surfaces. Hosted pull_request and `aistack/main` push events run the complete ordinary locked workspace suite; extended, credentialed, long-running, capacity, differential, deployment, rollback, and live-provider tiers remain scheduled/manual or approval-gated. Docker is limited to the pinned SIPp dependency.
+~~~
+
+### CP-099 — PR #36 hosted validation confirmed
+
+~~~yaml
+checkpoint_id: CP-099
+recorded_at_utc: 2026-09-01T21:53:42Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Runtime caller/human DTMF relay composition
+scope: Validate the published DTMF relay stack slice through every ordinary hosted Rust quality gate
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-36
+branch: runtime-dtmf-leg-bridge
+base_branch: runtime-rtp-leg-bridge
+pr: "#36 https://github.com/W3Mirror/asterisk/pull/36"
+head_sha: 3ec5c4aba8dddbca41bc9d4d2974b1279c4daad5
+evidence: Hosted Rust quality run [33563186297](https://github.com/W3Mirror/asterisk/actions/runs/33563186297) completed successfully for this exact head on hosted `ubuntu-latest`: Workspace checks passed (formatting, complete locked workspace tests, Docker-backed SIPp success/busy/cancel scenarios, deterministic signaling reclamation smoke, and workspace Clippy); Protocol fuzz checks passed; Dependency audit passed. GitHub reports PR #36 OPEN, CLEAN, and MERGEABLE against PR #35 head `be5c7b1f294f5c4444977c46c3c999fb2eecaf9d`.
+blockers: DTMF relay is covered with bounded notification deduplication and fail-back safety, but RTCP relay, jitter playout, broader codec/transcoding support, media/WebSocket load, long-duration soak/memory, sanitized captures, provider/Asterisk compatibility, rollback proof, and approved real-time calls remain active goal work. Rust traffic remains disabled and Asterisk remains the fallback.
+next_action: Continue the next bounded RTCP/media-reliability slice with focused affected-module tests; preserve the ordinary hosted PR and `aistack/main` test contract.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close the DTMF relay PR or restore `backup/runtime-dtmf-leg-bridge-before-restack-20260901-214707` if its contract is superseded.
 notes: Hosted checks execute the complete ordinary workspace suite and do not infer a changed-module-only set. Extended, credentialed, long-running, capacity, differential, deployment, rollback, and live-provider tiers remain scheduled/manual or approval-gated. Docker is limited to the pinned SIPp dependency.
 ~~~
 
