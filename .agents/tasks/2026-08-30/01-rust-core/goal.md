@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-085 — non-real-time scope and test execution contract reaffirmed
-**Last checkpoint (UTC):** 2026-09-01T20:33:50Z
+**Current checkpoint:** CP-086 — PR #32 restacked and hosted validation green
+**Last checkpoint (UTC):** 2026-09-01T20:49:11Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Deterministic signaling load and terminal reclamation<br>
 **Next resume action:** Reconcile the next bounded offline differential or media-load slice onto the validated PR #32 head
@@ -5517,6 +5517,27 @@ blockers: Extended fuzz campaigns, large capacity/property matrices, SIPp expans
 next_action: Reconcile the next bounded offline differential or media-load slice onto the validated PR #32 head
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #32 or remove its load workflow steps if the harness contract is superseded
 notes: “All tests” on a `aistack/main` push means all ordinary offline workspace tests available on that branch, not every long-running or credentialed test. Focused affected-module tests remain mandatory PR content and are exercised by the full workspace invocation.
+~~~
+
+### CP-086 — PR #32 restacked and hosted validation green
+
+~~~yaml
+checkpoint_id: CP-086
+recorded_at_utc: 2026-09-01T20:49:11Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Deterministic signaling load and terminal reclamation
+scope: Reconcile the documented load/reclamation slice onto the current PR #31 head and verify the complete hosted pull-request quality run
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-32
+branch: rust-load-reclamation-smoke
+base_branch: sipp-local-integration
+pr: "#32 https://github.com/W3Mirror/asterisk/pull/32"
+head_sha: 42e836e3129ace953ba120bbaaa59b85b001af25
+evidence: Rebasing onto `sipp-local-integration` at `064c6c789` preserved the load-smoke implementation, CP-082 through CP-085 records, and the explicit non-real-time/test contract; the branch was published with an exact force-with-lease. Hosted pull-request run [33557170058](https://github.com/W3Mirror/asterisk/actions/runs/33557170058) passed Workspace checks (formatting, complete locked workspace tests, Docker-backed SIPp scenarios, deterministic 512-call reclamation smoke, and workspace Clippy), all protocol-fuzz target checks, and dependency audit. GitHub reports PR #32 OPEN, CLEAN, and MERGEABLE against `sipp-local-integration` at `064c6c789`.
+blockers: Extended fuzz campaigns, large capacity/property matrices, SIPp expansion, differential replay, long-duration soak/memory checks, credentialed provider checks, and real-time calls remain scheduled, manually dispatched, or approval-gated; Docker remains limited to the pinned SIPp dependency and Rust traffic remains disabled behind the Asterisk fallback.
+next_action: Reconcile the next bounded offline differential or media-load slice onto the validated PR #32 head
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #32 or remove its load workflow steps if the harness contract is superseded
+notes: The ordinary PR run executes the full workspace rather than a changed-module-only subset. Focused tests are mandatory implementation content; a push to `aistack/main` repeats the same complete ordinary hosted suite, while extended and credentialed tiers remain separate gates.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
