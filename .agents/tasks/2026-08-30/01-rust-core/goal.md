@@ -2,7 +2,7 @@
 
 **Status: In Progress**
 **Current checkpoint:** CP-046 — PR #14 hosted validation confirmed
-**Last checkpoint (UTC):** 2026-09-01T16:24:36Z
+**Last checkpoint (UTC):** 2026-09-01T16:29:20Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Milestone 4 — Dialog + SDP + Basic Calls<br>
 **Next resume action:** Reconcile PR #15 onto the validated PR #14 head, run focused RTCP-security checks, publish, and verify hosted CI and mergeability
@@ -4327,8 +4327,8 @@ worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-14-rtp-security
 branch: sip-rtp-security
 base_branch: sip-runtime-security
 pr: "#14 https://github.com/W3Mirror/asterisk/pull/14"
-head_sha: fad7ff2fd449635ec4cd18179a7fda0e6259b651
-evidence: Hosted Rust quality run [33531292965](https://github.com/W3Mirror/asterisk/actions/runs/33531292965) completed successfully for this exact head on hosted `ubuntu-latest`: Workspace checks, Protocol fuzz checks, and Dependency audit all passed. GitHub reports PR #14 OPEN, CLEAN, and MERGEABLE against PR #13 head `2f8a9c4a7`.
+head_sha: 43685d3b35dac11a130ee5d35bdc2b4003b39953
+evidence: Hosted Rust quality run [33531754707](https://github.com/W3Mirror/asterisk/actions/runs/33531754707) completed successfully for the final published ledger head on hosted `ubuntu-latest`: Workspace checks, Protocol fuzz checks, and Dependency audit all passed. GitHub reports PR #14 OPEN, CLEAN, and MERGEABLE against PR #13 head `2f8a9c4a7`.
 blockers: Production deployment identity, effective configuration, provider credentials, sanitized SIP/SDP/RTP fixtures, and live-provider calls remain unavailable; Asterisk routing remains the fallback
 next_action: Reconcile PR #15 onto the validated PR #14 head, run focused RTCP-security checks, publish, and verify hosted CI and mergeability
 rollback: Asterisk remains the active/fallback engine; do not enable Rust traffic
