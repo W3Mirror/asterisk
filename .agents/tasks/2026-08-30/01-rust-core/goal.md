@@ -7,7 +7,7 @@
 **Active milestone:** Milestone 2 — Rust RTP Core<br>
 **Next resume action:** Add the next bounded offline-verifiable media or interoperability slice with its focused tests and hosted validation
 **Active PR:** [#8](https://github.com/W3Mirror/asterisk/pull/8); branch `media-session-core` targets `call-engine-core`
-**Stack root/base branch:** `aistack/main`  
+**Stack root/base branch:** `aistack/main`<br>
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-8-media-session`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
