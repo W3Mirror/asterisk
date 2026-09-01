@@ -1,12 +1,12 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-237 — Sanitized capture differential adapter locally validated
-**Last checkpoint (UTC):** 2026-09-01T03:26:44Z
+**Current checkpoint:** CP-238 — PR #75 hosted validation green
+**Last checkpoint (UTC):** 2026-09-01T03:32:39Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** In-dialog SIP request interoperability and Asterisk fallback<br>
-**Next resume action:** Commit and publish PR #75 with its focused capture-normalization tests, then reconcile hosted CI without enabling Rust traffic
-**Active PR:** #75 — `differential-capture-replay` targets `differential-replay-in-dialog` (local validation green; publication pending)
+**Next resume action:** Continue the next bounded offline acceptance slice from exact head `60205ee05` without enabling Rust traffic
+**Active PR:** #75 — `differential-capture-replay` targets `differential-replay-in-dialog` (hosted ordinary validation green; open and mergeable)
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-75-differential-capture`
 **Primary language:** Rust  
@@ -2826,7 +2826,7 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 72 | [#72](https://github.com/W3Mirror/asterisk/pull/72) | `in-dialog-requests` | `bridge-terminalization` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-72-in-dialog-requests` | In-dialog INFO/UPDATE/REFER/NOTIFY admission with dialog validation, authorization, bounds, atomic rejection, and transactional non-INVITE completion | hosted green | `959d4846f` | CP-219–CP-231; focused call-engine/runtime tests and complete hosted ordinary suite are green; PR #72 is OPEN/CLEAN/MERGEABLE; hosted PR validation confirms all workflow runners are hosted `ubuntu-latest` and Docker is limited to SIPp | Continue scenario-replay and differential offline coverage without enabling Rust traffic |
 | 73 | [#73](https://github.com/W3Mirror/asterisk/pull/73) | `scenario-replay-in-dialog` | `in-dialog-requests` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-73-scenario-in-dialog` | Deterministic scenario-replay construction and completion of outbound in-dialog INFO/UPDATE/REFER/NOTIFY requests with bounded fixtures and Timer K reclamation | hosted green | `7e502b076` | CP-232–CP-233; focused scenario-replay tests, complete workspace tests, SIPp, Clippy, and fuzz checks are green; PR #73 is OPEN/CLEAN/MERGEABLE; hosted ordinary suite runs on hosted `ubuntu-latest` | Use this exact head as the base for PR #74 |
 | 74 | [#74](https://github.com/W3Mirror/asterisk/pull/74) | `differential-replay-in-dialog` | `scenario-replay-in-dialog` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-74-differential-replay-in-dialog` | Ordered differential comparison of bounded inbound SIP fixtures and emitted SIP traffic, including in-dialog requests/responses and sanitized oracle updates | hosted green | `e8898bdd1` | CP-234–CP-236; focused scenario-replay (20) and differential-replay (5) tests, complete locked workspace tests, formatting, Clippy, SIPp, nightly ASAN fuzz checks, and diff checks pass locally; hosted run `33465456454` passed Workspace, Protocol fuzz, and Dependency audit; PR #74 is OPEN/CLEAN/MERGEABLE against exact `scenario-replay-in-dialog` head `7e502b076` | Use this exact head as the base for PR #75 |
-| 75 | pending | `differential-capture-replay` | `differential-replay-in-dialog` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-75-differential-capture` | Bounded sanitized raw-SIP capture normalization, explicit direction, redacted semantic projection, and capture-vs-replay SIP differential coverage | in_progress | `e8898bdd1` plus uncommitted implementation/tests/docs/ledger | CP-237; complete local workspace tests, formatting, Clippy, pinned Docker-backed SIPp scenarios, six-target ASAN fuzz checks, and diff checks pass; hosted validation and PR publication pending | Commit and publish PR #75 against `differential-replay-in-dialog`, then reconcile hosted checks |
+| 75 | [#75](https://github.com/W3Mirror/asterisk/pull/75) | `differential-capture-replay` | `differential-replay-in-dialog` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-75-differential-capture` | Bounded sanitized raw-SIP capture normalization, explicit direction, redacted semantic projection, and capture-vs-replay SIP differential coverage | hosted green | `60205ee05` | CP-237–CP-238; focused differential-replay (7) tests, complete locked workspace tests, formatting, Clippy, three pinned Docker-backed SIPp scenarios, six-target ASAN fuzz checks, and diff checks pass locally; hosted Rust quality run `33466382226` passed Workspace `99726997417`, Protocol fuzz `99726997377`, and Dependency audit `99726997194`; schedule/manual-only Signaling capacity matrix `99726998461` and Two-hour lifecycle soak `99726998435` correctly skipped; PR #75 is OPEN/CLEAN/MERGEABLE against exact `differential-replay-in-dialog` head `e8898bdd1` | Continue the next bounded offline acceptance slice without enabling Rust traffic |
 
 ### CP-026 — PR10 published and stacked remote parity verified
 
@@ -7278,6 +7278,27 @@ blockers: Commit/publication, hosted PR validation, and final local/origin/GitHu
 next_action: Commit the capture implementation, focused tests, documentation, and this checkpoint normally, push `differential-capture-replay`, and open PR #75 against `differential-replay-in-dialog`.
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #75 or revert the capture adapter if its contract is superseded.
 notes: Relevant tests ship with the affected differential-replay module; they are not deferred until real-time calls. Pull-request opened/reopened/synchronize events run the complete ordinary hosted suite on `ubuntu-latest`, including these focused tests through `cargo test --workspace --locked`, and there is no affected-module-only selector. Every push to `aistack/main` repeats that complete ordinary hosted suite, including deterministic SIPp/reclamation smokes, format, Clippy, fuzz checks, and dependency audit when their workspaces exist. Scheduled/manual capacity, extended property, multi-hour soak, and credentialed provider/live-call checks remain separate gates. Docker is used only by the pinned SIPp integration dependency; all workflow jobs remain hosted.
+~~~
+
+### CP-238 — PR #75 hosted validation green
+
+~~~yaml
+checkpoint_id: CP-238
+recorded_at_utc: 2026-09-01T03:32:39Z
+status: hosted_green
+phase: Phase 1 — Rust media engine
+milestone: In-dialog SIP request interoperability and Asterisk fallback
+scope: Reconcile PR #75 publication with hosted CI and exact local/origin/GitHub parity
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-75-differential-capture
+branch: differential-capture-replay
+base_branch: differential-replay-in-dialog
+pr: https://github.com/W3Mirror/asterisk/pull/75
+head_sha: 60205ee05560f5ee9fc8d0ecaf4089c866932669
+evidence: Local HEAD, `origin/differential-capture-replay`, and `gh pr view 75 --json headRefOid` report `60205ee05560f5ee9fc8d0ecaf4089c866932669`. PR #75 is OPEN, non-draft, CLEAN, and MERGEABLE against `differential-replay-in-dialog` at `e8898bdd1061a200140e1bb897658d8360f5cca4`. Hosted Rust quality run `33466382226` passed Workspace checks `99726997417` (formatting, complete locked workspace tests including the seven capture/differential tests, pinned Docker-backed SIPp scenarios, deterministic signaling/media/WebSocket/combined/short-soak reclamation smokes, and workspace Clippy), Protocol fuzz checks `99726997377` (all address-sanitizer targets), and Dependency audit `99726997194`; schedule/manual-only Signaling capacity matrix `99726998461` and Two-hour lifecycle soak `99726998435` correctly skipped for the pull-request event.
+blockers: Provider credentials/runtime access, unsanitized or missing provider captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated; Asterisk remains the fallback.
+next_action: Continue the next bounded offline acceptance slice from exact head `60205ee05` without enabling Rust traffic.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #75 or revert the capture adapter if its contract is superseded.
+notes: PR #75 ships focused capture-normalization tests with the changed differential-replay module. Pull-request events run the complete ordinary hosted suite rather than an affected-module-only subset, and every push to `aistack/main` repeats that suite on hosted `ubuntu-latest`. Scheduled/manual capacity, extended property, multi-hour soak, and credentialed provider/live-call gates remain separate. Docker remains limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
