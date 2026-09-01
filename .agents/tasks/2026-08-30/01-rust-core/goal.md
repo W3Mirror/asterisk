@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**  
-**Current checkpoint:** CP-016 — Confirm hosted PR test contract on the implementation stack
-**Last checkpoint (UTC):** 2026-09-01T13:03:43Z
+**Current checkpoint:** CP-017 — PR #1 hosted validation after main-head reconciliation
+**Last checkpoint (UTC):** 2026-09-01T13:13:32Z
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
 **Active milestone:** Milestone 1 — Scope Baseline  
 **Next resume action:** Update PR #2's base branch in stack order, run its focused and hosted checks, and record the resulting head and mergeability
@@ -2117,7 +2117,7 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 
 | Workstream | Status | Evidence / checkpoint | PR | Next action |
 | --- | --- | --- | --- | --- |
-| Phase 0 — current Asterisk surface | in_progress | CP-015; PR #1 hosted run 33431176191 passed and GitHub reports CLEAN/MERGEABLE at `5458080094149d3d0034dfd8d23ca0db29144c3d` | #1 | Update PR #2's base branch in stack order and validate it |
+| Phase 0 — current Asterisk surface | in_progress | CP-017; PR #1 hosted run 33512032378 passed and GitHub reports CLEAN/MERGEABLE at `02097dbfe9f23c4f1b1dbd92d19a2ab8c696a30b` | #1 | Update PR #2's base branch in stack order and validate it |
 | Phase 1 — Rust media engine | not_started | — | — | Define media-core scope from the Phase 0 inventory |
 | Phase 2 — SIP edge shadow mode | not_started | — | — | Build sanitized replay and comparison fixtures |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
@@ -2472,6 +2472,27 @@ blockers: Production deployment identity, effective configuration, provider cred
 next_action: Update PR #2's base branch in stack order, run its focused and hosted checks, and record the resulting head and mergeability
 rollback: Asterisk remains the active/fallback engine; no routing was changed
 notes: Focused tests for every affected crate/module remain required in the implementation PR; every push to aistack/main repeats the complete ordinary offline workspace suite, while credentialed, long-running, capacity, and live-provider checks remain scheduled/manual gates.
+```
+
+### CP-017 — PR #1 hosted validation after main-head reconciliation
+
+```yaml
+checkpoint_id: CP-017
+recorded_at_utc: 2026-09-01T13:13:32Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 1 — Scope Baseline
+scope: Validate PR #1 after incorporating the published aistack/main test-contract checkpoints
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/sip-rtp-engine-rust
+branch: sip-rtp-engine-rust
+base_branch: aistack/main
+pr: "#1 https://github.com/W3Mirror/asterisk/pull/1"
+head_sha: 02097dbfe9f23c4f1b1dbd92d19a2ab8c696a30b
+evidence: Hosted pull_request run 33512032378 (https://github.com/W3Mirror/asterisk/actions/runs/33512032378) completed successfully for the published PR #1 head. Workspace checks, protocol fuzz checks, and dependency audit passed; GitHub reports PR #1 OPEN, CLEAN, and MERGEABLE against aistack/main `364dc42ae8ec0a04b77bc5d4abce8d4d78bb99ec`. The branch is clean locally and exactly matches origin/sip-rtp-engine-rust.
+blockers: Production deployment identity, effective configuration, provider credentials, and sanitized inbound/outbound captures remain unavailable; downstream branches require sequential revalidation
+next_action: Update PR #2's base branch in stack order, run its focused and hosted checks, and record the resulting head and mergeability
+rollback: Asterisk remains the active/fallback engine; no routing was changed
+notes: The first stack boundary is now reconciled to the published main head; no production routing or provider traffic was attempted.
 ```
 
 ### Checkpoint template
