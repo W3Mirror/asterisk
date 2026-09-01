@@ -21,7 +21,7 @@ use std::{
     error::Error,
     fmt::{Display, Formatter},
     net::{IpAddr, Ipv4Addr, SocketAddr},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use call_api::CallRegistryConfig;
@@ -67,6 +67,14 @@ pub struct SignalingSmokeReport {
     pub final_active_calls: usize,
     /// SIP transactions after the final batch.
     pub final_transactions: usize,
+    /// Wall time for the complete signaling smoke run.
+    pub elapsed: Duration,
+    /// Process observation before allocating the first call batch.
+    pub process_before: ProcessSample,
+    /// Highest observed process values while call batches were active.
+    pub process_peak: ProcessSample,
+    /// Process observation after the final batch was reclaimed.
+    pub process_after: ProcessSample,
 }
 
 /// Operation being performed when the smoke harness failed.
@@ -167,6 +175,8 @@ struct SmokeRun {
     batches: usize,
     peak_active_calls: usize,
     peak_transactions: usize,
+    process_before: ProcessSample,
+    process_peak: ProcessSample,
 }
 
 impl SmokeRun {
@@ -191,6 +201,7 @@ impl SmokeRun {
             phase: SmokePhase::Invite,
             source,
         })?;
+        let process_before = ProcessSample::capture();
         Ok(Self {
             engine,
             peer: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 5_060),
@@ -199,6 +210,8 @@ impl SmokeRun {
             batches: 0,
             peak_active_calls: 0,
             peak_transactions: 0,
+            process_before,
+            process_peak: process_before,
         })
     }
 
@@ -206,6 +219,7 @@ impl SmokeRun {
         mut self,
         config: SignalingSmokeConfig,
     ) -> Result<SignalingSmokeReport, SignalingSmokeError> {
+        let started = Instant::now();
         while self.attempted_calls < config.total_calls {
             let batch_size = config
                 .concurrent_calls
@@ -213,6 +227,8 @@ impl SmokeRun {
             self.run_batch(batch_size)?;
         }
         let final_active_calls = self.call_count(self.attempted_calls, SmokePhase::Reclaim)?;
+        let process_after = ProcessSample::capture();
+        self.process_peak.include(process_after);
         Ok(SignalingSmokeReport {
             attempted_calls: self.attempted_calls,
             completed_calls: self.completed_calls,
@@ -222,6 +238,10 @@ impl SmokeRun {
             peak_transactions: self.peak_transactions,
             final_active_calls,
             final_transactions: self.engine.transaction_count(),
+            elapsed: started.elapsed(),
+            process_before: self.process_before,
+            process_peak: self.process_peak,
+            process_after,
         })
     }
 
@@ -231,10 +251,24 @@ impl SmokeRun {
             .checked_add(1)
             .ok_or(SignalingSmokeError::InvalidConfig("batch count overflowed"))?;
         let calls = self.invite_batch(batch_size)?;
+        let active_calls = self.call_count(
+            self.attempted_calls.saturating_add(batch_size),
+            SmokePhase::Invite,
+        )?;
+        if active_calls != batch_size {
+            return Err(SignalingSmokeError::Invariant {
+                batch: self.batches,
+                detail: "active call count did not match the completed INVITE batch",
+            });
+        }
+        self.peak_active_calls = self.peak_active_calls.max(active_calls);
+        self.process_peak.include(ProcessSample::capture());
         self.attempted_calls += batch_size;
         self.cancel_batch(&calls)?;
         self.reclaim_batch(calls)?;
-        self.ensure_batch_reclaimed()
+        self.ensure_batch_reclaimed()?;
+        self.process_peak.include(ProcessSample::capture());
+        Ok(())
     }
 
     fn invite_batch(
@@ -266,9 +300,6 @@ impl SmokeRun {
                     detail: "INVITE created no lifecycle event",
                 })?;
             calls.push((call_number, call_id));
-            self.peak_active_calls = self
-                .peak_active_calls
-                .max(self.call_count(call_number, SmokePhase::Invite)?);
             self.update_transaction_peak();
         }
         Ok(calls)
@@ -484,19 +515,14 @@ mod tests {
         })
         .unwrap();
 
-        assert_eq!(
-            report,
-            SignalingSmokeReport {
-                attempted_calls: 10,
-                completed_calls: 10,
-                failed_calls: 0,
-                batches: 3,
-                peak_active_calls: 4,
-                peak_transactions: 8,
-                final_active_calls: 0,
-                final_transactions: 0,
-            }
-        );
+        assert_eq!(report.attempted_calls, 10);
+        assert_eq!(report.completed_calls, 10);
+        assert_eq!(report.failed_calls, 0);
+        assert_eq!(report.batches, 3);
+        assert_eq!(report.peak_active_calls, 4);
+        assert_eq!(report.peak_transactions, 8);
+        assert_eq!(report.final_active_calls, 0);
+        assert_eq!(report.final_transactions, 0);
     }
 
     #[test]
@@ -513,5 +539,33 @@ mod tests {
         assert_eq!(report.peak_transactions, 2);
         assert_eq!(report.final_active_calls, 0);
         assert_eq!(report.final_transactions, 0);
+    }
+
+    #[test]
+    fn observes_a_large_single_batch_once_and_reclaims_it() {
+        let report = run_signaling_reclamation_smoke(SignalingSmokeConfig {
+            total_calls: 1_024,
+            concurrent_calls: 1_024,
+        })
+        .unwrap();
+
+        assert_eq!(report.completed_calls, 1_024);
+        assert_eq!(report.batches, 1);
+        assert_eq!(report.peak_active_calls, 1_024);
+        assert_eq!(report.peak_transactions, 2_048);
+        assert_eq!(report.final_active_calls, 0);
+        assert_eq!(report.final_transactions, 0);
+        if let (Some(before), Some(peak)) = (
+            report.process_before.resident_bytes,
+            report.process_peak.resident_bytes,
+        ) {
+            assert!(peak >= before);
+        }
+        if let (Some(before), Some(peak)) = (
+            report.process_before.open_file_descriptors,
+            report.process_peak.open_file_descriptors,
+        ) {
+            assert!(peak >= before);
+        }
     }
 }

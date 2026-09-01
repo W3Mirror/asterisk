@@ -15,12 +15,34 @@ cargo run -p load-smoke --locked -- 512 32
 
 The two arguments are total calls and maximum calls retained in one batch. A
 successful report includes attempted/completed/failed counts, batch count,
-peak logical call and transaction counts, and final resource counts. Results
-are deterministic and are correctness evidence, not calls-per-second, CPU, or
-memory benchmarks.
+peak logical call and transaction counts, final resource counts, elapsed call
+throughput, and best-effort Linux resident-memory/file-descriptor observations.
+The resident-growth-per-peak-call value is a coarse process-level observation,
+not allocator attribution or a production memory SLO. Deterministic assertions
+use logical resource counts; elapsed and process values remain environment
+dependent.
 
 Every pull request and push to `aistack/main` runs the 512-call smoke. Scheduled
-CI additionally runs a larger 16,384-call/256-call-batch matrix. Future media,
-WebSocket, real concurrency, process memory, file-descriptor, CPU, latency, and
-multi-hour soak harnesses must remain separate so this fast correctness gate
-does not make unsupported performance claims.
+CI additionally runs a larger 16,384-call/256-call-batch reclamation tier and a
+dedicated exact signaling-capacity matrix:
+
+```sh
+tests/rust-signaling-capacity/run.sh
+```
+
+The script defaults to the required 1,000/5,000/10,000 tiers. Explicit smaller
+tiers may be supplied for a quick local probe, for example
+`tests/rust-signaling-capacity/run.sh 8 16`.
+
+Each matrix process creates its complete concurrency level in one bounded batch,
+then cancels and reclaims every call before exit. The harness checks the full
+batch's registry size once instead of cloning the growing registry after every
+INVITE, so the measurement is not dominated by observer-induced quadratic
+work.
+
+This matrix remains single-process, single-threaded, in-memory signaling-only
+evidence. It does not establish real simultaneous network traffic, calls per
+second at a provider boundary, setup/teardown latency percentiles, CPU per call,
+media or WebSocket capacity, combined-call capacity, multi-hour soak stability,
+or a production SLO. Those require separate harnesses and provider/Asterisk
+evidence before Rust traffic can be enabled.
