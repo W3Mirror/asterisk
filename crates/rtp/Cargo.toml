@@ -5,5 +5,8 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[dependencies]
+sip-security = { path = "../sip-security" }
+
 [lints]
 workspace = true
