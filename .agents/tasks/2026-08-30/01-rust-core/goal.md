@@ -1,7 +1,7 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**  
-**Current checkpoint:** CP-014 — Confirm hosted PR test contract on the implementation stack
+**Current checkpoint:** CP-016 — Confirm hosted PR test contract on the implementation stack
 **Last checkpoint (UTC):** 2026-09-01T13:03:43Z
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
 **Active milestone:** Milestone 1 — Scope Baseline  
@@ -2411,10 +2411,10 @@ rollback: Asterisk remains the active/fallback engine; no routing was changed
 notes: Downstream PRs 2–70 remain open on their existing stack branches and require sequential revalidation after PR #1 is green.
 ```
 
-### CP-014 — Confirm hosted PR test contract on the implementation stack
+### CP-016 — Confirm hosted PR test contract on the implementation stack
 
 ```yaml
-checkpoint_id: CP-014
+checkpoint_id: CP-016
 recorded_at_utc: 2026-09-01T13:03:43Z
 status: in_progress
 phase: Phase 0 — Document Current Asterisk Usage
