@@ -5,6 +5,13 @@ use std::{
     fmt::{Display, Formatter},
 };
 
+mod trace;
+
+pub use trace::{
+    MAX_TRACE_OPERATION_BYTES, SPAN_ID_BYTES, SpanId, TRACE_ID_BYTES, TraceContext, TraceError,
+    TraceFlags, TraceId, TraceSpan,
+};
+
 macro_rules! identifier {
     ($name:ident, $prefix:literal) => {
         #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -92,6 +99,7 @@ pub struct LifecycleEvent {
     pub event_id: EventId,
     pub call_id: CallId,
     pub kind: CallEventKind,
+    pub trace_context: TraceContext,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
