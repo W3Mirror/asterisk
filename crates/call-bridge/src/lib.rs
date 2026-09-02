@@ -11,7 +11,7 @@ use std::{
     fmt::{Display, Formatter},
 };
 
-use call_core::{BridgeId, CallId, EventId, LegId, StreamId};
+use call_core::{BridgeId, CallId, EventId, LegId, StreamId, TraceContext};
 
 const DEFAULT_MAX_BRIDGES: usize = 4_096;
 const DEFAULT_MAX_PENDING_EVENTS: usize = 16_384;
@@ -70,6 +70,8 @@ pub struct HumanLeg {
 pub struct BridgeSnapshot {
     /// Stable bridge identity.
     pub id: BridgeId,
+    /// Bounded trace context shared by bridge lifecycle and media handoff.
+    pub trace_context: TraceContext,
     /// Original inbound call, retained across destination switches.
     pub caller_call_id: CallId,
     /// Original inbound media/signaling leg.
@@ -125,6 +127,8 @@ pub struct BridgeEvent {
     pub event_id: EventId,
     /// Bridge that emitted the event.
     pub bridge_id: BridgeId,
+    /// Bounded trace context associated with the bridged caller call.
+    pub trace_context: TraceContext,
     /// Lifecycle event kind.
     pub kind: BridgeEventKind,
 }
@@ -153,6 +157,8 @@ pub enum BridgeError {
     },
     /// A generated bridge or event sequence cannot advance safely.
     IdentifierExhausted,
+    /// A supplied trace context belongs to a different application call.
+    TraceCallMismatch,
 }
 
 impl Display for BridgeError {
@@ -175,6 +181,9 @@ impl Display for BridgeError {
             Self::IdentifierExhausted => {
                 formatter.write_str("bridge or event identifier sequence exhausted")
             }
+            Self::TraceCallMismatch => {
+                formatter.write_str("trace context call ID does not match bridge caller call ID")
+            }
         }
     }
 }
@@ -183,6 +192,7 @@ impl Error for BridgeError {}
 
 #[derive(Clone, Debug)]
 struct BridgeEntry {
+    trace_context: TraceContext,
     caller_call_id: CallId,
     caller_leg_id: LegId,
     ai_stream_id: StreamId,
@@ -228,6 +238,37 @@ impl BridgeRegistry {
         caller_leg_id: LegId,
         ai_stream_id: StreamId,
     ) -> Result<(BridgeId, BridgeEvent), BridgeError> {
+        let trace_context =
+            TraceContext::from_sequence(caller_call_id.clone(), self.next_bridge_sequence);
+        self.create_ai_with_trace_context(
+            caller_call_id,
+            caller_leg_id,
+            ai_stream_id,
+            trace_context,
+        )
+    }
+
+    /// Creates an AI-backed bridge with a caller-supplied distributed trace context.
+    ///
+    /// The context is retained on every bridge snapshot and lifecycle event so
+    /// a media or AI adapter can correlate bridge work without copying SIP
+    /// identities or unbounded baggage. The context must belong to the caller
+    /// application call; rejection is atomic.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a mismatched trace call ID, exhausted bounds,
+    /// identifiers, or endpoint ownership.
+    pub fn create_ai_with_trace_context(
+        &mut self,
+        caller_call_id: CallId,
+        caller_leg_id: LegId,
+        ai_stream_id: StreamId,
+        trace_context: TraceContext,
+    ) -> Result<(BridgeId, BridgeEvent), BridgeError> {
+        if trace_context.call_id() != &caller_call_id {
+            return Err(BridgeError::TraceCallMismatch);
+        }
         if self.bridges.len() >= self.config.max_bridges {
             return Err(BridgeError::BridgeLimitReached);
         }
@@ -242,6 +283,7 @@ impl BridgeRegistry {
         self.bridges.insert(
             bridge_id.clone(),
             BridgeEntry {
+                trace_context,
                 caller_call_id,
                 caller_leg_id,
                 ai_stream_id,
@@ -507,9 +549,16 @@ impl BridgeRegistry {
         kind: BridgeEventKind,
     ) -> BridgeEvent {
         self.next_event_sequence += 1;
+        let trace_context = self
+            .bridges
+            .get(&bridge_id)
+            .expect("bridge events are emitted for retained bridges")
+            .trace_context
+            .clone();
         let event = BridgeEvent {
             event_id,
             bridge_id,
+            trace_context,
             kind,
         };
         self.events.push_back(event.clone());
@@ -520,6 +569,7 @@ impl BridgeRegistry {
 fn snapshot(id: &BridgeId, entry: &BridgeEntry) -> BridgeSnapshot {
     BridgeSnapshot {
         id: id.clone(),
+        trace_context: entry.trace_context.clone(),
         caller_call_id: entry.caller_call_id.clone(),
         caller_leg_id: entry.caller_leg_id.clone(),
         ai_stream_id: entry.ai_stream_id.clone(),
@@ -603,6 +653,43 @@ mod tests {
                 BridgeEventKind::HumanConnected,
                 BridgeEventKind::AiResumed,
             ]
+        );
+    }
+
+    #[test]
+    fn supplied_trace_context_is_preserved_on_bridge_events_and_snapshots() {
+        let mut registry = BridgeRegistry::new(BridgeRegistryConfig::default()).unwrap();
+        let (caller_call, caller_leg, stream) = caller(3);
+        let context = TraceContext::from_traceparent(
+            caller_call.clone(),
+            "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+        )
+        .unwrap();
+        let (bridge_id, created) = registry
+            .create_ai_with_trace_context(caller_call.clone(), caller_leg, stream, context.clone())
+            .unwrap();
+
+        assert_eq!(created.trace_context, context);
+        assert_eq!(
+            registry.snapshot(&bridge_id).unwrap().trace_context,
+            context
+        );
+        let connecting = registry
+            .begin_human(
+                &bridge_id,
+                CallId::from_sequence(4),
+                LegId::from_sequence(4),
+            )
+            .unwrap();
+        assert_eq!(connecting.trace_context, context);
+        assert_eq!(
+            registry.create_ai_with_trace_context(
+                CallId::from_sequence(5),
+                LegId::from_sequence(5),
+                StreamId::from_sequence(5),
+                context,
+            ),
+            Err(BridgeError::TraceCallMismatch)
         );
     }
 

@@ -7,7 +7,7 @@ use std::{
 };
 
 use call_bridge::{BridgeError, BridgeRegistry, BridgeSnapshot, BridgeState, HumanLeg};
-use call_core::{BridgeId, CallId, LegId};
+use call_core::{BridgeId, CallId, LegId, TraceContext};
 use dtmf::{DtmfEvent, Notification};
 use media_core::{JitterPushOutcome, PushOutcome, ReceivedMedia};
 use media_runtime::{MediaChannel, MediaRuntimeError, MediaUdpRuntime, ReceivedRtcp};
@@ -232,6 +232,7 @@ impl From<MediaRuntimeError> for HumanMediaBridgeError {
 #[derive(Debug)]
 pub struct HumanMediaBridgeRuntime {
     bridge_id: BridgeId,
+    trace_context: TraceContext,
     caller_call_id: CallId,
     caller_leg_id: LegId,
     human_call_id: CallId,
@@ -266,6 +267,7 @@ impl HumanMediaBridgeRuntime {
             .ok_or(HumanMediaBridgeError::EndpointMismatch)?;
         Ok(Self {
             bridge_id: bridge.id.clone(),
+            trace_context: bridge.trace_context.clone(),
             caller_call_id: bridge.caller_call_id.clone(),
             caller_leg_id: bridge.caller_leg_id.clone(),
             human_call_id: call_id,
@@ -281,6 +283,12 @@ impl HumanMediaBridgeRuntime {
     #[must_use]
     pub const fn bridge_id(&self) -> &BridgeId {
         &self.bridge_id
+    }
+
+    /// Returns the bounded trace context shared with bridge lifecycle events.
+    #[must_use]
+    pub const fn trace_context(&self) -> &TraceContext {
+        &self.trace_context
     }
 
     /// Borrows the caller-side UDP media runtime.
@@ -833,6 +841,15 @@ mod tests {
     #[test]
     fn forwards_audio_bidirectionally_with_each_legs_rtp_identity() {
         let mut fixture = fixture(false);
+        assert_eq!(
+            fixture.media.trace_context().call_id(),
+            fixture
+                .bridges
+                .snapshot(&fixture.bridge_id)
+                .unwrap()
+                .trace_context
+                .call_id()
+        );
         fixture
             .caller_peer
             .send_to(
