@@ -157,6 +157,7 @@ dependencies = [
  "call-bridge",
  "call-core",
  "call-engine",
+ "dtmf",
  "media-core",
  "rtcp",
  "rtp",

@@ -9,6 +9,7 @@ rust-version.workspace = true
 call-api = { path = "../call-api" }
 call-bridge = { path = "../call-bridge" }
 call-core = { path = "../call-core" }
+dtmf = { path = "../dtmf" }
 media-core = { path = "../media-core" }
 rtcp = { path = "../rtcp" }
 rtp = { path = "../rtp" }

@@ -122,6 +122,8 @@ pub struct MediaCaptureConfig {
     pub max_packet_bytes: usize,
     /// Maximum RTP header-extension bytes accepted by the parser.
     pub max_extension_bytes: usize,
+    /// Negotiated RFC 4733 telephone-event payload type, if present.
+    pub dtmf_payload_type: Option<u8>,
     /// Bounds applied to the normalized semantic output.
     pub normalization: NormalizationConfig,
 }
@@ -132,6 +134,7 @@ impl Default for MediaCaptureConfig {
             max_packets: DEFAULT_MAX_CAPTURE_MESSAGES,
             max_packet_bytes: DEFAULT_MAX_CAPTURE_MESSAGE_BYTES,
             max_extension_bytes: 4_096,
+            dtmf_payload_type: Some(101),
             normalization: NormalizationConfig::default(),
         }
     }
@@ -362,6 +365,13 @@ pub enum DifferentialError {
         /// Parser failure from the bounded RTP adapter.
         error: rtp::ParseError,
     },
+    /// One RTP telephone-event payload could not be parsed with the DTMF adapter.
+    CapturedDtmfParse {
+        /// Zero-based packet index.
+        index: usize,
+        /// Parser failure from the RFC 4733 adapter.
+        error: dtmf::ParseError,
+    },
     /// One raw RTCP datagram could not be parsed with the configured bounds.
     CapturedRtcpParse {
         /// Zero-based packet index.
@@ -432,6 +442,12 @@ impl Display for DifferentialError {
                 write!(
                     formatter,
                     "media capture packet {index} is invalid RTP: {error}"
+                )
+            }
+            Self::CapturedDtmfParse { index, error } => {
+                write!(
+                    formatter,
+                    "media capture packet {index} has invalid telephone-event payload: {error}"
                 )
             }
             Self::CapturedRtcpParse { index, error } => {
@@ -548,6 +564,9 @@ pub fn normalize_media_capture(
         || config.max_packet_bytes == 0
         || config.max_packet_bytes > DEFAULT_MAX_CAPTURE_MESSAGE_BYTES
         || config.max_extension_bytes == 0
+        || config
+            .dtmf_payload_type
+            .is_some_and(|payload_type| payload_type > 127)
     {
         return Err(DifferentialError::InvalidConfig);
     }
@@ -592,7 +611,13 @@ pub fn normalize_media_capture(
                     },
                 )
                 .map_err(|error| DifferentialError::CapturedRtpParse { index, error })?;
-                normalizer.add_captured_rtp(index, direction, peer, &packet)?;
+                if config.dtmf_payload_type == Some(packet.payload_type) {
+                    let event = dtmf::parse(&packet.payload)
+                        .map_err(|error| DifferentialError::CapturedDtmfParse { index, error })?;
+                    normalizer.add_captured_dtmf(index, direction, peer, &packet, event)?;
+                } else {
+                    normalizer.add_captured_rtp(index, direction, peer, &packet)?;
+                }
             }
             CapturedMedia::Rtcp { .. } => {
                 let packets = rtcp::parse(wire)
@@ -840,6 +865,29 @@ impl Normalizer {
             packet.csrcs.len(),
             packet.extension.is_some(),
             packet.payload.len(),
+        ))
+    }
+
+    fn add_captured_dtmf(
+        &mut self,
+        index: usize,
+        direction: CaptureDirection,
+        peer: SocketAddr,
+        packet: &rtp::RtpPacket,
+        event: dtmf::DtmfEvent,
+    ) -> Result<(), DifferentialError> {
+        let endpoint = self.endpoints.alias(&peer);
+        self.push(format!(
+            "media-packet {} endpoint-{} {} dtmf marker={} digit={} end={} reserved={} volume={} duration={}",
+            index + 1,
+            endpoint,
+            capture_direction(direction),
+            packet.marker,
+            event.digit.event_code(),
+            event.end,
+            event.reserved,
+            event.volume,
+            event.duration,
         ))
     }
 
@@ -1645,6 +1693,27 @@ mod tests {
         .unwrap()
     }
 
+    fn dtmf_wire(
+        sequence_number: u16,
+        timestamp: u32,
+        ssrc: u32,
+        event: dtmf::DtmfEvent,
+        marker: bool,
+    ) -> Vec<u8> {
+        rtp::serialize(&rtp::RtpPacket {
+            padding: false,
+            marker,
+            payload_type: 101,
+            sequence_number,
+            timestamp,
+            ssrc,
+            csrcs: Vec::new(),
+            extension: None,
+            payload: dtmf::encode(event).unwrap().to_vec(),
+        })
+        .unwrap()
+    }
+
     fn rtcp_wire(ssrc: u32, source_ssrc: u32) -> Vec<u8> {
         rtcp::serialize(&rtcp::RtcpPacket::ReceiverReport(rtcp::ReceiverReport {
             ssrc,
@@ -1726,6 +1795,113 @@ mod tests {
     }
 
     #[test]
+    fn media_capture_normalization_preserves_dtmf_semantics() {
+        let peer = "192.0.2.10:4000".parse::<SocketAddr>().unwrap();
+        let start = dtmf::DtmfEvent {
+            digit: dtmf::DtmfDigit::Five,
+            end: false,
+            reserved: false,
+            volume: 10,
+            duration: 80,
+        };
+        let end = dtmf::DtmfEvent {
+            duration: 160,
+            end: true,
+            ..start
+        };
+        let captures = [
+            CapturedMedia::Rtp {
+                direction: CaptureDirection::Received,
+                peer,
+                wire: dtmf_wire(23, 48_000, 0x0102_0304, start, true),
+            },
+            CapturedMedia::Rtp {
+                direction: CaptureDirection::Received,
+                peer,
+                wire: dtmf_wire(24, 48_000, 0x0102_0304, end, false),
+            },
+        ];
+        let normalized =
+            normalize_media_capture("dtmf-capture", &captures, MediaCaptureConfig::default())
+                .unwrap();
+
+        assert_eq!(
+            normalized.media_packets().facts(),
+            [
+                "media-packet 1 endpoint-1 received dtmf marker=true digit=5 end=false reserved=false volume=10 duration=80",
+                "media-packet 2 endpoint-1 received dtmf marker=false digit=5 end=true reserved=false volume=10 duration=160",
+            ]
+        );
+        let fixture = normalized.to_fixture();
+        for raw in ["192.0.2.10", "4000", "48000", "01020304"] {
+            assert!(!fixture.contains(raw), "raw DTMF value leaked: {raw}");
+        }
+    }
+
+    #[test]
+    fn media_capture_can_disable_dtmf_mapping_for_dynamic_audio_payloads() {
+        let peer = "192.0.2.10:4000".parse::<SocketAddr>().unwrap();
+        let event = dtmf::DtmfEvent {
+            digit: dtmf::DtmfDigit::Five,
+            end: true,
+            reserved: false,
+            volume: 10,
+            duration: 160,
+        };
+        let captures = [CapturedMedia::Rtp {
+            direction: CaptureDirection::Received,
+            peer,
+            wire: dtmf_wire(1, 2, 3, event, false),
+        }];
+        let normalized = normalize_media_capture(
+            "opaque-dynamic-audio",
+            &captures,
+            MediaCaptureConfig {
+                dtmf_payload_type: None,
+                ..MediaCaptureConfig::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            normalized.media_packets().facts(),
+            ["media-packet 1 endpoint-1 received rtp payload-type=101 marker=false csrcs=0 extension=false payload-bytes=4"]
+        );
+    }
+
+    #[test]
+    fn media_capture_comparison_ignores_dtmf_rtp_identity_changes() {
+        let event = dtmf::DtmfEvent {
+            digit: dtmf::DtmfDigit::Pound,
+            end: true,
+            reserved: false,
+            volume: 3,
+            duration: 320,
+        };
+        let first = [CapturedMedia::Rtp {
+            direction: CaptureDirection::Sent,
+            peer: "192.0.2.10:4000".parse().unwrap(),
+            wire: dtmf_wire(1, 2, 3, event, true),
+        }];
+        let second = [CapturedMedia::Rtp {
+            direction: CaptureDirection::Sent,
+            peer: "203.0.113.20:9000".parse().unwrap(),
+            wire: dtmf_wire(u16::MAX, u32::MAX, u32::MAX, event, true),
+        }];
+        let first = normalize_media_capture("dtmf-capture", &first, MediaCaptureConfig::default())
+            .unwrap()
+            .media_packets();
+        let second =
+            normalize_media_capture("dtmf-capture", &second, MediaCaptureConfig::default())
+                .unwrap()
+                .media_packets();
+        let comparison = compare(&first, &second, ComparisonConfig::default()).unwrap();
+
+        assert!(comparison.matched, "DTMF mismatch: {comparison:?}");
+        assert_eq!(comparison.total_differences, 0);
+    }
+
+    #[test]
     fn media_capture_rejects_invalid_config_count_size_and_protocol_atomically() {
         let peer = "192.0.2.10:4000".parse::<SocketAddr>().unwrap();
         let capture = CapturedMedia::Rtp {
@@ -1739,6 +1915,17 @@ mod tests {
                 &[capture.clone()],
                 MediaCaptureConfig {
                     max_extension_bytes: 0,
+                    ..MediaCaptureConfig::default()
+                },
+            ),
+            Err(DifferentialError::InvalidConfig)
+        );
+        assert_eq!(
+            normalize_media_capture(
+                "media-capture",
+                &[capture.clone()],
+                MediaCaptureConfig {
+                    dtmf_payload_type: Some(255),
                     ..MediaCaptureConfig::default()
                 },
             ),
@@ -1797,6 +1984,32 @@ mod tests {
             Err(DifferentialError::CapturedRtpParse {
                 index: 0,
                 error: rtp::ParseError::UnsupportedVersion(0),
+            })
+        ));
+        assert!(matches!(
+            normalize_media_capture(
+                "media-capture",
+                &[CapturedMedia::Rtp {
+                    direction: CaptureDirection::Received,
+                    peer,
+                    wire: rtp::serialize(&rtp::RtpPacket {
+                        padding: false,
+                        marker: false,
+                        payload_type: 101,
+                        sequence_number: 1,
+                        timestamp: 2,
+                        ssrc: 3,
+                        csrcs: Vec::new(),
+                        extension: None,
+                        payload: vec![5, 0, 0],
+                    })
+                    .unwrap(),
+                }],
+                MediaCaptureConfig::default(),
+            ),
+            Err(DifferentialError::CapturedDtmfParse {
+                index: 0,
+                error: dtmf::ParseError::TooShort,
             })
         ));
         assert!(matches!(

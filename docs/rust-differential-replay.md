@@ -50,7 +50,16 @@ or control bytes. `NormalizedObservation::media_packets` provides the
 media-only projection for comparing two capture sources without pretending
 that a raw capture contains lifecycle or cleanup evidence.
 
-The adapter rejects malformed packets, oversized records, zero bounds, and
+RTP packets using the configured RFC 4733 `telephone-event` payload type
+(default `101`) are parsed through the shared DTMF adapter. Their normalized
+facts retain the semantic digit, end/reserved flags, volume, duration, marker,
+direction, and packet order while omitting RTP identity and transport values.
+An invalid telephone-event payload is rejected atomically rather than being
+treated as opaque audio. Set `MediaCaptureConfig::dtmf_payload_type` to
+`None` when the negotiated media description has no telephone-event mapping.
+
+The adapter rejects malformed packets, malformed telephone-event payloads,
+oversized records, zero bounds, and
 over-limit captures before returning an observation. This keeps future
 sanitized Asterisk/provider RTP and RTCP captures on the same bounded,
 source-independent fixture path as deterministic Rust media scenarios.
