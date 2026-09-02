@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**  
-**Current checkpoint:** CP-019 — Reconcile PR #1 with current main and validate documentation
-**Last checkpoint (UTC):** 2026-09-02T03:27:00Z
+**Current checkpoint:** CP-020 — PR #1 hosted validation after main-head reconciliation
+**Last checkpoint (UTC):** 2026-09-02T03:28:27Z
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
 **Active milestone:** Milestone 1 — Scope Baseline  
-**Next resume action:** Publish reconciled PR #1 head and verify hosted checks and mergeability
+**Next resume action:** Update PR #2's base branch in stack order, run its focused and hosted checks, and record the resulting head and mergeability
 **Active PR:** [#1](https://github.com/W3Mirror/asterisk/pull/1); the first stacked PR targets `aistack/main`  
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/sip-rtp-engine-rust`  
@@ -2117,7 +2117,7 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 
 | Workstream | Status | Evidence / checkpoint | PR | Next action |
 | --- | --- | --- | --- | --- |
-| Phase 0 — current Asterisk surface | in_progress | CP-019; reconciled PR #1 merge commit `9983f42fc` includes current main and the detailed inventory; focused documentation checks pass | #1 | Publish PR #1 and verify hosted checks and mergeability |
+| Phase 0 — current Asterisk surface | in_progress | CP-020; PR #1 hosted run 33587135564 passed and GitHub reports CLEAN/MERGEABLE at `65e730ae3` | #1 | Update PR #2's base branch in stack order and validate it |
 | Phase 1 — Rust media engine | not_started | — | — | Define media-core scope from the Phase 0 inventory |
 | Phase 2 — SIP edge shadow mode | not_started | — | — | Build sanitized replay and comparison fixtures |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
@@ -2535,6 +2535,27 @@ blockers: Production deployment identity, effective configuration, provider cred
 next_action: Publish PR #1 head `9983f42fc` and verify hosted checks plus GitHub mergeability
 rollback: Asterisk remains the active/fallback engine; no routing was changed
 notes: This is a documentation-only reconciliation; no Rust workspace, provider configuration, production routing, or live traffic was changed. After the hosted checkpoint is green, update PR #2's base branch in stack order.
+```
+
+### CP-020 — PR #1 hosted validation after main-head reconciliation
+
+```yaml
+checkpoint_id: CP-020
+recorded_at_utc: 2026-09-02T03:28:27Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 1 — Scope Baseline
+scope: Validate the reconciled first stack PR on hosted CI and confirm its merge boundary
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/sip-rtp-engine-rust
+branch: sip-rtp-engine-rust
+base_branch: aistack/main
+pr: "#1 https://github.com/W3Mirror/asterisk/pull/1"
+head_sha: 65e730ae3091188986f8168ccec6c3363a8d2650
+evidence: Local HEAD, `origin/sip-rtp-engine-rust`, and `gh pr view 1 --json headRefOid` report `65e730ae3091188986f8168ccec6c3363a8d2650`. Hosted Rust quality run 33587135564 completed successfully for the exact pull-request head; Workspace checks 100113526281, Protocol fuzz checks 100113526103, and Dependency audit 100113526267 passed. GitHub reports PR #1 OPEN, non-draft, CLEAN, and MERGEABLE against `aistack/main` at `daf32816a89cb2e6c2dbb84b474afdd8c535fa45`.
+blockers: Production deployment identity, effective configuration, provider credentials, and sanitized inbound/outbound captures remain unavailable; downstream branches require sequential revalidation
+next_action: Update PR #2's base branch in stack order, run its focused and hosted checks, and record the resulting head and mergeability
+rollback: Asterisk remains the active/fallback engine; no routing was changed
+notes: PR #1 remains documentation-only. Its detailed Phase 0 inventory and the goal's focused-test/complete-hosted-suite contract are preserved; no Rust workspace, provider configuration, production routing, or live traffic was changed.
 ```
 
 ### Checkpoint template
