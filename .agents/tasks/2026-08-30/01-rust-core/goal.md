@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**  
-**Current checkpoint:** CP-017 — PR #1 hosted validation after main-head reconciliation
-**Last checkpoint (UTC):** 2026-09-01T13:13:32Z
+**Current checkpoint:** CP-018 — Validate hosted main-push test execution after contract update
+**Last checkpoint (UTC):** 2026-09-02T02:25:07Z
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
 **Active milestone:** Milestone 1 — Scope Baseline  
-**Next resume action:** Update PR #2's base branch in stack order, run its focused and hosted checks, and record the resulting head and mergeability
+**Next resume action:** Run focused documentation checks on reconciled PR #1 and publish the updated branch
 **Active PR:** [#1](https://github.com/W3Mirror/asterisk/pull/1); the first stacked PR targets `aistack/main`  
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/sip-rtp-engine-rust`  
@@ -2493,6 +2493,27 @@ blockers: Production deployment identity, effective configuration, provider cred
 next_action: Update PR #2's base branch in stack order, run its focused and hosted checks, and record the resulting head and mergeability
 rollback: Asterisk remains the active/fallback engine; no routing was changed
 notes: The first stack boundary is now reconciled to the published main head; no production routing or provider traffic was attempted.
+```
+
+### CP-018 — Validate hosted main-push test execution after contract update
+
+```yaml
+checkpoint_id: CP-018
+recorded_at_utc: 2026-09-02T02:25:07Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 1 — Scope Baseline
+scope: Validate the hosted push-to-main workflow after publishing the expanded test contract
+worktree: /home/ashutosh/PROJECTS/w3mirror/asterisk
+branch: aistack/main
+base_branch: aistack/main
+pr: none
+head_sha: 8a5a42e0150713174580746abad95c61a0b02fea
+evidence: Hosted Rust quality run 33583115592 (https://github.com/W3Mirror/asterisk/actions/runs/33583115592) completed successfully for the exact aistack/main head. Dependency audit, protocol fuzz, and workspace jobs all passed; their Rust execution steps were conditionally skipped because this stack layer has no Cargo.toml, fuzz/Cargo.toml, or Cargo.lock. This confirms the push trigger and hosted ubuntu-latest runner behavior without claiming Rust tests ran before the Rust workspace lands.
+blockers: Production deployment identity, effective configuration, provider credentials, and sanitized inbound/outbound captures remain unavailable; PR #1 must be reconciled before downstream stack work
+next_action: Reconcile PR #1 with the current aistack/main head, resolve the goal-ledger conflict, run focused documentation checks, and publish the updated branch
+rollback: Asterisk remains the active/fallback engine; no routing was changed
+notes: Once a Rust workspace exists on a stack branch, the same pull_request and aistack/main push triggers will execute the ordinary format, workspace-test, and Clippy checks; focused affected-module tests remain required PR content, while extended and credentialed/live suites stay scheduled or manual.
 ```
 
 ### Checkpoint template
