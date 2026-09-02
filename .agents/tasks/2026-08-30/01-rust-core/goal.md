@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-119 — PR #44 final hosted validation confirmed
-**Last checkpoint (UTC):** 2026-09-02T00:14:11Z
+**Current checkpoint:** CP-120 — PR #45 lifecycle-soak implementation locally validated
+**Last checkpoint (UTC):** 2026-09-02T00:23:52Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Repeated mixed lifecycle soak, memory stability, and capacity reuse<br>
-**Next resume action:** Reconcile PR #45 onto the published PR #44 head, preserve its lifecycle-soak implementation, and run focused and hosted checks
+**Next resume action:** Publish the validated PR #45 head with an exact SHA-pinned force-with-lease, then verify hosted checks and the dedicated lifecycle soak
 **Active PR:** [#45](https://github.com/W3Mirror/asterisk/pull/45); branch `lifecycle-soak` targets `combined-load-smoke`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-44`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-45`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -6281,6 +6281,29 @@ blockers: Repeated mixed lifecycle soak, stable allocator-memory behavior, 1,000
 next_action: Reconcile PR #45 onto published PR #44 head `bd2a341be9c347e31a90791f4875430545ed6090`, preserve its lifecycle-soak implementation, then run focused and complete offline validation
 rollback: Restore `backup/combined-load-smoke-before-restack-20260902-0005` and keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic
 notes: Every implementation PR must carry focused tests for each affected crate/module; hosted pull_request events and pushes to `aistack/main` run the complete ordinary locked workspace suite rather than an affected-module-only selection. Scheduled/manual workflows provide extended capacity, soak, fuzz, differential, and credentialed provider/live-call gates. Docker is limited to the pinned SIPp dependency.
+~~~
+
+### CP-120 — PR #45 lifecycle-soak implementation locally validated
+
+~~~yaml
+checkpoint_id: CP-120
+recorded_at_utc: 2026-09-02T00:23:52Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Repeated mixed lifecycle soak, memory stability, and capacity reuse
+scope: Reconcile the lifecycle-soak implementation onto the final PR #44 head and validate focused, complete, protocol, integration, and resource-reclamation checks before publication
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-45
+branch: lifecycle-soak
+base_branch: combined-load-smoke
+pr: "#45 https://github.com/W3Mirror/asterisk/pull/45"
+base_head_sha: 12efc0129878dd80e089f8f4e37b8882b0e28de6
+implementation_head_sha: c7b8671424f968649c327fdb255f554de39418f6
+remote_head_sha_before_publish: 0689d3b7b13fc2e25131fbd7cc3fa09593dbd369
+evidence: Created backup branch `backup/lifecycle-soak-before-restack-20260902-0015` and replayed the lifecycle-soak implementation as `c7b8671424f968649c327fdb255f554de39418f6` onto the published PR #44 final head. Focused `cargo test -p load-smoke --locked` passed (18 library tests and 1 binary test); `cargo fmt --all -- --check`, full `cargo test --workspace --locked`, workspace Clippy, strict `load-smoke` Clippy with `--no-deps -- --deny warnings`, sanitizer-backed fuzz checks, all three pinned Docker-backed SIPp success/busy/cancel scenarios, signaling/media/WebSocket/combined reclamation smokes, the short mixed-lifecycle soak, YAML/shell validation, and `git diff --check` passed. The standalone release soak `tests/rust-lifecycle-soak/run.sh 1 8 12 8 4 2 67108864` completed 2,533 cycles and 30,396 calls with zero final calls, transactions, dialogs, media sessions, or retained payload bytes; file descriptors and threads remained stable and RSS drift was 217,088 bytes.
+blockers: Hosted PR checks are pending publication; larger combined media capacity, sanitized captures, provider/Asterisk interoperability, rollback proof, and production evidence remain active goal work; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Publish `c7b8671424f968649c327fdb255f554de39418f6` with an exact SHA-pinned force-with-lease over remote `0689d3b7b13fc2e25131fbd7cc3fa09593dbd369`, then verify the fresh hosted PR run and dispatch the dedicated `lifecycle_soak=true` workflow
+rollback: Restore `backup/lifecycle-soak-before-restack-20260902-0015` if publication must be abandoned; keep all signaling, media, and call routing on Asterisk and do not enable Rust traffic
+notes: Every implementation PR carries focused tests for each affected crate/module. The hosted pull_request workflow runs the complete ordinary locked workspace suite on `ubuntu-latest`, not an affected-module-only subset; pushes to `aistack/main` repeat that complete ordinary suite. Scheduled/manual workflows remain the gate for extended capacity, long soak, differential, credentialed-provider, and live real-time-call evidence. Docker remains limited to the pinned SIPp dependency.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
