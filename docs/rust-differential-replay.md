@@ -38,6 +38,32 @@ Rust replay report. A capture can establish wire behavior but cannot provide
 the replay's lifecycle, media, or cleanup facts, so those richer facts remain
 in the full report comparison.
 
+## RTP/RTCP capture conversion
+
+`normalize_media_capture` accepts an ordered, bounded sequence of
+`CapturedMedia::Rtp` and `CapturedMedia::Rtcp` records. Each record carries an
+explicit received/sent direction, peer address, and complete wire datagram.
+RTP and RTCP are parsed before normalization; the resulting `media-packet`
+facts retain packet order, direction, payload shape, and RTCP report categories
+while omitting sequence numbers, timestamps, SSRCs, addresses, and raw audio
+or control bytes. `NormalizedObservation::media_packets` provides the
+media-only projection for comparing two capture sources without pretending
+that a raw capture contains lifecycle or cleanup evidence.
+
+RTP packets using the configured RFC 4733 `telephone-event` payload type
+(default `101`) are parsed through the shared DTMF adapter. Their normalized
+facts retain the semantic digit, end/reserved flags, volume, duration, marker,
+direction, and packet order while omitting RTP identity and transport values.
+An invalid telephone-event payload is rejected atomically rather than being
+treated as opaque audio. Set `MediaCaptureConfig::dtmf_payload_type` to
+`None` when the negotiated media description has no telephone-event mapping.
+
+The adapter rejects malformed packets, malformed telephone-event payloads,
+oversized records, zero bounds, and
+over-limit captures before returning an observation. This keeps future
+sanitized Asterisk/provider RTP and RTCP captures on the same bounded,
+source-independent fixture path as deterministic Rust media scenarios.
+
 Run the focused suite with:
 
 ```sh
