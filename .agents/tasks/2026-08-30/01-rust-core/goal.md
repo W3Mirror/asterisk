@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-130 — PR #50 provider authentication context restacked and locally green
-**Last checkpoint (UTC):** 2026-09-02T01:16:00Z
+**Current checkpoint:** CP-131 — PR #50 provider authentication context hosted validation green
+**Last checkpoint (UTC):** 2026-09-02T01:20:00Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Provider authentication and route-runtime integration<br>
-**Next resume action:** Publish PR #50, verify its hosted checks, then continue the next provider security slice
+**Next resume action:** Continue the provider security stack while the dedicated lifecycle soak remains pending
 **Active PR:** [#50](https://github.com/W3Mirror/asterisk/pull/50); branch `provider-auth-context` targets `provider-route-runtime`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-49`
@@ -6522,6 +6522,27 @@ blockers: Hosted PR #50 validation and the dedicated two-hour lifecycle soak rem
 next_action: Commit and publish the reconciled PR #50 implementation with an exact SHA-pinned force-with-lease, then verify hosted checks and mergeability
 rollback: Restore `backup/provider-auth-context-before-restack-20260902-0115` if restacking or publication must be abandoned; keep all signaling, media, and call routing on Asterisk and do not enable Rust traffic
 notes: PR #49 is the unrelated `audit-stack-hardening` branch; provider-auth context is PR #50. Every implementation PR carries focused tests for each affected crate/module. Pull-request and `aistack/main` push events run the complete ordinary hosted workspace suite rather than changed-module-only tests; scheduled/manual events provide longer, capacity, differential, credentialed-provider, and live real-time-call gates. Docker remains limited to the pinned SIPp dependency.
+```
+
+### CP-131 — PR #50 provider authentication context hosted validation green
+
+```yaml
+checkpoint_id: CP-131
+recorded_at_utc: 2026-09-02T01:20:00Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Provider authentication, routing, and safe fallback
+scope: Verify hosted CI remains green on the final provider-auth context head
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-49
+branch: provider-auth-context
+base_branch: provider-route-runtime
+pr: "#50 https://github.com/W3Mirror/asterisk/pull/50"
+head_sha: dba30b9434b764f4e9d03b8b15c4d3a958df4ff0
+evidence: Hosted Rust quality run [33578691588](https://github.com/W3Mirror/asterisk/actions/runs/33578691588) completed successfully for the exact published head on hosted `ubuntu-latest`. Workspace checks passed formatting, all locked workspace tests, the three pinned SIPp scenarios, signaling/media/WebSocket/combined reclamation smokes, the short mixed-lifecycle soak, and workspace Clippy; Protocol fuzz checks and Dependency audit passed. Scheduled capacity and two-hour lifecycle jobs correctly skipped. GitHub reports PR #50 OPEN, CLEAN, and MERGEABLE against `provider-route-runtime`.
+blockers: The dedicated two-hour lifecycle soak [33576067383](https://github.com/W3Mirror/asterisk/actions/runs/33576067383) remains pending, along with larger combined media capacity, sanitized captures, provider/Asterisk interoperability, rollback proof, and production evidence; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Continue with the next bounded provider/security or interoperability slice without enabling Rust traffic
+rollback: Restore `backup/provider-auth-context-before-restack-20260902-0115` if the provider-auth stack must roll back; keep all signaling, media, and call routing on Asterisk and do not enable Rust traffic
+notes: PR #49 is the unrelated `audit-stack-hardening` branch. Every implementation PR carries focused tests for each affected crate/module. Pull-request and `aistack/main` push events run the complete ordinary hosted workspace suite rather than changed-module-only tests; scheduled/manual events provide longer, capacity, differential, credentialed-provider, and live real-time-call gates. Docker remains limited to the pinned SIPp dependency.
 ```
 
 ### CP-136 — provider-policy Digest credential resolution locally green
