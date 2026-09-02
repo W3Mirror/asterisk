@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-123 — PR #46 Digest authentication implementation published; hosted validation pending
-**Last checkpoint (UTC):** 2026-09-02T00:45:00Z
+**Current checkpoint:** CP-124 — PR #46 hosted validation green; lifecycle soak pending
+**Last checkpoint (UTC):** 2026-09-02T00:49:00Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Repeated mixed lifecycle soak, memory stability, and capacity reuse<br>
-**Next resume action:** Verify hosted PR #46 checks, then record the dedicated lifecycle-soak result and continue the provider-runtime stack
+**Next resume action:** Record the dedicated lifecycle-soak result, then reconcile PR #47 onto the hosted-green PR #46 head
 **Active PR:** [#46](https://github.com/W3Mirror/asterisk/pull/46); branch `outbound-digest-auth` targets `lifecycle-soak`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-46`
@@ -6369,6 +6369,27 @@ blockers: Hosted PR #46 checks and the dedicated two-hour lifecycle soak remain 
 next_action: Verify run [33576504618](https://github.com/W3Mirror/asterisk/actions/runs/33576504618), then record the lifecycle-soak result and continue the provider-runtime stack
 rollback: Restore `backup/outbound-digest-auth-before-restack-20260902-003937` if publication must be abandoned; keep all signaling, media, and call routing on Asterisk and do not enable Rust traffic
 notes: Every implementation PR carries focused tests for each affected crate/module. Hosted pull_request events and pushes to `aistack/main` run the complete ordinary locked workspace suite rather than an affected-module-only subset. Scheduled/manual events provide longer, capacity, differential, credentialed-provider, and live real-time-call gates. Docker remains limited to the pinned SIPp dependency.
+```
+
+### CP-124 — PR #46 hosted validation green; lifecycle soak pending
+
+```yaml
+checkpoint_id: CP-124
+recorded_at_utc: 2026-09-02T00:49:00Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Provider authentication and route-runtime integration
+scope: Confirm the final published Digest-auth PR head passes the ordinary hosted pull-request suite
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-46
+branch: outbound-digest-auth
+base_branch: lifecycle-soak
+pr: "#46 https://github.com/W3Mirror/asterisk/pull/46"
+head_sha: 968eb63b684bd26e2d90b6153149cc65e580f737
+evidence: Hosted Rust quality run [33576701836](https://github.com/W3Mirror/asterisk/actions/runs/33576701836) completed successfully for the exact published head on hosted `ubuntu-latest`. Workspace checks passed formatting, all locked workspace tests, the three pinned SIPp scenarios, signaling/media/WebSocket/combined reclamation smokes, the short mixed-lifecycle soak, and workspace Clippy; Protocol fuzz checks and Dependency audit passed. The extended capacity and two-hour lifecycle jobs correctly skipped as scheduled/manual gates. GitHub reports PR #46 OPEN, CLEAN, and MERGEABLE against `lifecycle-soak`.
+blockers: The dedicated two-hour lifecycle soak [33576067383](https://github.com/W3Mirror/asterisk/actions/runs/33576067383) remains in progress, along with larger combined media capacity, sanitized captures, provider/Asterisk interoperability, rollback proof, and production evidence; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Await and record the dedicated lifecycle-soak result, then reconcile PR #47 (`provider-digest-runtime`) onto this hosted-green head
+rollback: Restore `backup/outbound-digest-auth-before-restack-20260902-003937` if the stack must roll back; keep all signaling, media, and call routing on Asterisk and do not enable Rust traffic
+notes: Every implementation PR carries focused tests for each affected crate/module. Pull-request and `aistack/main` push events run the complete ordinary hosted workspace suite rather than changed-module-only tests; scheduled/manual events provide longer, capacity, differential, credentialed-provider, and live real-time-call gates. Docker remains limited to the pinned SIPp dependency.
 ```
 
 ## 59.4 Stacked-PR Checkpoints
