@@ -1,12 +1,12 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-245 — Bridge/media trace correlation locally green
-**Last checkpoint (UTC):** 2026-09-02T03:00:00Z
+**Current checkpoint:** CP-246 — PR #78 bridge/media trace correlation hosted validation green
+**Last checkpoint (UTC):** 2026-09-02T03:04:16Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** In-dialog SIP request interoperability and Asterisk fallback<br>
-**Next resume action:** Run the complete local validation, publish PR #78, and reconcile hosted checks without enabling Rust traffic
-**Active PR:** #78 — `bridge-trace-correlation` targets `trace-correlation` (local focused validation green; publication pending)
+**Next resume action:** Continue the next bounded offline acceptance slice from exact head `5a8cdefb0` without enabling Rust traffic
+**Active PR:** #78 — `bridge-trace-correlation` targets `trace-correlation` (hosted ordinary validation green; open and mergeable)
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-78-bridge-trace-correlation`
 **Primary language:** Rust  
@@ -7450,6 +7450,27 @@ blockers: Full workspace/SIPp/Clippy/nightly-ASAN verification, commit/publicati
 next_action: Run the complete local verification matrix, commit and publish PR #78 against `trace-correlation`, then reconcile hosted checks without enabling Rust traffic.
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #78 or revert the bridge/media trace adapter if its contract is superseded.
 notes: Tests ship in the same implementation slice as the affected bridge and media modules. Pull-request `opened`, `reopened`, and `synchronize` events run the complete ordinary suite on hosted `ubuntu-latest`, so focused bridge/media tests execute through `cargo test --workspace --locked`; no affected-module-only selector is configured. Every push to `aistack/main` repeats that complete ordinary suite. Scheduled/manual capacity, extended property, multi-hour soak, and credentialed provider/live-call checks remain separate gates. Docker is used only by the pinned SIPp integration dependency; all workflow runners remain hosted. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-246 — PR #78 bridge/media trace correlation hosted validation green
+
+~~~yaml
+checkpoint_id: CP-246
+recorded_at_utc: 2026-09-02T03:04:16Z
+status: hosted_green
+phase: Phase 1 — Rust media engine
+milestone: In-dialog SIP request interoperability and Asterisk fallback
+scope: Reconcile PR #78 bridge/media trace correlation publication with hosted CI and exact local/origin/GitHub parity
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-78-bridge-trace-correlation
+branch: bridge-trace-correlation
+base_branch: trace-correlation
+pr: https://github.com/W3Mirror/asterisk/pull/78
+head_sha: 5a8cdefb017cce0c26730c12b7e2f7bb0945fd15
+evidence: Local HEAD, `origin/bridge-trace-correlation`, and `gh pr view 78 --json headRefOid` report `5a8cdefb017cce0c26730c12b7e2f7bb0945fd15`. PR #78 is OPEN, non-draft, CLEAN, and MERGEABLE against `trace-correlation` at `611e614eea9937f09fe21f823650f5da7dd0b45e`. Hosted Rust quality run `33585364193` passed Workspace checks `100108284494` (formatting, complete locked workspace tests including the bridge/media trace tests, pinned Docker-backed SIPp scenarios, deterministic signaling/media/WebSocket/combined/short-soak reclamation smokes, and workspace Clippy), Protocol fuzz checks `100108284706` (all address-sanitizer targets), and Dependency audit `100108284835`; schedule/manual-only Signaling capacity `100108285639` and Two-hour lifecycle soak `100108285940` correctly skipped for the pull-request event.
+blockers: Provider credentials/runtime access, sanitized provider/Asterisk captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated; Asterisk remains the fallback.
+next_action: Continue the next bounded offline acceptance slice from exact head `5a8cdefb0` without enabling Rust traffic.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #78 or revert the bridge/media trace adapter if its contract is superseded.
+notes: PR #78 ships focused bridge/media trace tests with the changed modules. Pull-request events run the complete ordinary hosted suite rather than an affected-module-only subset, and every push to `aistack/main` repeats that suite on hosted `ubuntu-latest`. Scheduled/manual capacity, extended property, multi-hour soak, and credentialed provider/live-call checks remain separate gates. Docker remains limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
