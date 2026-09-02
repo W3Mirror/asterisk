@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-132 — PR #51 PRACK runtime restacked and locally green
-**Last checkpoint (UTC):** 2026-09-02T01:22:00Z
+**Current checkpoint:** CP-133 — PR #51 PRACK runtime hosted validation green
+**Last checkpoint (UTC):** 2026-09-02T01:27:00Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Provider authentication and route-runtime integration<br>
-**Next resume action:** Publish PR #51, verify its hosted checks, then continue reliable-provisional signaling
+**Next resume action:** Reconcile PR #52 onto the hosted-green PR #51 head, then validate PRACK retransmission behavior
 **Active PR:** [#51](https://github.com/W3Mirror/asterisk/pull/51); branch `prack-runtime` targets `provider-auth-context`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-51`
@@ -6565,6 +6565,27 @@ evidence: Created backup branch `backup/prack-runtime-before-restack-20260902-01
 blockers: Hosted PR #51 validation and the dedicated two-hour lifecycle soak remain pending, along with larger combined media capacity, sanitized captures, provider/Asterisk interoperability, rollback proof, and production evidence; Rust traffic stays disabled and Asterisk remains the fallback
 next_action: Commit and publish the reconciled PR #51 implementation with an exact SHA-pinned force-with-lease, then verify hosted checks and mergeability
 rollback: Restore `backup/prack-runtime-before-restack-20260902-0125` if restacking or publication must be abandoned; keep all signaling, media, and call routing on Asterisk and do not enable Rust traffic
+notes: Every implementation PR carries focused tests for each affected crate/module. Pull-request and `aistack/main` push events run the complete ordinary hosted workspace suite rather than changed-module-only tests; scheduled/manual events provide longer, capacity, differential, credentialed-provider, and live real-time-call gates. Docker remains limited to the pinned SIPp dependency.
+```
+
+### CP-133 — PR #51 PRACK runtime hosted validation green
+
+```yaml
+checkpoint_id: CP-133
+recorded_at_utc: 2026-09-02T01:27:00Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Reliable provisional SIP signaling
+scope: Verify hosted CI remains green on the final PRACK runtime head
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-51
+branch: prack-runtime
+base_branch: provider-auth-context
+pr: "#51 https://github.com/W3Mirror/asterisk/pull/51"
+head_sha: bd4474832a13f2660a2e33fbb12c4c43cda7e615
+evidence: Hosted Rust quality run [33579077321](https://github.com/W3Mirror/asterisk/actions/runs/33579077321) completed successfully for the exact published head on hosted `ubuntu-latest`. Workspace checks passed formatting, all locked workspace tests, the three pinned SIPp scenarios, signaling/media/WebSocket/combined reclamation smokes, the short mixed-lifecycle soak, and workspace Clippy; Protocol fuzz checks and Dependency audit passed. Scheduled capacity and two-hour lifecycle jobs correctly skipped. GitHub reports PR #51 OPEN, CLEAN, and MERGEABLE against `provider-auth-context`.
+blockers: The dedicated two-hour lifecycle soak [33576067383](https://github.com/W3Mirror/asterisk/actions/runs/33576067383) remains pending, along with larger combined media capacity, sanitized captures, provider/Asterisk interoperability, rollback proof, and production evidence; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Reconcile PR #52 (`prack-retransmission`) onto this hosted-green head and validate bounded reliable-provisional retransmission
+rollback: Restore `backup/prack-runtime-before-restack-20260902-0125` if the PRACK stack must roll back; keep all signaling, media, and call routing on Asterisk and do not enable Rust traffic
 notes: Every implementation PR carries focused tests for each affected crate/module. Pull-request and `aistack/main` push events run the complete ordinary hosted workspace suite rather than changed-module-only tests; scheduled/manual events provide longer, capacity, differential, credentialed-provider, and live real-time-call gates. Docker remains limited to the pinned SIPp dependency.
 ```
 
