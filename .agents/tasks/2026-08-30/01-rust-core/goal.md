@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-243 — PR #76 DTMF capture validation hosted green
-**Last checkpoint (UTC):** 2026-09-02T02:14:07Z
+**Current checkpoint:** CP-244 — Trace correlation locally validated
+**Last checkpoint (UTC):** 2026-09-02T02:41:49Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** In-dialog SIP request interoperability and Asterisk fallback<br>
-**Next resume action:** Continue the next bounded offline acceptance slice from exact head `a2ff43f75` without enabling Rust traffic
-**Active PR:** #76 — `media-capture-differential` targets `differential-capture-replay` (hosted ordinary validation green; open and mergeable)
+**Next resume action:** Commit and publish the trace-correlation slice as PR #77, then reconcile hosted checks without enabling Rust traffic
+**Active PR:** #77 — `trace-correlation` targets `media-capture-differential` (local validation green; publication pending)
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-76-media-capture`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-77-trace-correlation`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -1846,6 +1846,7 @@ Every implementation slice carries its relevant tests in the same change:
 | Parser, header, or codec behavior | Focused unit tests, malformed/adversarial cases, and a protocol fixture or fuzz target when the parser is network-facing |
 | Dialog, transaction, or call state | State-machine transitions, duplicate/out-of-order messages, sequence validation, and atomic failure/recovery tests |
 | Runtime or cross-crate behavior | Focused module tests plus dependent-module/API-event contract tests and a deterministic integration scenario |
+| Trace, correlation, or observability metadata | Bounded W3C `traceparent` round trips, malformed/zero/reused-ID rejection, operation-name bounds, propagation through lifecycle/snapshot/audit/diagnostic surfaces, terminal cleanup, redaction, and upstream handoff tests |
 | RTP, RTCP, DTMF, WebSocket, or AI-media behavior | Direction/format/bounds tests, backpressure or loss cases, and reclamation assertions |
 | Lifecycle, capacity, or resource behavior | Deterministic load/reclamation tests and a short soak; larger capacity and multi-hour soak jobs remain scheduled or manually dispatched |
 | Process restart or drain handoff | Idempotent terminalization, ordered call/bridge events, admission/readiness transitions, provider-context and resource cleanup, and resume/cancellation tests |
@@ -7407,6 +7408,27 @@ blockers: Provider credentials/runtime access, sanitized provider/Asterisk captu
 next_action: Continue the next bounded offline acceptance slice from exact head `a2ff43f75` without enabling Rust traffic.
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #76 or revert the DTMF capture adapter if its contract is superseded.
 notes: PR #76 ships focused DTMF normalization tests with the changed differential-replay module. Pull-request events run the complete ordinary hosted suite rather than an affected-module-only subset, and every push to `aistack/main` repeats that suite on hosted `ubuntu-latest`. Scheduled/manual capacity, extended property, multi-hour soak, and credentialed provider/live-call gates remain separate. Docker remains limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-244 — Trace correlation locally validated
+
+~~~yaml
+checkpoint_id: CP-244
+recorded_at_utc: 2026-09-02T02:41:49Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: In-dialog SIP request interoperability and Asterisk fallback
+scope: Add bounded W3C trace correlation across call lifecycle, diagnostics, audit, and outbound handoff surfaces
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-77-trace-correlation
+branch: trace-correlation
+base_branch: media-capture-differential
+pr: pending #77 publication
+head_sha: 88e11481ef2c13aee238cbbbe20091aef7d18f09 plus uncommitted implementation, focused tests, documentation, and ledger updates
+evidence: Added bounded `TraceId`, `SpanId`, `TraceFlags`, `TraceContext`, and `TraceSpan` primitives; validated version-00 W3C `traceparent` parsing/serialization, malformed and zero-ID rejection, duplicate-span rejection, operation-name bounds, call-context propagation through lifecycle events/snapshots/audit/diagnostics, terminal audit retention, and upstream outbound origination handoff. `cargo fmt --all -- --check`, `cargo test --workspace --locked` (all workspace tests, including 6 call-core, 19 call-api, 45 call-engine, and 53 call-runtime tests), `cargo clippy --workspace --all-targets --locked` (exit 0 with existing documentation/pedantic warnings), `tests/rust-sipp/run.sh` (success, busy, and cancel scenarios using the pinned Docker SIPp image), `cargo +nightly fuzz check --fuzz-dir fuzz --sanitizer address --no-cfg-fuzzing`, and `git diff --check` pass locally.
+blockers: Commit/publication, hosted PR validation, and final local/origin/GitHub parity remain pending. Provider credentials/runtime access, sanitized provider/Asterisk captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated; Asterisk remains the fallback.
+next_action: Commit the trace implementation/tests/docs/ledger normally, push `trace-correlation`, open PR #77 against `media-capture-differential`, and reconcile hosted checks without enabling Rust traffic.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #77 or revert the trace-correlation slice if its contract is superseded.
+notes: Trace tests ship in the same implementation change and are deterministic; they are not deferred until real-time calls. Pull-request `opened`, `reopened`, and `synchronize` events run the complete ordinary hosted suite on `ubuntu-latest`, so focused trace tests execute through `cargo test --workspace --locked` rather than an affected-module-only selector. Every push to `aistack/main` repeats that complete ordinary hosted suite. Scheduled/manual capacity, extended property, multi-hour soak, and credentialed provider/live-call checks remain separate gates. Docker is used only by the pinned SIPp integration dependency; all workflow runners remain hosted. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints

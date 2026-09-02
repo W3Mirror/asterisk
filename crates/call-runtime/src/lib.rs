@@ -25,7 +25,7 @@ use call_api::{
     AuditOutcome, AuditRecord, AuthenticatedPrincipal, BridgeControlOperation, CallCommand,
 };
 use call_bridge::{BridgeError, BridgeEvent, BridgeRegistry, BridgeState};
-use call_core::{BridgeId, CallEventKind, CallId, CommandId, LegId, LifecycleEvent};
+use call_core::{BridgeId, CallEventKind, CallId, CommandId, LegId, LifecycleEvent, TraceContext};
 use call_engine::{
     CallDiagnostics, CallEngine, EngineError, EngineHealth, EngineMetrics, EngineOutput,
     RestartHandoff as EngineRestartHandoff, SendAction,
@@ -479,6 +479,11 @@ impl CallRuntime {
         Ok(self.engine.diagnostics(call_id)?)
     }
 
+    /// Returns the bounded distributed-trace context associated with a call.
+    pub fn trace_context(&self, call_id: &CallId) -> Result<TraceContext, RuntimeError> {
+        Ok(self.engine.trace_context(call_id)?)
+    }
+
     /// Returns one diagnostic view after verifying control-plane read access.
     pub fn diagnostics_authorized(
         &self,
@@ -576,14 +581,35 @@ impl CallRuntime {
         &mut self.engine
     }
 
-    /// Starts an outbound INVITE and delivers it through the configured
-    /// transport.
+    /// Starts an outbound INVITE with a supplied trace context and delivers it
+    /// through the configured transport.
     ///
     /// # Errors
     ///
     /// Returns an error when the request is invalid, engine bounds are
     /// exhausted, or transport delivery fails. The engine is unchanged when
     /// delivery fails.
+    pub fn originate_with_trace_context(
+        &mut self,
+        request: SipRequest,
+        destination: SocketAddr,
+        now: Duration,
+        trace_context: TraceContext,
+    ) -> Result<(CallId, RuntimeOutput), RuntimeError> {
+        let mut working_engine = self.engine.clone();
+        let (call_id, output) = working_engine.originate_with_trace_context(
+            request,
+            destination,
+            now,
+            self.transport.reliability(),
+            trace_context,
+        )?;
+        let runtime_output = self.commit_engine_output(working_engine, output)?;
+        Ok((call_id, runtime_output))
+    }
+
+    /// Starts an outbound INVITE and delivers it through the configured
+    /// transport while creating a deterministic root trace context.
     pub fn originate(
         &mut self,
         request: SipRequest,
@@ -1997,11 +2023,20 @@ mod tests {
             CallEngine::new(EngineConfig::default()).unwrap(),
             runtime_transport,
         );
+        let trace_call_id = CallId::new("call_trace-runtime").unwrap();
+        let trace_context = TraceContext::from_sequence(trace_call_id, 77);
         let (call_id, _) = runtime
-            .originate(invite(), peer.local_addr().unwrap(), Duration::ZERO)
+            .originate_with_trace_context(
+                invite(),
+                peer.local_addr().unwrap(),
+                Duration::ZERO,
+                trace_context.clone(),
+            )
             .unwrap();
         let _ = peer.recv().unwrap();
 
+        assert_eq!(call_id.as_str(), "call_trace-runtime");
+        assert_eq!(runtime.trace_context(&call_id).unwrap(), trace_context);
         let metrics = runtime.metrics();
         assert_eq!(metrics.calls.calls_started_total, 1);
         assert_eq!(metrics.calls.calls_active, 1);
@@ -2025,6 +2060,10 @@ mod tests {
 
         let diagnostics = runtime.diagnostics(&call_id).unwrap();
         assert_eq!(diagnostics.call_id, call_id);
+        assert_eq!(
+            runtime.trace_context(&call_id).unwrap(),
+            diagnostics.trace_context
+        );
         assert_eq!(diagnostics.signaling.client_transactions, 1);
         assert!(!format!("{diagnostics:?}").contains("runtime-invite@example.com"));
 

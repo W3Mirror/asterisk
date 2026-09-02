@@ -6,7 +6,9 @@ use std::{
     fmt::{Display, Formatter},
 };
 
-use call_core::{Call, CallEventKind, CallId, CallState, CommandId, EventId, LifecycleEvent};
+use call_core::{
+    Call, CallEventKind, CallId, CallState, CommandId, EventId, LifecycleEvent, TraceContext,
+};
 use sdp::{Codec, Direction, SessionDescription};
 use sip_dialog::DialogId;
 
@@ -265,6 +267,8 @@ pub struct AuditRecord {
     pub principal_id: String,
     /// Application call identifier supplied to or produced by the operation.
     pub call_id: Option<CallId>,
+    /// Optional bounded trace context for correlating this operation with the call.
+    pub trace_context: Option<TraceContext>,
     /// Operation that was requested.
     pub operation: AuditOperation,
     /// Result visible to the control-plane caller.
@@ -276,6 +280,8 @@ pub struct AuditRecord {
 pub struct CallSnapshot {
     /// Application-owned call identifier.
     pub id: CallId,
+    /// Bounded trace context carrying the application call correlation ID.
+    pub trace_context: TraceContext,
     /// Current high-level lifecycle state.
     pub state: CallState,
     /// Optional tag-qualified SIP dialog identity.
@@ -470,6 +476,7 @@ impl Error for ApiError {}
 #[derive(Clone, Debug)]
 struct CallEntry {
     call: Call,
+    trace_context: TraceContext,
     dialog_id: Option<DialogId>,
     media: Option<NegotiatedAudio>,
 }
@@ -498,6 +505,7 @@ pub struct CallRegistry {
     calls_completed_total: u64,
     lifecycle_events_total: u64,
     next_call_sequence: u64,
+    next_trace_sequence: u64,
     next_event_sequence: u64,
     next_audit_sequence: u64,
 }
@@ -519,6 +527,7 @@ impl CallRegistry {
             calls_completed_total: 0,
             lifecycle_events_total: 0,
             next_call_sequence: 1,
+            next_trace_sequence: 1,
             next_event_sequence: 1,
             next_audit_sequence: 1,
         })
@@ -559,7 +568,8 @@ impl CallRegistry {
         }
         let event_id = self.reserve_event_id()?;
         let id = self.allocate_call_id()?;
-        self.insert_created_call(id.clone());
+        let trace_context = self.allocate_trace_context(&id)?;
+        self.insert_created_call(id.clone(), trace_context);
         self.commit_event(event_id, id.clone(), CallEventKind::Created);
         Ok(id)
     }
@@ -572,22 +582,48 @@ impl CallRegistry {
         self.create_with_id_inner(id)
     }
 
+    /// Registers a caller-supplied call and an already validated trace context.
+    ///
+    /// This is the handoff point for an outer API or AI gateway that received a
+    /// W3C `traceparent`. The context's call ID becomes the registry's stable
+    /// application identifier; no credentials or unbounded baggage are stored.
+    pub fn create_with_trace_context(
+        &mut self,
+        trace_context: TraceContext,
+    ) -> Result<CallId, ApiError> {
+        let id = trace_context.call_id().clone();
+        if self.calls.contains_key(&id) {
+            return Err(ApiError::DuplicateCall);
+        }
+        self.create_with_context_inner(id, trace_context)
+    }
+
     fn create_with_id_inner(&mut self, id: CallId) -> Result<CallId, ApiError> {
+        let trace_context = self.allocate_trace_context(&id)?;
+        self.create_with_context_inner(id, trace_context)
+    }
+
+    fn create_with_context_inner(
+        &mut self,
+        id: CallId,
+        trace_context: TraceContext,
+    ) -> Result<CallId, ApiError> {
         if self.calls.len() >= self.config.max_calls {
             return Err(ApiError::CallLimitReached);
         }
         let event_id = self.reserve_event_id()?;
-        self.insert_created_call(id.clone());
+        self.insert_created_call(id.clone(), trace_context);
         self.commit_event(event_id, id.clone(), CallEventKind::Created);
         Ok(id)
     }
 
-    fn insert_created_call(&mut self, id: CallId) {
+    fn insert_created_call(&mut self, id: CallId, trace_context: TraceContext) {
         self.calls_started_total = self.calls_started_total.saturating_add(1);
         self.calls.insert(
             id.clone(),
             CallEntry {
                 call: Call::new(id),
+                trace_context,
                 dialog_id: None,
                 media: None,
             },
@@ -846,6 +882,7 @@ impl CallRegistry {
         let entry = self.calls.get(id).ok_or(ApiError::UnknownCall)?;
         Ok(CallSnapshot {
             id: entry.call.id.clone(),
+            trace_context: entry.trace_context.clone(),
             state: entry.call.state,
             dialog_id: entry.dialog_id.clone(),
             media: entry.media.clone(),
@@ -872,6 +909,7 @@ impl CallRegistry {
             .values()
             .map(|entry| CallSnapshot {
                 id: entry.call.id.clone(),
+                trace_context: entry.trace_context.clone(),
                 state: entry.call.state,
                 dialog_id: entry.dialog_id.clone(),
                 media: entry.media.clone(),
@@ -902,6 +940,16 @@ impl CallRegistry {
     #[must_use]
     pub fn pending_audit_records(&self) -> usize {
         self.audit_records.len()
+    }
+
+    /// Returns the bounded trace context associated with one retained call.
+    pub fn trace_context(&self, id: &CallId) -> Result<TraceContext, ApiError> {
+        Ok(self
+            .calls
+            .get(id)
+            .ok_or(ApiError::UnknownCall)?
+            .trace_context
+            .clone())
     }
 
     /// Drains up to `limit` audit records in emission order.
@@ -1029,8 +1077,9 @@ impl CallRegistry {
             );
             return Err(error);
         }
+        let trace_context = self.trace_context(id).ok();
         let result = self.remove_terminal(id);
-        self.record_audit(
+        self.record_audit_with_context(
             principal,
             Some(id),
             AuditOperation::ReclaimTerminal,
@@ -1038,6 +1087,7 @@ impl CallRegistry {
                 |error| AuditOutcome::Rejected(error.code()),
                 |_| AuditOutcome::Succeeded,
             ),
+            trace_context,
         );
         result
     }
@@ -1055,6 +1105,19 @@ impl CallRegistry {
         operation: AuditOperation,
         outcome: AuditOutcome,
     ) {
+        let trace_context =
+            call_id.and_then(|id| self.calls.get(id).map(|entry| entry.trace_context.clone()));
+        self.record_audit_with_context(principal, call_id, operation, outcome, trace_context);
+    }
+
+    fn record_audit_with_context(
+        &mut self,
+        principal: &AuthenticatedPrincipal,
+        call_id: Option<&CallId>,
+        operation: AuditOperation,
+        outcome: AuditOutcome,
+        trace_context: Option<TraceContext>,
+    ) {
         if self.audit_records.len() >= self.config.max_pending_events {
             self.audit_records.pop_front();
         }
@@ -1064,6 +1127,7 @@ impl CallRegistry {
             sequence,
             principal_id: principal.id.clone(),
             call_id: call_id.cloned(),
+            trace_context,
             operation,
             outcome,
         });
@@ -1081,6 +1145,14 @@ impl CallRegistry {
                 return Ok(id);
             }
         }
+    }
+
+    fn allocate_trace_context(&mut self, call_id: &CallId) -> Result<TraceContext, ApiError> {
+        let sequence = self.next_trace_sequence;
+        self.next_trace_sequence = sequence
+            .checked_add(1)
+            .ok_or(ApiError::IdentifierExhausted)?;
+        Ok(TraceContext::from_sequence(call_id.clone(), sequence))
     }
 
     fn reserve_event_id(&self) -> Result<EventId, ApiError> {
@@ -1101,10 +1173,17 @@ impl CallRegistry {
     ) -> LifecycleEvent {
         self.next_event_sequence += 1;
         self.lifecycle_events_total = self.lifecycle_events_total.saturating_add(1);
+        let trace_context = self
+            .calls
+            .get(&call_id)
+            .expect("lifecycle events are emitted for retained calls")
+            .trace_context
+            .clone();
         let event = LifecycleEvent {
             event_id,
             call_id,
             kind,
+            trace_context,
         };
         self.events.push_back(event.clone());
         self.event_history.push_back(event.clone());
@@ -1349,6 +1428,7 @@ mod tests {
         registry.remove_terminal_authorized(&admin, &id).unwrap();
         let record = registry.drain_audit_records(1).unwrap().pop().unwrap();
         assert_eq!(record.call_id, Some(id));
+        assert!(record.trace_context.is_some());
         assert_eq!(record.operation, AuditOperation::ReclaimTerminal);
         assert_eq!(record.outcome, AuditOutcome::Succeeded);
         assert_eq!(registry.pending_audit_records(), 0);
@@ -1504,6 +1584,36 @@ mod tests {
             registry.bind_dialog(&id, dialog.id()),
             Err(ApiError::DialogAlreadyBound)
         );
+    }
+
+    #[test]
+    fn trace_context_is_propagated_through_events_snapshots_and_audit_records() {
+        let mut registry = CallRegistry::new(CallRegistryConfig::default()).unwrap();
+        let id = CallId::new("call_trace").unwrap();
+        let upstream = TraceContext::from_traceparent(
+            id.clone(),
+            "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+        )
+        .unwrap();
+        registry
+            .create_with_trace_context(upstream.clone())
+            .unwrap();
+
+        let created = registry.drain_events(1).unwrap().pop().unwrap();
+        assert_eq!(created.trace_context, upstream);
+        assert_eq!(registry.snapshot(&id).unwrap().trace_context, upstream);
+        assert_eq!(registry.trace_context(&id).unwrap(), upstream);
+
+        let operator = principal(&[ControlPermission::OriginateCalls]);
+        registry
+            .apply_authorized(&operator, &id, CallCommand::InviteReceived)
+            .unwrap();
+        let invited = registry.drain_events(1).unwrap().pop().unwrap();
+        assert_eq!(invited.trace_context, upstream);
+
+        let audit = registry.drain_audit_records(1).unwrap().pop().unwrap();
+        assert_eq!(audit.call_id, Some(id));
+        assert_eq!(audit.trace_context, Some(upstream));
     }
 
     #[test]

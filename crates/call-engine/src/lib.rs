@@ -20,7 +20,7 @@ use call_api::{
     BridgeControlOperation, CallCommand, CallMetrics, CallRegistry, CallRegistryConfig,
     CallSnapshot, NegotiatedAudio,
 };
-use call_core::{CallId, CallState, CommandId, LifecycleEvent};
+use call_core::{CallId, CallState, CommandId, LifecycleEvent, TraceContext};
 use sip_auth::{DigestAuthorization, DigestChallenge, DigestCredentials, DigestError};
 use sip_dialog::{Dialog, DialogConfig, DialogError, DialogRole, DialogState};
 use sip_transaction::{
@@ -331,6 +331,8 @@ impl RestartHandoff {
 pub struct CallDiagnostics {
     /// Stable application-owned call identifier.
     pub call_id: CallId,
+    /// Bounded trace context carrying the call correlation metadata.
+    pub trace_context: TraceContext,
     /// Current high-level lifecycle state.
     pub state: CallState,
     /// Dialog state and bounded sequence metadata, when a dialog exists.
@@ -696,6 +698,11 @@ impl CallEngine {
         Ok(self.registry.snapshot(id)?)
     }
 
+    /// Returns the bounded distributed-trace context associated with a call.
+    pub fn trace_context(&self, id: &CallId) -> Result<TraceContext, EngineError> {
+        Ok(self.registry.trace_context(id)?)
+    }
+
     /// Returns a call snapshot after verifying control-plane read permission.
     pub fn snapshot_authorized(
         &self,
@@ -767,6 +774,7 @@ impl CallEngine {
         };
         Ok(CallDiagnostics {
             call_id: snapshot.id,
+            trace_context: snapshot.trace_context,
             state: snapshot.state,
             dialog,
             media,
@@ -1284,6 +1292,33 @@ impl CallEngine {
         now: Duration,
         reliability: TransportReliability,
     ) -> Result<(CallId, EngineOutput), EngineError> {
+        self.originate_inner(request, destination, now, reliability, None)
+    }
+
+    /// Starts an outbound INVITE with a caller-supplied W3C trace context.
+    ///
+    /// The context must carry the application call ID that will be registered.
+    /// This lets an API or AI gateway hand off an upstream trace without
+    /// exposing protocol identifiers or retaining unbounded baggage.
+    pub fn originate_with_trace_context(
+        &mut self,
+        request: SipRequest,
+        destination: SocketAddr,
+        now: Duration,
+        reliability: TransportReliability,
+        trace_context: TraceContext,
+    ) -> Result<(CallId, EngineOutput), EngineError> {
+        self.originate_inner(request, destination, now, reliability, Some(trace_context))
+    }
+
+    fn originate_inner(
+        &mut self,
+        request: SipRequest,
+        destination: SocketAddr,
+        now: Duration,
+        reliability: TransportReliability,
+        trace_context: Option<TraceContext>,
+    ) -> Result<(CallId, EngineOutput), EngineError> {
         if request.method != SipMethod::Invite {
             return Err(EngineError::UnsupportedRequest);
         }
@@ -1299,7 +1334,10 @@ impl CallEngine {
             ClientTransaction::new(request.clone(), now, reliability, self.config.timers)?;
         self.ensure_event_capacity(2)?;
 
-        let id = self.registry.create()?;
+        let id = match trace_context {
+            Some(trace_context) => self.registry.create_with_trace_context(trace_context)?,
+            None => self.registry.create()?,
+        };
         self.registry.apply(&id, CallCommand::InviteReceived)?;
         self.registry.bind_dialog(&id, dialog.id())?;
         self.dialogs.insert(id.clone(), dialog);
@@ -6329,5 +6367,49 @@ mod tests {
             engine.snapshot(&call_id).unwrap().state,
             CallState::Inviting
         );
+    }
+
+    #[test]
+    fn supplied_trace_context_is_visible_on_engine_events_and_diagnostics() {
+        let mut engine = CallEngine::new(EngineConfig::default()).unwrap();
+        let call_id = CallId::new("call_trace-engine").unwrap();
+        let context = TraceContext::from_traceparent(
+            call_id.clone(),
+            "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+        )
+        .unwrap();
+
+        let (originated, output) = engine
+            .originate_with_trace_context(
+                invite(
+                    "trace-engine-branch",
+                    "trace-engine-sip-call",
+                    "<sip:bob@example.com>",
+                    "1 INVITE",
+                ),
+                address(5060),
+                Duration::ZERO,
+                TransportReliability::Unreliable,
+                context.clone(),
+            )
+            .unwrap();
+        assert_eq!(originated, call_id);
+        assert_eq!(output.events().len(), 2);
+        assert!(
+            output
+                .events()
+                .iter()
+                .all(|event| event.trace_context == context)
+        );
+        assert_eq!(engine.trace_context(&call_id).unwrap(), context);
+        assert_eq!(engine.diagnostics(&call_id).unwrap().trace_context, context);
+
+        let child = context
+            .child(call_core::SpanId::from_sequence(99))
+            .unwrap()
+            .span("media.forward")
+            .unwrap();
+        assert_eq!(child.context().call_id(), &call_id);
+        assert_eq!(child.operation(), "media.forward");
     }
 }
