@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-120 — PR #45 lifecycle-soak implementation locally validated
-**Last checkpoint (UTC):** 2026-09-02T00:23:52Z
+**Current checkpoint:** CP-121 — PR #45 hosted validation green; dedicated soak dispatched
+**Last checkpoint (UTC):** 2026-09-02T00:27:57Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Repeated mixed lifecycle soak, memory stability, and capacity reuse<br>
-**Next resume action:** Publish the validated PR #45 head with an exact SHA-pinned force-with-lease, then verify hosted checks and the dedicated lifecycle soak
+**Next resume action:** Verify the dedicated lifecycle-soak run on the published PR #45 head, then reconcile PR #46 onto the hosted-green stack
 **Active PR:** [#45](https://github.com/W3Mirror/asterisk/pull/45); branch `lifecycle-soak` targets `combined-load-smoke`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-45`
@@ -6304,6 +6304,27 @@ blockers: Hosted PR checks are pending publication; larger combined media capaci
 next_action: Publish `c7b8671424f968649c327fdb255f554de39418f6` with an exact SHA-pinned force-with-lease over remote `0689d3b7b13fc2e25131fbd7cc3fa09593dbd369`, then verify the fresh hosted PR run and dispatch the dedicated `lifecycle_soak=true` workflow
 rollback: Restore `backup/lifecycle-soak-before-restack-20260902-0015` if publication must be abandoned; keep all signaling, media, and call routing on Asterisk and do not enable Rust traffic
 notes: Every implementation PR carries focused tests for each affected crate/module. The hosted pull_request workflow runs the complete ordinary locked workspace suite on `ubuntu-latest`, not an affected-module-only subset; pushes to `aistack/main` repeat that complete ordinary suite. Scheduled/manual workflows remain the gate for extended capacity, long soak, differential, credentialed-provider, and live real-time-call evidence. Docker remains limited to the pinned SIPp dependency.
+~~~
+
+### CP-121 — PR #45 hosted validation green; dedicated soak dispatched
+
+~~~yaml
+checkpoint_id: CP-121
+recorded_at_utc: 2026-09-02T00:27:57Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Repeated mixed lifecycle soak, memory stability, and capacity reuse
+scope: Verify the published lifecycle-soak PR on hosted CI and start its explicit long-duration gate
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-45
+branch: lifecycle-soak
+base_branch: combined-load-smoke
+pr: "#45 https://github.com/W3Mirror/asterisk/pull/45"
+head_sha: f706d88358034b08445075a51e217851dde1ca90
+evidence: Published the validated head with an exact SHA-pinned force-with-lease over remote `0689d3b7b13fc2e25131fbd7cc3fa09593dbd369`; GitHub reports PR #45 OPEN and MERGEABLE. Hosted PR run [33575238112](https://github.com/W3Mirror/asterisk/actions/runs/33575238112) passed Workspace checks, Protocol fuzz checks, and Dependency audit on hosted `ubuntu-latest`; Workspace checks passed formatting, all locked workspace tests, the three pinned SIPp scenarios, signaling/media/WebSocket/combined reclamation smokes, the short mixed-lifecycle soak, and workspace Clippy. The schedule-only capacity and two-hour soak jobs correctly skipped. Dedicated manual run [33575431782](https://github.com/W3Mirror/asterisk/actions/runs/33575431782) was dispatched with `lifecycle_soak=true` on the exact same head and is queued.
+blockers: The dedicated two-hour soak and larger combined media capacity remain pending, along with sanitized captures, provider/Asterisk interoperability, rollback proof, and production evidence; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Await the completion of manual run [33575431782](https://github.com/W3Mirror/asterisk/actions/runs/33575431782), verify its resource-stability evidence, then reconcile PR #46 (`outbound-digest-auth`) onto this hosted-green head
+rollback: Keep all signaling, media, and call routing on Asterisk and do not enable Rust traffic; restore `backup/lifecycle-soak-before-restack-20260902-0015` if PR #45 publication must be rolled back
+notes: Focused affected-module tests are mandatory PR content, but the current hosted pull_request workflow runs the complete ordinary workspace suite rather than a changed-module-only subset. Pushes to `aistack/main` repeat that complete ordinary suite; long-running, capacity, credentialed-provider, and live real-time-call checks remain scheduled/manual gates. Docker remains limited to the pinned SIPp dependency.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
