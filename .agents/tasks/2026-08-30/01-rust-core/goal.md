@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**  
-**Current checkpoint:** CP-018 — Validate hosted main-push test execution after contract update
-**Last checkpoint (UTC):** 2026-09-02T02:25:07Z
+**Current checkpoint:** CP-019 — Confirm PR-focused coverage and full main-push suite
+**Last checkpoint (UTC):** 2026-09-02T04:33:58Z
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
 **Active milestone:** Milestone 1 — Scope Baseline  
 **Next resume action:** Reconcile PR #1 with the current `aistack/main` head, resolve the goal-ledger conflict, run focused documentation checks, and publish the updated branch
@@ -1904,6 +1904,13 @@ workspace and offline test suite for the integrated branch. Neither event means
 that scheduled, multi-hour, capacity, credentialed-provider, or live
 real-time-call checks have run; those remain explicit scheduled/manual gates.
 
+In short: a PR must carry focused tests for each affected crate/module, and
+those tests run inside the PR's complete workspace test invocation. A push to
+`aistack/main` then runs that same complete ordinary workspace suite against the
+integrated branch. "All tests" means the ordinary offline workspace checks; it
+does not include the separate scheduled/manual long-running, capacity,
+credentialed-provider, or live-call gates.
+
 ---
 
 # 53. Engineering Rules
@@ -2472,6 +2479,27 @@ blockers: Production deployment identity, effective configuration, provider cred
 next_action: Reconcile PR #1 with the current aistack/main head, resolve the goal-ledger conflict, run focused documentation checks, and publish the updated branch
 rollback: Asterisk remains the active/fallback engine; no routing was changed
 notes: Once a Rust workspace exists on a stack branch, the same pull_request and aistack/main push triggers will execute the ordinary format, workspace-test, and Clippy checks; focused affected-module tests remain required PR content, while extended and credentialed/live suites stay scheduled or manual.
+```
+
+### CP-019 — Confirm PR-focused coverage and full main-push suite
+
+```yaml
+checkpoint_id: CP-019
+recorded_at_utc: 2026-09-02T04:33:58Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 1 — Scope Baseline
+scope: Make the PR-focused-test and main-push-full-suite rule explicit in the goal
+worktree: /home/ashutosh/PROJECTS/w3mirror/asterisk
+branch: aistack/main
+base_branch: aistack/main
+pr: none
+head_sha: 5b7fc6d61
+evidence: The goal now states that every implementation PR must include focused tests for each affected crate/module; hosted PR CI executes those tests as part of `cargo test --workspace --locked` rather than selecting only changed modules. A push to `aistack/main` repeats the complete ordinary hosted workspace suite. Scheduled/manual long-running, capacity, credentialed-provider, and live-call gates remain separate.
+blockers: Production deployment identity, effective configuration, provider credentials, and sanitized inbound/outbound captures remain unavailable; PR #1 must be reconciled before downstream stack work
+next_action: Commit and publish this goal clarification, then reconcile PR #1 with the current aistack/main head
+rollback: Asterisk remains the active/fallback engine; no routing was changed
+notes: “All tests” on a main push means all ordinary offline workspace checks available on that branch, not every extended or credentialed gate.
 ```
 
 ### Checkpoint template
