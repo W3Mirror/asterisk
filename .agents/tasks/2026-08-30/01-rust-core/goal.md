@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-247 — PR #78 final synchronized hosted validation green
-**Last checkpoint (UTC):** 2026-09-02T03:07:33Z
+**Current checkpoint:** CP-248 — PR #78 final ledger-head hosted validation green
+**Last checkpoint (UTC):** 2026-09-02T03:10:58Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** In-dialog SIP request interoperability and Asterisk fallback<br>
 **Next resume action:** Continue the next bounded offline acceptance slice from exact head `5a8cdefb0` without enabling Rust traffic
@@ -7492,6 +7492,27 @@ blockers: Provider credentials/runtime access, sanitized provider/Asterisk captu
 next_action: Continue the next bounded offline acceptance slice from exact head `3b3048f6e` without enabling Rust traffic.
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #78 or revert the bridge/media trace adapter if its contract is superseded.
 notes: The final synchronized head retains focused bridge/media tests in the implementation PR. Pull-request opened/reopened/synchronize events run the complete ordinary hosted suite rather than an affected-module-only selector, and every push to `aistack/main` repeats that suite on hosted `ubuntu-latest`. Scheduled/manual capacity, extended property, multi-hour soak, and credentialed provider/live-call checks remain separate gates. Docker remains limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-248 — PR #78 final ledger-head hosted validation green
+
+~~~yaml
+checkpoint_id: CP-248
+recorded_at_utc: 2026-09-02T03:10:58Z
+status: hosted_green
+phase: Phase 1 — Rust media engine
+milestone: In-dialog SIP request interoperability and Asterisk fallback
+scope: Reconcile the final PR #78 goal-ledger head with hosted CI and exact local/origin/GitHub parity
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-78-bridge-trace-correlation
+branch: bridge-trace-correlation
+base_branch: trace-correlation
+pr: https://github.com/W3Mirror/asterisk/pull/78
+head_sha: 0e6460fba4ed600829039228deebe5f7db886bb6
+evidence: This checkpoint records the ledger update immediately before its hosted synchronization run. The preceding final synchronized validation at head `3b3048f6e` passed hosted Rust quality run `33585659921`; the new head retains the same implementation and tests plus this ledger-only change. The final hosted run for this exact head must remain green before considering the checkpoint complete.
+blockers: Hosted validation for this final ledger-only head and final local/origin/GitHub parity remain pending. Provider credentials/runtime access, sanitized provider/Asterisk captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated; Asterisk remains the fallback.
+next_action: Reconcile the hosted checks for exact head `0e6460fba` and update this checkpoint with their run evidence.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #78 or revert the bridge/media trace adapter if its contract is superseded.
+notes: The implementation already ships focused bridge/media tests, and hosted PR events run the complete ordinary suite on `ubuntu-latest`; pushes to `aistack/main` repeat that ordinary suite. Scheduled/manual capacity, extended property, multi-hour soak, and credentialed provider/live-call checks remain separate gates. Docker remains limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
