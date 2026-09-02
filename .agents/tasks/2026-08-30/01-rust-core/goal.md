@@ -2494,7 +2494,7 @@ worktree: /home/ashutosh/PROJECTS/w3mirror/asterisk
 branch: aistack/main
 base_branch: aistack/main
 pr: none
-head_sha: 5b7fc6d61
+head_sha: c1b614ad4
 evidence: The goal now states that every implementation PR must include focused tests for each affected crate/module; hosted PR CI executes those tests as part of `cargo test --workspace --locked` rather than selecting only changed modules. A push to `aistack/main` repeats the complete ordinary hosted workspace suite. Scheduled/manual long-running, capacity, credentialed-provider, and live-call gates remain separate.
 blockers: Production deployment identity, effective configuration, provider credentials, and sanitized inbound/outbound captures remain unavailable; PR #1 must be reconciled before downstream stack work
 next_action: Commit and publish this goal clarification, then reconcile PR #1 with the current aistack/main head
