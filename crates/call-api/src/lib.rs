@@ -466,4 +466,61 @@ mod tests {
         registry.drain_events(1).unwrap();
         assert_eq!(registry.create().unwrap().as_str(), "call_2");
     }
+
+    #[test]
+    fn lifecycle_commands_emit_ordered_events_and_reclaim_failed_calls() {
+        let mut registry = CallRegistry::new(CallRegistryConfig::default()).unwrap();
+        let id = registry.create().unwrap();
+        registry.drain_events(1).unwrap();
+
+        let expected = [
+            (CallCommand::InviteReceived, CallEventKind::InviteReceived),
+            (CallCommand::EarlyMedia, CallEventKind::EarlyMedia),
+            (CallCommand::Ringing, CallEventKind::Ringing),
+            (CallCommand::Answer, CallEventKind::Answered),
+            (CallCommand::MediaStarted, CallEventKind::MediaStarted),
+            (CallCommand::BeginTransfer, CallEventKind::Transferring),
+            (CallCommand::CompleteTransfer, CallEventKind::Transferred),
+            (CallCommand::Hangup, CallEventKind::Hangup),
+        ];
+        for (command, kind) in expected {
+            let event = registry.apply(&id, command).unwrap().unwrap();
+            assert_eq!(event.call_id, id);
+            assert_eq!(event.kind, kind);
+        }
+        assert_eq!(registry.apply(&id, CallCommand::End).unwrap(), None);
+        assert_eq!(registry.snapshot(&id).unwrap().state, CallState::Ended);
+
+        let failed_id = registry.create().unwrap();
+        registry.drain_events(1).unwrap();
+        registry
+            .apply(&failed_id, CallCommand::InviteReceived)
+            .unwrap();
+        registry.apply(&failed_id, CallCommand::Fail).unwrap();
+        assert_eq!(
+            registry.remove_terminal(&failed_id).unwrap().state,
+            CallState::Failed
+        );
+        assert_eq!(registry.snapshot(&failed_id), Err(ApiError::UnknownCall));
+    }
+
+    #[test]
+    fn custom_ids_reject_duplicates_and_list_in_identifier_order() {
+        let mut registry = CallRegistry::new(CallRegistryConfig {
+            max_calls: 2,
+            max_pending_events: 4,
+        })
+        .unwrap();
+        let second = CallId::new("call_zulu").unwrap();
+        let first = CallId::new("call_alpha").unwrap();
+        registry.create_with_id(second.clone()).unwrap();
+        registry.create_with_id(first.clone()).unwrap();
+        assert_eq!(
+            registry.create_with_id(first.clone()),
+            Err(ApiError::DuplicateCall)
+        );
+        let listed = registry.list(2).unwrap();
+        assert_eq!(listed[0].id, first);
+        assert_eq!(listed[1].id, second);
+    }
 }
