@@ -280,6 +280,12 @@ impl CallEngine {
         self.client_transactions.len() + self.server_transactions.len()
     }
 
+    /// Returns the number of retained SIP dialogs.
+    #[must_use]
+    pub fn dialog_count(&self) -> usize {
+        self.dialogs.len()
+    }
+
     /// Returns a stable call snapshot.
     pub fn snapshot(&self, id: &CallId) -> Result<CallSnapshot, EngineError> {
         Ok(self.registry.snapshot(id)?)
