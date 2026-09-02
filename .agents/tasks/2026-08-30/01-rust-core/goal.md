@@ -2,10 +2,10 @@
 
 **Status: In Progress**  
 **Current checkpoint:** CP-021 — Reconcile PR #2 with current PR #1 base
-**Last checkpoint (UTC):** 2026-09-02T03:35:00Z
+**Last checkpoint (UTC):** 2026-09-02T03:34:38Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Milestone 2 — Rust RTP Core
-**Next resume action:** Run focused Rust foundation tests and publish the reconciled PR #2 branch
+**Next resume action:** Publish the reconciled PR #2 branch and verify hosted checks plus GitHub mergeability
 **Active PR:** [#2](https://github.com/W3Mirror/asterisk/pull/2); foundation branch `rust-core-foundation` targets `sip-rtp-engine-rust`  
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-2-rust-foundation`  
@@ -2118,7 +2118,7 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 | Workstream | Status | Evidence / checkpoint | PR | Next action |
 | --- | --- | --- | --- | --- |
 | Phase 0 — current Asterisk surface | in_progress | CP-020; PR #1 hosted run 33587135564 passed and GitHub reports CLEAN/MERGEABLE at `65e730ae3` | #1 | Keep the verified Asterisk inventory and production-evidence gate in force |
-| Phase 1 — Rust media engine | in_progress | CP-021; PR #2 is being reconciled onto PR #1 head `08d1a4dab` | [#2](https://github.com/W3Mirror/asterisk/pull/2) | Run focused Rust foundation tests and publish the reconciled branch |
+| Phase 1 — Rust media engine | in_progress | CP-021; merge commit `cda21241b` reconciles PR #2 onto PR #1 head `08d1a4dab`; focused foundation tests pass | [#2](https://github.com/W3Mirror/asterisk/pull/2) | Publish the reconciled branch and verify hosted checks |
 | Phase 2 — SIP edge shadow mode | not_started | — | — | Build sanitized replay and comparison fixtures |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
 | Phase 4 — expanded provider coverage | not_started | — | — | Add one provider compatibility suite per rollout target |
@@ -2661,6 +2661,27 @@ blockers: Production deployment identity, effective configuration, provider cred
 next_action: Update PR #2's base branch in stack order, run its focused and hosted checks, and record the resulting head and mergeability
 rollback: Asterisk remains the active/fallback engine; no routing was changed
 notes: PR #1 remains documentation-only. Its detailed Phase 0 inventory and the goal's focused-test/complete-hosted-suite contract are preserved; no Rust workspace, provider configuration, production routing, or live traffic was changed.
+```
+
+### CP-021 — Reconcile PR #2 with current PR #1 base
+
+```yaml
+checkpoint_id: CP-021
+recorded_at_utc: 2026-09-02T03:31:45Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Milestone 2 — Rust RTP Core
+scope: Merge the current PR #1 head into PR #2 and validate the provider-neutral Rust foundation
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-2-rust-foundation
+branch: rust-core-foundation
+base_branch: sip-rtp-engine-rust
+pr: "#2 https://github.com/W3Mirror/asterisk/pull/2"
+head_sha: cda21241b6ef66b947db3999463dc0f6adf354b4
+evidence: Merged `origin/sip-rtp-engine-rust` at `08d1a4dab` into the clean PR #2 worktree and resolved the goal-ledger conflict while retaining PR #2's foundation history and the current PR/main hosted-test contract. The workspace contains the eight foundation crates (`call-core`, `dtmf`, `media-core`, `rtcp`, `rtp`, `sdp`, `sip-parser`, and `sip-types`). Focused `cargo fmt --all -- --check` and `cargo test -p call-core -p sip-types -p sip-parser -p sdp -p rtp -p rtcp -p dtmf -p media-core --locked` pass (29 tests plus doc-tests), and `cargo clippy --workspace --all-targets --locked` exits 0 with the existing documentation/pedantic warning baseline. No fuzz workspace or SIPp integration script exists on this foundation layer, so those checks are not applicable here.
+blockers: Hosted publication/validation and downstream sequential revalidation remain pending; production deployment identity, effective configuration, provider credentials, sanitized captures, live interoperability, and Rust traffic enablement remain unavailable
+next_action: Publish PR #2 head `cda21241b` and verify hosted checks plus GitHub mergeability
+rollback: Asterisk remains the active/fallback engine; no routing was changed
+notes: This is the first Rust workspace layer, so focused crate tests ship with the implementation and the hosted ordinary workspace invocation will exercise all eight crates. Extended property, capacity, long-running soak, credentialed provider, and live-call gates remain scheduled/manual or later-phase checks.
 ```
 
 ### Checkpoint template
