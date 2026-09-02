@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**  
-**Current checkpoint:** CP-016 — Confirm hosted PR test contract on the implementation stack
-**Last checkpoint (UTC):** 2026-09-01T13:03:43Z
+**Current checkpoint:** CP-017 — Record implementation test scope and hosted event semantics
+**Last checkpoint (UTC):** 2026-09-02T02:23:15Z
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
 **Active milestone:** Milestone 1 — Scope Baseline  
 **Next resume action:** Reconcile PR #1 with the current `aistack/main` head, resolve the goal-ledger conflict, run focused documentation checks, and publish the updated branch
@@ -2430,6 +2430,27 @@ blockers: Production deployment identity, effective configuration, provider cred
 next_action: Reconcile PR #1 with the current aistack/main head, resolve the goal-ledger conflict, run focused documentation checks, and publish the updated branch
 rollback: Asterisk remains the active/fallback engine; no routing was changed
 notes: Focused tests for every affected crate/module remain required in the implementation PR; every push to aistack/main repeats the complete ordinary offline workspace suite, while credentialed, long-running, capacity, and live-provider checks remain scheduled/manual gates.
+```
+
+### CP-017 — Record implementation test scope and hosted event semantics
+
+```yaml
+checkpoint_id: CP-017
+recorded_at_utc: 2026-09-02T02:23:15Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 1 — Scope Baseline
+scope: Record the expanded non-real-time test obligations and verify PR/main hosted workflow semantics
+worktree: /home/ashutosh/PROJECTS/w3mirror/asterisk
+branch: aistack/main
+base_branch: aistack/main
+pr: none
+head_sha: 364dc42ae8ec0a04b77bc5d4abce8d4d78bb99ec
+evidence: goal.md section 52 requires each implementation PR to ship applicable unit, state-machine, contract/integration, deterministic fixture/replay, negative/security, property/fuzz, resilience, capacity/reclamation, differential, and deployment/rollback tests alongside the changed code. .github/workflows/rust-quality.yml triggers on pull_request (opened, reopened, and synchronize by default) and push to aistack/main, uses hosted ubuntu-latest runners, and runs cargo fmt, cargo test --workspace --locked, and cargo clippy when a Rust workspace is present; current aistack/main has no Cargo.toml, fuzz/Cargo.toml, or Cargo.lock, so those checks are conditionally skipped on this stack layer.
+blockers: Production deployment identity, effective configuration, provider credentials, and sanitized inbound/outbound captures remain unavailable; PR #1 must be reconciled before downstream stack work
+next_action: Reconcile PR #1 with the current aistack/main head, resolve the goal-ledger conflict, run focused documentation checks, and publish the updated branch
+rollback: Asterisk remains the active/fallback engine; no routing was changed
+notes: PR CI does not infer or select only changed modules: focused affected-module tests are required PR content and execute inside the complete ordinary workspace run. A push to aistack/main repeats that ordinary offline workspace suite; scheduled/manual capacity, long-running soak, credentialed-provider, and live real-time checks are separate gates.
 ```
 
 ### Checkpoint template
