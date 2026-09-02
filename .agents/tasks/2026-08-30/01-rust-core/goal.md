@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-121 — PR #45 hosted validation green; dedicated soak dispatched
-**Last checkpoint (UTC):** 2026-09-02T00:27:57Z
+**Current checkpoint:** CP-122 — PR #45 hosted validation green; dedicated soak pending
+**Last checkpoint (UTC):** 2026-09-02T00:31:59Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Repeated mixed lifecycle soak, memory stability, and capacity reuse<br>
-**Next resume action:** Verify the dedicated lifecycle-soak run on the published PR #45 head, then reconcile PR #46 onto the hosted-green stack
+**Next resume action:** Dispatch and verify the dedicated lifecycle-soak run on the final published PR #45 head, then reconcile PR #46 onto the hosted-green stack
 **Active PR:** [#45](https://github.com/W3Mirror/asterisk/pull/45); branch `lifecycle-soak` targets `combined-load-smoke`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-45`
@@ -6325,6 +6325,27 @@ blockers: The dedicated two-hour soak and larger combined media capacity remain 
 next_action: Await the completion of manual run [33575431782](https://github.com/W3Mirror/asterisk/actions/runs/33575431782), verify its resource-stability evidence, then reconcile PR #46 (`outbound-digest-auth`) onto this hosted-green head
 rollback: Keep all signaling, media, and call routing on Asterisk and do not enable Rust traffic; restore `backup/lifecycle-soak-before-restack-20260902-0015` if PR #45 publication must be rolled back
 notes: Focused affected-module tests are mandatory PR content, but the current hosted pull_request workflow runs the complete ordinary workspace suite rather than a changed-module-only subset. Pushes to `aistack/main` repeat that complete ordinary suite; long-running, capacity, credentialed-provider, and live real-time-call checks remain scheduled/manual gates. Docker remains limited to the pinned SIPp dependency.
+~~~
+
+### CP-122 — PR #45 hosted validation green; dedicated soak pending
+
+~~~yaml
+checkpoint_id: CP-122
+recorded_at_utc: 2026-09-02T00:31:59Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Repeated mixed lifecycle soak, memory stability, and capacity reuse
+scope: Keep the goal ledger aligned with the hosted-green documentation head and schedule the long-duration lifecycle gate
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-45
+branch: lifecycle-soak
+base_branch: combined-load-smoke
+pr: "#45 https://github.com/W3Mirror/asterisk/pull/45"
+head_sha: becb251dad8aa6387e838a84ac32a53754a1ecd2
+evidence: Hosted PR run [33575473569](https://github.com/W3Mirror/asterisk/actions/runs/33575473569) passed Workspace checks, Protocol fuzz checks, and Dependency audit on hosted `ubuntu-latest` for head `becb251dad8aa6387e838a84ac32a53754a1ecd2`; Workspace checks passed formatting, all locked workspace tests, the three pinned SIPp scenarios, signaling/media/WebSocket/combined reclamation smokes, the short mixed-lifecycle soak, and workspace Clippy. The schedule-only capacity and two-hour soak jobs correctly skipped. Manual run attempts on earlier heads were canceled because the documentation checkpoint changed the PR head; dispatch the dedicated soak after this checkpoint is published.
+blockers: The dedicated two-hour soak and larger combined media capacity remain pending, along with sanitized captures, provider/Asterisk interoperability, rollback proof, and production evidence; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Publish this checkpoint, dispatch the dedicated `lifecycle_soak=true` workflow on its exact head, and verify its resource-stability evidence before reconciling PR #46 (`outbound-digest-auth`)
+rollback: Keep all signaling, media, and call routing on Asterisk and do not enable Rust traffic; restore `backup/lifecycle-soak-before-restack-20260902-0015` if PR #45 publication must be rolled back
+notes: Focused tests for every affected crate/module are mandatory PR content. Current pull-request and `aistack/main` push events run the complete ordinary hosted workspace suite, not changed-module-only tests; scheduled/manual events provide longer, capacity, differential, credentialed-provider, and live real-time-call gates. Docker remains limited to the pinned SIPp dependency.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
