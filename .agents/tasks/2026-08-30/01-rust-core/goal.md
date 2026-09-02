@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**  
-**Current checkpoint:** CP-019 — Confirm PR-focused coverage and full main-push suite
-**Last checkpoint (UTC):** 2026-09-02T04:33:58Z
+**Current checkpoint:** CP-020 — Record hosted main-push billing blocker
+**Last checkpoint (UTC):** 2026-09-02T04:35:51Z
 **Active phase:** Phase 0 — Document Current Asterisk Usage  
 **Active milestone:** Milestone 1 — Scope Baseline  
 **Next resume action:** Reconcile PR #1 with the current `aistack/main` head, resolve the goal-ledger conflict, run focused documentation checks, and publish the updated branch
@@ -2500,6 +2500,27 @@ blockers: Production deployment identity, effective configuration, provider cred
 next_action: Commit and publish this goal clarification, then reconcile PR #1 with the current aistack/main head
 rollback: Asterisk remains the active/fallback engine; no routing was changed
 notes: “All tests” on a main push means all ordinary offline workspace checks available on that branch, not every extended or credentialed gate.
+```
+
+### CP-020 — Record hosted main-push billing blocker
+
+```yaml
+checkpoint_id: CP-020
+recorded_at_utc: 2026-09-02T04:35:51Z
+status: blocked
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 1 — Scope Baseline
+scope: Verify the hosted main-push trigger after publishing the test-gate clarification
+worktree: /home/ashutosh/PROJECTS/w3mirror/asterisk
+branch: aistack/main
+base_branch: aistack/main
+pr: none
+head_sha: af4bd359e
+evidence: Hosted Rust quality run 33591368440 (https://github.com/W3Mirror/asterisk/actions/runs/33591368440) triggered for the pushed head, but all three jobs were rejected before startup with GitHub's annotation: “The job was not started because your account is locked due to a billing issue.” No source or local-test failure was reported.
+blockers: GitHub-hosted Actions billing lock prevents hosted validation from starting; production deployment identity, effective configuration, provider credentials, and sanitized inbound/outbound captures also remain unavailable
+next_action: Resolve the GitHub Actions billing lock, rerun hosted validation for af4bd359e, then reconcile PR #1 with the current aistack/main head
+rollback: Asterisk remains the active/fallback engine; no routing was changed
+notes: The workflow contract remains hosted ubuntu-latest; do not switch to self-hosted runners or bypass CI to work around the account lock.
 ```
 
 ### Checkpoint template
