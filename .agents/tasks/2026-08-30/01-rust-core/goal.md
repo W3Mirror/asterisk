@@ -1,11 +1,11 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-134 — PR #52 PRACK retransmission restacked and locally green
-**Last checkpoint (UTC):** 2026-09-02T01:34:00Z
+**Current checkpoint:** CP-138 — PR #52 final hosted validation green
+**Last checkpoint (UTC):** 2026-09-02T01:32:00Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Provider authentication and route-runtime integration<br>
-**Next resume action:** Publish PR #52, verify its hosted checks, then continue SIP transport security
+**Next resume action:** Continue SIP transport security with PR #53 while the dedicated lifecycle soak remains pending
 **Active PR:** [#52](https://github.com/W3Mirror/asterisk/pull/52); branch `prack-retransmission` targets `prack-runtime`
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-52`
@@ -6612,6 +6612,27 @@ rollback: Restore `backup/prack-retransmission-before-restack-20260902-0130` if 
 notes: Every implementation PR carries focused tests for each affected crate/module. Pull-request and `aistack/main` push events run the complete ordinary hosted workspace suite rather than changed-module-only tests; scheduled/manual events provide longer, capacity, differential, credentialed-provider, and live real-time-call gates. Docker remains limited to the pinned SIPp dependency.
 ```
 
+### CP-135 — PR #50 final documentation head hosted validation green
+
+```yaml
+checkpoint_id: CP-135
+recorded_at_utc: 2026-09-02T01:30:00Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Provider authentication, routing, and safe fallback
+scope: Reconcile the final PR #50 documentation head with hosted CI evidence
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-49
+branch: provider-auth-context
+base_branch: provider-route-runtime
+pr: "#50 https://github.com/W3Mirror/asterisk/pull/50"
+head_sha: b54ecd4320ac07fa444a5809797b0089e82a7504
+evidence: Hosted Rust quality run [33578986395](https://github.com/W3Mirror/asterisk/actions/runs/33578986395) completed successfully for the exact final documentation head on hosted `ubuntu-latest`; workspace, protocol fuzz, and dependency audit jobs passed, while schedule-only capacity and lifecycle-soak jobs skipped correctly. GitHub reports PR #50 OPEN, CLEAN, and MERGEABLE against `provider-route-runtime`.
+blockers: The dedicated two-hour lifecycle soak [33576067383](https://github.com/W3Mirror/asterisk/actions/runs/33576067383) remains pending, along with larger combined media capacity, sanitized captures, provider/Asterisk interoperability, rollback proof, and production evidence; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Continue with the next bounded SIP/security slice without enabling Rust traffic
+rollback: Restore `backup/provider-auth-context-before-restack-20260902-0115` if the provider-auth stack must roll back; keep all signaling, media, and call routing on Asterisk and do not enable Rust traffic
+notes: PR #49 is the unrelated `audit-stack-hardening` branch. Every implementation PR carries focused tests for each affected crate/module. Pull-request and `aistack/main` push events run the complete ordinary hosted workspace suite rather than changed-module-only tests; scheduled/manual events provide longer, capacity, differential, credentialed-provider, and live real-time-call gates. Docker remains limited to the pinned SIPp dependency.
+```
+
 ### CP-136 — provider-policy Digest credential resolution locally green
 
 ~~~yaml
@@ -6632,6 +6653,48 @@ next_action: Commit and push the implementation, tests, dependency wiring, and C
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #47 or revert the provider-policy credential resolver integration if its contract is superseded
 notes: Relevant tests ship with the behavior they cover. Every pull request and push to aistack/main runs the complete ordinary hosted suite rather than affected-module-only selection. All workflow runners remain hosted ubuntu-latest, and Docker remains limited to pinned SIPp inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
+
+### CP-137 — PR #51 final documentation head hosted validation green
+
+```yaml
+checkpoint_id: CP-137
+recorded_at_utc: 2026-09-02T01:28:26Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Reliable provisional SIP signaling
+scope: Confirm hosted CI remains green on the final PR #51 documentation head
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-51
+branch: prack-runtime
+base_branch: provider-auth-context
+pr: "#51 https://github.com/W3Mirror/asterisk/pull/51"
+head_sha: 5f67e2c34e76832194956441b80afe814b7a23fe
+evidence: Hosted Rust quality run [33579338693](https://github.com/W3Mirror/asterisk/actions/runs/33579338693) completed successfully for the exact final documentation head on hosted `ubuntu-latest`. Workspace checks passed formatting, all locked workspace tests, the three pinned SIPp scenarios, signaling/media/WebSocket/combined reclamation smokes, the short mixed-lifecycle soak, and workspace Clippy; Protocol fuzz checks and Dependency audit passed. Scheduled capacity and two-hour lifecycle jobs correctly skipped. GitHub reports PR #51 OPEN, CLEAN, and MERGEABLE against `provider-auth-context`.
+blockers: The dedicated two-hour lifecycle soak [33576067383](https://github.com/W3Mirror/asterisk/actions/runs/33576067383) remains pending, along with larger combined media capacity, sanitized captures, provider/Asterisk interoperability, rollback proof, and production evidence; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Continue from the hosted-green PR #51 head with PR #52's bounded reliable-provisional retransmission slice without enabling Rust traffic
+rollback: Restore `backup/prack-runtime-before-restack-20260902-0125` if the PRACK stack must roll back; keep all signaling, media, and call routing on Asterisk and do not enable Rust traffic
+notes: Every implementation PR carries focused tests for each affected crate/module. Pull-request and `aistack/main` push events run the complete ordinary hosted workspace suite rather than changed-module-only tests; scheduled/manual events provide longer, capacity, differential, credentialed-provider, and live real-time-call gates. Docker remains limited to the pinned SIPp dependency.
+```
+
+### CP-138 — PR #52 hosted validation green
+
+```yaml
+checkpoint_id: CP-138
+recorded_at_utc: 2026-09-02T01:29:39Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Reliable provisional SIP signaling
+scope: Verify hosted CI remains green on the published PRACK retransmission head
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-52
+branch: prack-retransmission
+base_branch: prack-runtime
+pr: "#52 https://github.com/W3Mirror/asterisk/pull/52"
+head_sha: c36737665bf9e0394a974ac128eea454b38b3e14
+evidence: Hosted Rust quality run [33579420073](https://github.com/W3Mirror/asterisk/actions/runs/33579420073) completed successfully for the exact published head on hosted `ubuntu-latest`. Workspace checks passed formatting, all locked workspace tests, the three pinned SIPp scenarios, signaling/media/WebSocket/combined reclamation smokes, the short mixed-lifecycle soak, and workspace Clippy; Protocol fuzz checks and Dependency audit passed. Scheduled capacity and two-hour lifecycle jobs correctly skipped. GitHub reports PR #52 OPEN, CLEAN, and MERGEABLE against `prack-runtime`.
+blockers: The dedicated two-hour lifecycle soak [33576067383](https://github.com/W3Mirror/asterisk/actions/runs/33576067383) remains pending, along with larger combined media capacity, sanitized captures, provider/Asterisk interoperability, rollback proof, and production evidence; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Continue SIP transport security with PR #53 from this hosted-green head without enabling Rust traffic
+rollback: Restore `backup/prack-retransmission-before-restack-20260902-0130` if the PRACK retransmission stack must roll back; keep all signaling, media, and call routing on Asterisk and do not enable Rust traffic
+notes: Every implementation PR carries focused tests for each affected crate/module. Pull-request and `aistack/main` push events run the complete ordinary hosted workspace suite rather than changed-module-only tests; scheduled/manual events provide longer, capacity, differential, credentialed-provider, and live real-time-call gates. Docker remains limited to the pinned SIPp dependency.
+```
 
 ## 59.4 Stacked-PR Checkpoints
 
