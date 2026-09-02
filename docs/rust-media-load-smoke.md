@@ -33,9 +33,10 @@ per-direction AI queue capacity. The weekly scheduled workflow also runs:
 cargo run -p load-smoke --locked -- media 4096 256 128 8
 ```
 
-This is the first media-only load/reclamation tier. It does not claim the goal's
-1,000/5,000/10,000 concurrent-call capacity matrix, UDP socket or WebSocket
-throughput, combined signaling-plus-media load, CPU-per-call profiling, a
-multi-hour soak, or a stable allocator-memory baseline. Those remain separate
-acceptance work before Rust traffic can be enabled; Asterisk remains the
-production fallback.
+This is a media-only load/reclamation tier. A separate
+[combined signaling/media smoke](rust-combined-load-smoke.md) now overlaps
+synthetic calls with these media sessions, but neither tier claims the goal's
+1,000/5,000/10,000 media capacity levels, UDP socket or WebSocket throughput,
+CPU-per-call profiling, a multi-hour soak, or a stable allocator-memory
+baseline. Those remain separate acceptance work before Rust traffic can be
+enabled; Asterisk remains the production fallback.

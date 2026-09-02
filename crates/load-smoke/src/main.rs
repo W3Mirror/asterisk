@@ -3,8 +3,9 @@
 use std::{env, error::Error};
 
 use load_smoke::{
-    MediaSmokeConfig, SignalingSmokeConfig, WebSocketSmokeConfig, run_media_reclamation_smoke,
-    run_signaling_reclamation_smoke, run_websocket_reclamation_smoke,
+    CombinedSmokeConfig, MediaSmokeConfig, SignalingSmokeConfig, WebSocketSmokeConfig,
+    run_combined_reclamation_smoke, run_media_reclamation_smoke, run_signaling_reclamation_smoke,
+    run_websocket_reclamation_smoke,
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -15,6 +16,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     if first.as_deref() == Some("websocket") {
         return run_websocket(arguments);
+    }
+    if first.as_deref() == Some("combined") {
+        return run_combined(arguments);
     }
     run_signaling(first, arguments)
 }
@@ -192,6 +196,73 @@ fn run_websocket(mut arguments: impl Iterator<Item = String>) -> Result<(), Box<
     Ok(())
 }
 
+fn run_combined(mut arguments: impl Iterator<Item = String>) -> Result<(), Box<dyn Error>> {
+    let defaults = CombinedSmokeConfig::default();
+    let total_calls = parse_bound(arguments.next(), "total_calls", defaults.total_calls)?;
+    let concurrent_calls = parse_bound(
+        arguments.next(),
+        "concurrent_calls",
+        defaults.concurrent_calls,
+    )?;
+    let packets_per_call = parse_bound(
+        arguments.next(),
+        "packets_per_call",
+        defaults.packets_per_call,
+    )?;
+    let queue_capacity = parse_bound(arguments.next(), "queue_capacity", defaults.queue_capacity)?;
+    if arguments.next().is_some() {
+        return Err(usage().into());
+    }
+
+    let report = run_combined_reclamation_smoke(CombinedSmokeConfig {
+        total_calls,
+        concurrent_calls,
+        packets_per_call,
+        queue_capacity,
+    })?;
+    let packet_rate = if report.elapsed.is_zero() {
+        0
+    } else {
+        u128::from(
+            report
+                .inbound_packets
+                .saturating_add(report.outbound_packets),
+        )
+        .saturating_mul(1_000_000_000)
+            / report.elapsed.as_nanos()
+    };
+    println!(
+        "attempted_calls={} completed_calls={} failed_calls={} batches={} peak_active_calls={} peak_transactions={} peak_active_media_sessions={} inbound_packets={} played_packets={} outbound_packets={} ai_queue_drops={} jitter_drops={} peak_ai_queue_depth={} peak_jitter_depth={} peak_retained_payload_bytes={} final_active_calls={} final_transactions={} final_active_media_sessions={} final_retained_payload_bytes={} elapsed_ms={} combined_bidirectional_packets_per_second={packet_rate} resident_before_bytes={} resident_peak_bytes={} resident_after_bytes={} fds_before={} fds_peak={} fds_after={}",
+        report.attempted_calls,
+        report.completed_calls,
+        report.failed_calls,
+        report.batches,
+        report.peak_active_calls,
+        report.peak_transactions,
+        report.peak_active_media_sessions,
+        report.inbound_packets,
+        report.played_packets,
+        report.outbound_packets,
+        report.ai_queue_drops,
+        report.jitter_drops,
+        report.peak_ai_queue_depth,
+        report.peak_jitter_depth,
+        report.peak_retained_payload_bytes,
+        report.final_active_calls,
+        report.final_transactions,
+        report.final_active_media_sessions,
+        report.final_retained_payload_bytes,
+        report.elapsed.as_millis(),
+        display_optional(report.process_before.resident_bytes),
+        display_optional(report.process_peak.resident_bytes),
+        display_optional(report.process_after.resident_bytes),
+        display_optional(report.process_before.open_file_descriptors),
+        display_optional(report.process_peak.open_file_descriptors),
+        display_optional(report.process_after.open_file_descriptors),
+    );
+    Ok(())
+}
+
 fn parse_bound(value: Option<String>, name: &str, default: usize) -> Result<usize, Box<dyn Error>> {
     value.map_or(Ok(default), |value| {
         value
@@ -210,7 +281,7 @@ fn per_unit_growth(before: Option<u64>, peak: Option<u64>, units: usize) -> Opti
 }
 
 fn usage() -> &'static str {
-    "usage: load-smoke [total_calls] [concurrent_calls] | load-smoke media [total_streams] [concurrent_streams] [packets_per_stream] [queue_capacity] | load-smoke websocket [total_streams] [concurrent_streams] [frames_per_stream] [queue_capacity]"
+    "usage: load-smoke [total_calls] [concurrent_calls] | load-smoke media [total_streams] [concurrent_streams] [packets_per_stream] [queue_capacity] | load-smoke websocket [total_streams] [concurrent_streams] [frames_per_stream] [queue_capacity] | load-smoke combined [total_calls] [concurrent_calls] [packets_per_call] [queue_capacity]"
 }
 
 #[cfg(test)]

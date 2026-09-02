@@ -348,7 +348,7 @@ impl MediaSmokeRun {
 }
 
 #[derive(Debug)]
-struct MediaStream {
+pub(crate) struct MediaStream {
     stream_number: usize,
     media: MediaSession,
     sequence: u16,
@@ -357,20 +357,23 @@ struct MediaStream {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct MediaObservation {
-    ai_queue_depth: usize,
-    jitter_depth: usize,
-    retained_payload_bytes: usize,
+pub(crate) struct MediaObservation {
+    pub(crate) ai_queue_depth: usize,
+    pub(crate) jitter_depth: usize,
+    pub(crate) retained_payload_bytes: usize,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct ReclaimedMedia {
-    ai_queue_drops: u64,
-    jitter_drops: u64,
+pub(crate) struct ReclaimedMedia {
+    pub(crate) ai_queue_drops: u64,
+    pub(crate) jitter_drops: u64,
 }
 
 impl MediaStream {
-    fn new(config: MediaSmokeConfig, stream_number: usize) -> Result<Self, MediaSmokeError> {
+    pub(crate) fn new(
+        config: MediaSmokeConfig,
+        stream_number: usize,
+    ) -> Result<Self, MediaSmokeError> {
         let media = MediaSession::new(
             MediaSessionConfig {
                 rtp: RtpSessionConfig {
@@ -412,7 +415,7 @@ impl MediaStream {
         })
     }
 
-    fn process_packet(
+    pub(crate) fn process_packet(
         &mut self,
         packet_number: usize,
     ) -> Result<MediaObservation, MediaSmokeError> {
@@ -519,7 +522,7 @@ impl MediaStream {
         })
     }
 
-    fn reclaim(&mut self) -> Result<ReclaimedMedia, MediaSmokeError> {
+    pub(crate) fn reclaim(&mut self) -> Result<ReclaimedMedia, MediaSmokeError> {
         while self.media.pop_for_ai().is_some() {}
         let stats = self.media.stats();
         let jitter = stats.jitter_buffer.ok_or(MediaSmokeError::Invariant {
@@ -546,7 +549,7 @@ impl MediaStream {
     }
 }
 
-fn validate_config(config: MediaSmokeConfig) -> Result<(), MediaSmokeError> {
+pub(crate) fn validate_config(config: MediaSmokeConfig) -> Result<(), MediaSmokeError> {
     if config.total_streams == 0 {
         return Err(MediaSmokeError::InvalidConfig(
             "total_streams must be non-zero",

@@ -41,8 +41,10 @@ INVITE, so the measurement is not dominated by observer-induced quadratic
 work.
 
 This matrix remains single-process, single-threaded, in-memory signaling-only
-evidence. It does not establish real simultaneous network traffic, calls per
-second at a provider boundary, setup/teardown latency percentiles, CPU per call,
-media or WebSocket capacity, combined-call capacity, multi-hour soak stability,
-or a production SLO. Those require separate harnesses and provider/Asterisk
-evidence before Rust traffic can be enabled.
+evidence. The separate [combined signaling/media smoke](rust-combined-load-smoke.md)
+holds synthetic calls and real bounded media sessions at the same time, but
+neither harness establishes real simultaneous network traffic, calls per second
+at a provider boundary, setup/teardown latency percentiles, CPU per call,
+same-level media or WebSocket capacity, multi-hour soak stability, or a
+production SLO. Those require separate harnesses and provider/Asterisk evidence
+before Rust traffic can be enabled.

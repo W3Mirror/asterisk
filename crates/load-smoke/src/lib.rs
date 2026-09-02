@@ -5,9 +5,14 @@
 //! reclaims every terminal call, and verifies that call and transaction counts
 //! return to zero before capacity is reused by the next batch.
 
+mod combined;
 mod media;
 mod websocket;
 
+pub use combined::{
+    CombinedSmokeConfig, CombinedSmokeError, CombinedSmokePhase, CombinedSmokeReport,
+    run_combined_reclamation_smoke,
+};
 pub use media::{
     MediaSmokeConfig, MediaSmokeError, MediaSmokePhase, MediaSmokeReport, ProcessSample,
     run_media_reclamation_smoke,

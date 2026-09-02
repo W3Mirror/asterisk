@@ -70,6 +70,9 @@ jobs:
       - name: Run deterministic WebSocket media reclamation smoke
         if: steps.rust-workspace.outputs.available == 'true'
         run: cargo run -p load-smoke --locked -- websocket 64 8 32 4
+      - name: Run deterministic combined signaling and media reclamation smoke
+        if: steps.rust-workspace.outputs.available == 'true'
+        run: cargo run -p load-smoke --locked -- combined 64 8 32 4
       - name: Run extended signaling reclamation load
         if: steps.rust-workspace.outputs.available == 'true' && github.event_name == 'schedule'
         run: cargo run -p load-smoke --locked -- 16384 256
@@ -79,6 +82,9 @@ jobs:
       - name: Run extended WebSocket media reclamation load
         if: steps.rust-workspace.outputs.available == 'true' && github.event_name == 'schedule'
         run: cargo run -p load-smoke --locked -- websocket 4096 256 128 8
+      - name: Run extended combined signaling and media reclamation load
+        if: steps.rust-workspace.outputs.available == 'true' && github.event_name == 'schedule'
+        run: cargo run -p load-smoke --locked -- combined 4096 256 128 8
       - name: Run extended property tests
         if: steps.rust-workspace.outputs.available == 'true' && github.event_name == 'schedule'
         env:

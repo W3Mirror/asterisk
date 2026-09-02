@@ -37,9 +37,11 @@ also runs:
 cargo run -p load-smoke --locked -- websocket 4096 256 128 8
 ```
 
-This is an in-memory transport load/reclamation tier. It does not claim actual
-TCP, TLS, HTTP upgrade, kernel-socket, provider, or Asterisk throughput; the
-goal's 1,000/5,000/10,000 concurrent-call matrix; combined signaling/media
-load; CPU-per-call profiling; a multi-hour soak; or a stable allocator-memory
+This is an in-memory transport load/reclamation tier. The separate
+[combined signaling/media smoke](rust-combined-load-smoke.md) overlaps
+synthetic calls with RTP/media sessions but does not yet include WebSocket
+transport. Neither tier claims actual TCP, TLS, HTTP upgrade, kernel-socket,
+provider, or Asterisk throughput; 1,000/5,000/10,000 media capacity;
+CPU-per-call profiling; a multi-hour soak; or a stable allocator-memory
 baseline. Those remain separate acceptance work before Rust traffic can be
 enabled; Asterisk remains the production fallback.
