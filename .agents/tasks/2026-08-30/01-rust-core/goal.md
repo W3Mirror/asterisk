@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-124 — PR #46 hosted validation green; lifecycle soak pending
-**Last checkpoint (UTC):** 2026-09-02T00:49:00Z
+**Current checkpoint:** CP-126 — PR #47 provider Digest runtime hosted validation green
+**Last checkpoint (UTC):** 2026-09-02T01:00:00Z
 **Active phase:** Phase 1 — Rust media engine
-**Active milestone:** Repeated mixed lifecycle soak, memory stability, and capacity reuse<br>
-**Next resume action:** Record the dedicated lifecycle-soak result, then reconcile PR #47 onto the hosted-green PR #46 head
-**Active PR:** [#46](https://github.com/W3Mirror/asterisk/pull/46); branch `outbound-digest-auth` targets `lifecycle-soak`
+**Active milestone:** Provider authentication and route-runtime integration<br>
+**Next resume action:** Reconcile PR #48 onto the hosted-green PR #47 head, then validate the provider route runtime
+**Active PR:** [#47](https://github.com/W3Mirror/asterisk/pull/47); branch `provider-digest-runtime` targets `outbound-digest-auth`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-46`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-47`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -6391,6 +6391,71 @@ next_action: Await and record the dedicated lifecycle-soak result, then reconcil
 rollback: Restore `backup/outbound-digest-auth-before-restack-20260902-003937` if the stack must roll back; keep all signaling, media, and call routing on Asterisk and do not enable Rust traffic
 notes: Every implementation PR carries focused tests for each affected crate/module. Pull-request and `aistack/main` push events run the complete ordinary hosted workspace suite rather than changed-module-only tests; scheduled/manual events provide longer, capacity, differential, credentialed-provider, and live real-time-call gates. Docker remains limited to the pinned SIPp dependency.
 ```
+
+### CP-125 — PR #47 provider Digest runtime restacked and locally green
+
+```yaml
+checkpoint_id: CP-125
+recorded_at_utc: 2026-09-02T00:57:00Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Provider authentication and route-runtime integration
+scope: Restack provider-policy Digest credential resolution onto the final PR #46 head and verify focused and complete offline checks
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-47
+branch: provider-digest-runtime
+base_branch: outbound-digest-auth
+pr: "#47 https://github.com/W3Mirror/asterisk/pull/47"
+base_head_sha: bb6edd9db9a05ab937a36b23a7885c49f471466d
+implementation_head_sha: f444dc26b1f470afb4cf192b0939b0ef1ec9411f
+remote_head_sha_before_publish: 850525e6a439e525062ecfacb7e401de41ab1b07
+evidence: Created backup branch `backup/provider-digest-runtime-before-restack-20260902-0050` and replayed only the provider-runtime implementation onto published PR #46 head, leaving superseded documentation commits out of the new stack. Focused `cargo test -p call-engine --locked` passed (16 tests), `cargo test -p call-runtime --locked` passed (30 tests), and `cargo test -p provider-routing --locked` passed (5 tests). Complete `cargo test --workspace --locked`, workspace Clippy, formatting, sanitizer-backed fuzz-target checks, all three pinned Docker-backed SIPp scenarios, and git diff --check passed. No credentials, provider configuration, routing, or live traffic changed.
+blockers: Hosted PR #47 validation and the dedicated two-hour lifecycle soak remain pending, along with larger combined media capacity, sanitized captures, provider/Asterisk interoperability, rollback proof, and production evidence; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Commit and publish the reconciled PR #47 implementation with an exact SHA-pinned force-with-lease, then verify hosted checks and mergeability
+rollback: Restore `backup/provider-digest-runtime-before-restack-20260902-0050` if restacking or publication must be abandoned; keep all signaling, media, and call routing on Asterisk and do not enable Rust traffic
+notes: The inherited CP-136 entry records an earlier superseded attempt and is retained as history; this checkpoint is the authoritative post-restack evidence. Every implementation PR carries focused tests for each affected crate/module. Pull-request and `aistack/main` push events run the complete ordinary hosted workspace suite rather than changed-module-only tests; scheduled/manual events provide longer, capacity, differential, credentialed-provider, and live real-time-call gates. Docker remains limited to the pinned SIPp dependency.
+```
+
+### CP-126 — PR #47 provider Digest runtime hosted validation green
+
+```yaml
+checkpoint_id: CP-126
+recorded_at_utc: 2026-09-02T01:00:00Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Provider authentication and route-runtime integration
+scope: Verify the final published provider-policy Digest runtime head on hosted pull-request CI
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-47
+branch: provider-digest-runtime
+base_branch: outbound-digest-auth
+pr: "#47 https://github.com/W3Mirror/asterisk/pull/47"
+head_sha: fca7aba9d895d50f1c3f4efb4b96c7a9fbd79d62
+evidence: Hosted Rust quality run [33577444491](https://github.com/W3Mirror/asterisk/actions/runs/33577444491) completed successfully for the exact published head on hosted `ubuntu-latest`. Workspace checks passed formatting, all locked workspace tests, the three pinned SIPp scenarios, signaling/media/WebSocket/combined reclamation smokes, the short mixed-lifecycle soak, and workspace Clippy; Protocol fuzz checks and Dependency audit passed. Scheduled capacity and two-hour lifecycle jobs correctly skipped. GitHub reports PR #47 OPEN, CLEAN, and MERGEABLE against `outbound-digest-auth`.
+blockers: The dedicated two-hour lifecycle soak [33576067383](https://github.com/W3Mirror/asterisk/actions/runs/33576067383) remains pending, along with larger combined media capacity, sanitized captures, provider/Asterisk interoperability, rollback proof, and production evidence; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Reconcile PR #48 (`provider-route-runtime`) onto this hosted-green head and validate its route selection behavior
+rollback: Restore `backup/provider-digest-runtime-before-restack-20260902-0050` if the provider-runtime stack must roll back; keep all signaling, media, and call routing on Asterisk and do not enable Rust traffic
+notes: Every implementation PR carries focused tests for each affected crate/module. Pull-request and `aistack/main` push events run the complete ordinary hosted workspace suite rather than changed-module-only tests; scheduled/manual events provide longer, capacity, differential, credentialed-provider, and live real-time-call gates. Docker remains limited to the pinned SIPp dependency.
+```
+
+### CP-136 — provider-policy Digest credential resolution locally green
+
+~~~yaml
+checkpoint_id: CP-136
+recorded_at_utc: 2026-08-31T06:19:51Z
+status: local_green
+phase: Phase 1 — Rust media engine
+milestone: Provider-policy outbound SIP Digest credential resolution and rotation
+scope: Implement and locally verify lazy per-challenge resolution of provider-routing AuthenticationPolicy::Digest references, including atomic unavailable-policy and unavailable-credential failures, stale-nonce credential rotation, duplicate replay, retry bounds, and successful authenticated completion
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-47
+branch: provider-digest-runtime
+base_branch: outbound-digest-auth
+pr: pending #47 publication
+head_sha: 7bd776b1c903770089ba117c5a8f0328a3c1bd35 plus uncommitted implementation
+evidence: CallRuntime now exposes a secret-opaque DigestCredentialResolver boundary and consumes AuthenticationPolicy::Digest only when CallEngine determines that a genuinely new authenticated INVITE retry is required. CallEngine accepts a lazy owned-credential resolver while preserving the existing borrowed-credential API without cloning secrets. Missing policy and unavailable current credentials have distinct errors and leave call, transaction, and retry state unchanged. Malformed or rejected challenges, duplicate ACK replay, and retries beyond the configured bound do not call the resolver. A synthetic stale=true challenge resolves a rotated credential for the second retry, and credentials plus credential references are not retained or exposed through runtime, engine, policy, or error debug output. Three directly relevant regressions ship with the code. Strict call-runtime Clippy passes with warnings denied; focused locked call-engine and call-runtime suites pass all 46 tests. Formatting, all 229 locked workspace tests, repository-standard workspace Clippy, diff checks, all three pinned Docker-backed SIPp scenarios, all six address-sanitizer fuzz-target compile checks, and ordinary signaling, RTP-media, WebSocket-media, combined, and short lifecycle-soak reclamation smokes pass. Established repository documentation and call-engine pedantic Clippy warnings remain non-blocking and unchanged in character
+blockers: This proves only provider-policy resolution, rotation, retry gating, and stale-nonce mechanics with synthetic local credentials. It does not integrate a real secret store, validate real provider configuration or credentials, establish carrier/Asterisk interoperability, prove a carrier stale-nonce exchange, execute rollback, or authorize Rust traffic. Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Commit and push the implementation, tests, dependency wiring, and CP-136 normally; open stacked PR #47 against outbound-digest-auth; then verify local, origin, and GitHub head parity plus the complete ordinary hosted suite
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #47 or revert the provider-policy credential resolver integration if its contract is superseded
+notes: Relevant tests ship with the behavior they cover. Every pull request and push to aistack/main runs the complete ordinary hosted suite rather than affected-module-only selection. All workflow runners remain hosted ubuntu-latest, and Docker remains limited to pinned SIPp inside Workspace checks. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
 
 ## 59.4 Stacked-PR Checkpoints
 
