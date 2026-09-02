@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**
-**Current checkpoint:** CP-024 — PR #4 hosted validation and mergeability confirmed
-**Last checkpoint (UTC): 2026-09-01T13:33:37Z
+**Current checkpoint:** CP-025 — PR #4 reconciled onto the validated PR #3 head
+**Last checkpoint (UTC):** 2026-09-02T04:07:22Z
 **Active phase:** Phase 2 — SIP edge shadow mode
 **Active milestone:** Milestone 4 — Dialog + SDP + Basic Calls
-**Next resume action:** Update PR #5's base branch in stack order, run its focused call-control API tests and hosted checks, then record its final head and mergeability
-**Active PR:** [#5](https://github.com/W3Mirror/asterisk/pull/5); branch `call-api-core` targets `sip-dialog-core`
+**Next resume action:** Publish the reconciled PR #4 head, verify hosted checks and mergeability, then update PR #5's base branch in stack order
+**Active PR:** [#4](https://github.com/W3Mirror/asterisk/pull/4); branch `sip-dialog-core` targets `sip-transaction-core`
 **Stack root/base branch:** `aistack/main`
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-5-call-api`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-4-sip-dialog`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -2117,9 +2117,9 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 
 | Workstream | Status | Evidence / checkpoint | PR | Next action |
 | --- | --- | --- | --- | --- |
-| Phase 0 — current Asterisk surface | in_progress | CP-015; PR #1 hosted run 33431290927 passed and GitHub reports CLEAN/MERGEABLE at `8dbd0082823b9444e72a6ceebee27328bd0f506d` | #1 | Keep the verified Asterisk inventory and production-evidence gate in force |
-| Phase 1 — Rust media engine | in_progress | CP-018; PR #2 hosted run 33432577814 passed and GitHub reports CLEAN/MERGEABLE at `ddb50f1b4adaca8e3a099578ef053294a5958cc0` | [#2](https://github.com/W3Mirror/asterisk/pull/2) | Keep the verified Rust foundation contract in force |
-| Phase 2 — SIP edge shadow mode | in_progress | CP-022; PR #4 hosted run 33434227089 passed and GitHub reports CLEAN/MERGEABLE at `f8449d60eb27f8a0fceed3b8f96a6a0a1023a9ad` | [#4](https://github.com/W3Mirror/asterisk/pull/4) | Update PR #5's base branch in stack order and validate its call-control API slice |
+| Phase 0 — current Asterisk surface | in_progress | CP-020; PR #1 hosted run 33587135564 passed and GitHub reports CLEAN/MERGEABLE at `65e730ae3` | #1 | Keep the verified Asterisk inventory and production-evidence gate in force |
+| Phase 1 — Rust media engine | in_progress | CP-022; PR #2 hosted run 33588188166 passed and GitHub reports CLEAN/MERGEABLE at `97e35e54e` | [#2](https://github.com/W3Mirror/asterisk/pull/2) | Keep the verified Rust foundation contract in force |
+| Phase 2 — SIP edge shadow mode | in_progress | CP-025; PR #3 hosted run 33589084459 passed at `921bfe0eb`; PR #4 reconciled locally at `cb4c43c18` with focused dialog and full workspace tests green; hosted recheck pending | [#4](https://github.com/W3Mirror/asterisk/pull/4) | Publish PR #4 and verify hosted checks and mergeability before updating PR #5 |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
 | Phase 4 — expanded provider coverage | not_started | — | — | Add one provider compatibility suite per rollout target |
 | Phase 5 — Rust primary engine | not_started | — | — | Confirm production SLO, telemetry, and rollback gates |
@@ -2978,6 +2978,27 @@ rollback: Asterisk remains the active/fallback engine; no routing was changed
 notes: The hosted ordinary workflow exercised formatting, all workspace tests, and Clippy. Focused transaction tests remain required in this implementation PR; extended property, capacity, soak, credentialed provider, and live-call gates remain scheduled/manual or later-phase checks.
 ```
 
+### CP-025 — Reconcile PR #4 onto the validated PR #3 head
+
+```yaml
+checkpoint_id: CP-025
+recorded_at_utc: 2026-09-02T04:07:22Z
+status: in_progress
+phase: Phase 2 — SIP edge shadow mode
+milestone: Milestone 4 — Dialog + SDP + Basic Calls
+scope: Merge the validated PR #3 head into PR #4 and verify focused dialog coverage under the expanded offline test contract
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-4-sip-dialog
+branch: sip-dialog-core
+base_branch: sip-transaction-core
+pr: "#4 https://github.com/W3Mirror/asterisk/pull/4"
+head_sha: cb4c43c18f0e745681a334eb73128bbbc769d4f1
+evidence: Merged `origin/sip-transaction-core` at `921bfe0eb` and resolved the goal-ledger conflict while preserving the dialog implementation and current CI test contract. Focused `cargo test -p sip-dialog --locked` passed with 5 tests; full `cargo test --workspace --locked` passed with 46 unit tests; `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --locked`, and `git diff --check` passed. The backup branch `backup/sip-dialog-core-before-pr3-921` preserves the pre-reconciliation head.
+blockers: Hosted validation and GitHub mergeability for the reconciled head are pending publication; production deployment identity, effective configuration, provider credentials, sanitized captures, live interoperability, and Rust traffic enablement remain unavailable
+next_action: Publish PR #4 head `cb4c43c18` and verify hosted checks plus GitHub mergeability
+rollback: Asterisk remains the active/fallback engine; no routing was changed
+notes: The goal continues to require focused affected-module tests in each implementation PR. Hosted pull-request and `aistack/main` push workflows run the complete ordinary workspace suite; extended, long-running, credentialed-provider, and live-call gates remain scheduled/manual.
+```
+
 ### Checkpoint template
 
 Copy this template, assign the next checkpoint ID, fill every field, and append it after each meaningful state change:
@@ -3059,10 +3080,10 @@ Populate one row per PR before implementation begins, then update it at every ch
 
 | Order | PR | Branch | Base / target | Worktree | Scope | Status | Head SHA | CI / evidence | Next action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | [#1](https://github.com/W3Mirror/asterisk/pull/1) | `sip-rtp-engine-rust` | `aistack/main` | `/home/ashutosh/.worktrees/w3mirror/asterisk/sip-rtp-engine-rust` | Phase 0 repository surface inventory and evidence boundary | in_progress | `8dbd0082823b9444e72a6ceebee27328bd0f506d` | Hosted run [33431290927](https://github.com/W3Mirror/asterisk/actions/runs/33431290927) passed; GitHub reports CLEAN/MERGEABLE; Rust checks skipped because this docs-only stack layer has no Cargo manifests | Validate PR #2 on this base |
-| 2 | [#2](https://github.com/W3Mirror/asterisk/pull/2) | `rust-core-foundation` | `sip-rtp-engine-rust` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-2-rust-foundation` | Provider-neutral bounded SIP/SDP/RTP/RTCP/DTMF/media/call foundations | in_progress | `ddb50f1b4adaca8e3a099578ef053294a5958cc0` | Hosted run [33432577814](https://github.com/W3Mirror/asterisk/actions/runs/33432577814) passed; GitHub reports CLEAN/MERGEABLE; local focused cargo fmt/test/clippy pass | Validate PR #3 on this base |
-| 3 | [#3](https://github.com/W3Mirror/asterisk/pull/3) | `sip-transaction-core` | `rust-core-foundation` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-3-sip-transactions` | SIP transaction state machines and bounded transport adapters | in_progress | `6cbc88fad2a0d0ab019ab1c0ff787ef55e94a58a` | Hosted run [33432999749](https://github.com/W3Mirror/asterisk/actions/runs/33432999749) passed; GitHub reports CLEAN/MERGEABLE; local focused cargo fmt/test/clippy pass | Update PR #4's base branch in stack order |
-| 4 | [#4](https://github.com/W3Mirror/asterisk/pull/4) | `sip-dialog-core` | `sip-transaction-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-4-sip-dialog` | Dialog identity and state: bounded tags, route sets, remote targets, CSeq sequencing, UAC/UAS lifecycle | in_progress | `759e7bb8c4306113f42549ac044fa723d5847bb3` | Hosted run [33513778445](https://github.com/W3Mirror/asterisk/actions/runs/33513778445) passed (workspace, protocol fuzz, dependency audit); GitHub reports OPEN/CLEAN/MERGEABLE; local focused/full workspace tests, format, Clippy, and diff check passed | Update PR #5 onto this validated head |
+| 1 | [#1](https://github.com/W3Mirror/asterisk/pull/1) | `sip-rtp-engine-rust` | `aistack/main` | `/home/ashutosh/.worktrees/w3mirror/asterisk/sip-rtp-engine-rust` | Phase 0 repository surface inventory and evidence boundary | in_progress | `65e730ae3091188986f8168ccec6c3363a8d2650` | Hosted run [33587135564](https://github.com/W3Mirror/asterisk/actions/runs/33587135564) passed; GitHub reports CLEAN/MERGEABLE; Rust checks skipped because this docs-only stack layer has no Cargo manifests | Validate PR #2 on this base |
+| 2 | [#2](https://github.com/W3Mirror/asterisk/pull/2) | `rust-core-foundation` | `sip-rtp-engine-rust` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-2-rust-foundation` | Provider-neutral bounded SIP/SDP/RTP/RTCP/DTMF/media/call foundations | in_progress | `97e35e54e52561cc917bb570f02a27519b481dff` | Hosted run [33588188166](https://github.com/W3Mirror/asterisk/actions/runs/33588188166) passed; GitHub reports CLEAN/MERGEABLE; local focused/full workspace tests pass | Validate PR #3 on this base |
+| 3 | [#3](https://github.com/W3Mirror/asterisk/pull/3) | `sip-transaction-core` | `rust-core-foundation` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-3-sip-transactions` | SIP transaction state machines and bounded transport adapters | in_progress | `921bfe0ebaa73266b2a5f8d44aa5e7002199734c` | Hosted run [33589084459](https://github.com/W3Mirror/asterisk/actions/runs/33589084459) passed; GitHub reports CLEAN/MERGEABLE; local focused transaction tests (12), full workspace tests (41), formatting, Clippy, and diff check passed | Reconcile and publish PR #4 |
+| 4 | [#4](https://github.com/W3Mirror/asterisk/pull/4) | `sip-dialog-core` | `sip-transaction-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-4-sip-dialog` | Dialog identity and state: bounded tags, route sets, remote targets, CSeq sequencing, UAC/UAS lifecycle | in_progress | `cb4c43c18f0e745681a334eb73128bbbc769d4f1` | Reconciled onto PR #3 `921bfe0eb`; focused `sip-dialog` tests (5), full workspace tests (46), format, Clippy, and diff check pass locally; hosted validation pending publication | Publish and verify hosted checks, then update PR #5 onto this head |
 
 ## 59.4 Stacked-PR Checkpoints
 
