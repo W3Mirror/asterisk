@@ -158,6 +158,8 @@ dependencies = [
  "call-core",
  "call-engine",
  "media-core",
+ "rtcp",
+ "rtp",
  "scenario-replay",
  "sdp",
  "sip-parser",

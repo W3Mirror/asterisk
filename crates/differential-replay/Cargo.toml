@@ -10,6 +10,8 @@ call-api = { path = "../call-api" }
 call-bridge = { path = "../call-bridge" }
 call-core = { path = "../call-core" }
 media-core = { path = "../media-core" }
+rtcp = { path = "../rtcp" }
+rtp = { path = "../rtp" }
 scenario-replay = { path = "../scenario-replay" }
 sdp = { path = "../sdp" }
 sip-types = { path = "../sip-types" }
