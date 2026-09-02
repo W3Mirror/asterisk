@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-126 — PR #47 provider Digest runtime hosted validation green
-**Last checkpoint (UTC):** 2026-09-02T01:00:00Z
+**Current checkpoint:** CP-127 — PR #48 provider route runtime restacked and locally green
+**Last checkpoint (UTC):** 2026-09-02T01:06:00Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** Provider authentication and route-runtime integration<br>
-**Next resume action:** Reconcile PR #48 onto the hosted-green PR #47 head, then validate the provider route runtime
-**Active PR:** [#47](https://github.com/W3Mirror/asterisk/pull/47); branch `provider-digest-runtime` targets `outbound-digest-auth`
+**Next resume action:** Publish PR #48, verify its hosted checks, then continue the provider security stack
+**Active PR:** [#48](https://github.com/W3Mirror/asterisk/pull/48); branch `provider-route-runtime` targets `provider-digest-runtime`
 **Stack root/base branch:** `aistack/main`  
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-47`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-48`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -6434,6 +6434,29 @@ blockers: The dedicated two-hour lifecycle soak [33576067383](https://github.com
 next_action: Reconcile PR #48 (`provider-route-runtime`) onto this hosted-green head and validate its route selection behavior
 rollback: Restore `backup/provider-digest-runtime-before-restack-20260902-0050` if the provider-runtime stack must roll back; keep all signaling, media, and call routing on Asterisk and do not enable Rust traffic
 notes: Every implementation PR carries focused tests for each affected crate/module. Pull-request and `aistack/main` push events run the complete ordinary hosted workspace suite rather than changed-module-only tests; scheduled/manual events provide longer, capacity, differential, credentialed-provider, and live real-time-call gates. Docker remains limited to the pinned SIPp dependency.
+```
+
+### CP-127 — PR #48 provider route runtime restacked and locally green
+
+```yaml
+checkpoint_id: CP-127
+recorded_at_utc: 2026-09-02T01:06:00Z
+status: in_progress
+phase: Phase 1 — Rust media engine
+milestone: Provider authentication, routing, and safe fallback
+scope: Restack provider-route-gated outbound origination onto the final PR #47 head and verify focused and complete offline checks
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-48
+branch: provider-route-runtime
+base_branch: provider-digest-runtime
+pr: "#48 https://github.com/W3Mirror/asterisk/pull/48"
+base_head_sha: dda742470118ad1932c32ef3b17f6f4431b581bb
+implementation_head_sha: 163cad56316702031833560b958adff9aef06e9c
+remote_head_sha_before_publish: df6bbac63a97f62a8c23eacbaa86fff049ab02c3
+evidence: Created backup branch `backup/provider-route-runtime-before-restack-20260902-0105` and replayed only the provider-route implementation onto published PR #47 head, resolving the superseded goal-only conflict in favor of the current ledger. Focused `cargo test -p call-runtime --locked` passed (32 tests) and `cargo test -p provider-routing --locked` passed (5 tests). Complete `cargo test --workspace --locked` (231 tests), workspace Clippy, formatting, all three pinned Docker-backed SIPp scenarios, and git diff --check passed. No credentials, provider configuration, routing, or live traffic changed.
+blockers: Hosted PR #48 validation and the dedicated two-hour lifecycle soak remain pending, along with larger combined media capacity, sanitized captures, provider/Asterisk interoperability, rollback proof, and production evidence; Rust traffic stays disabled and Asterisk remains the fallback
+next_action: Commit and publish the reconciled PR #48 implementation with an exact SHA-pinned force-with-lease, then verify hosted checks and mergeability
+rollback: Restore `backup/provider-route-runtime-before-restack-20260902-0105` if restacking or publication must be abandoned; keep all signaling, media, and call routing on Asterisk and do not enable Rust traffic
+notes: The inherited CP-136 entry records an earlier superseded provider-route attempt and is retained as history. Every implementation PR carries focused tests for each affected crate/module. Pull-request and `aistack/main` push events run the complete ordinary hosted workspace suite rather than changed-module-only tests; scheduled/manual events provide longer, capacity, differential, credentialed-provider, and live real-time-call gates. Docker remains limited to the pinned SIPp dependency.
 ```
 
 ### CP-136 — provider-policy Digest credential resolution locally green
