@@ -1,8 +1,8 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: in_progress**
-**Current checkpoint:** CP-248 — PR #78 final ledger-head hosted validation green
-**Last checkpoint (UTC):** 2026-09-02T03:10:58Z
+**Current checkpoint:** CP-249 — PR #78 hosted validation green after final ledger update
+**Last checkpoint (UTC):** 2026-09-02T03:15:29Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** In-dialog SIP request interoperability and Asterisk fallback<br>
 **Next resume action:** Continue the next bounded offline acceptance slice from exact head `5a8cdefb0` without enabling Rust traffic
@@ -7513,6 +7513,27 @@ blockers: Hosted validation for this final ledger-only head and final local/orig
 next_action: Reconcile the hosted checks for exact head `0e6460fba` and update this checkpoint with their run evidence.
 rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #78 or revert the bridge/media trace adapter if its contract is superseded.
 notes: The implementation already ships focused bridge/media tests, and hosted PR events run the complete ordinary suite on `ubuntu-latest`; pushes to `aistack/main` repeat that ordinary suite. Scheduled/manual capacity, extended property, multi-hour soak, and credentialed provider/live-call checks remain separate gates. Docker remains limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
+~~~
+
+### CP-249 — PR #78 hosted validation green after final ledger update
+
+~~~yaml
+checkpoint_id: CP-249
+recorded_at_utc: 2026-09-02T03:15:29Z
+status: hosted_green
+phase: Phase 1 — Rust media engine
+milestone: In-dialog SIP request interoperability and Asterisk fallback
+scope: Record hosted validation for the final bridge/media trace implementation and ledger head
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-78-bridge-trace-correlation
+branch: bridge-trace-correlation
+base_branch: trace-correlation
+pr: https://github.com/W3Mirror/asterisk/pull/78
+head_sha: f8b871d1eaade4c3a8bd5b29073f49c357852e60
+evidence: Local HEAD and `gh pr view 78 --json headRefOid` report the implementation and final ledger head `f8b871d1eaade4c3a8bd5b29073f49c357852e60` before this documentation-only checkpoint commit. PR #78 is OPEN, non-draft, CLEAN, and MERGEABLE against `trace-correlation` at `611e614eea9937f09fe21f823650f5da7dd0b45e`. Hosted Rust quality run `33586100335` passed Workspace checks `100110457357` (formatting, complete locked workspace tests including bridge/media trace tests, pinned Docker-backed SIPp scenarios, deterministic signaling/media/WebSocket/combined/short-soak reclamation smokes, and workspace Clippy), Protocol fuzz checks `100110457213` (all address-sanitizer targets), and Dependency audit `100110457412`; schedule/manual-only Signaling capacity `100110457878` and Two-hour lifecycle soak `100110458261` correctly skipped for the pull-request event.
+blockers: Provider credentials/runtime access, sanitized provider/Asterisk captures, live interoperability, deployment execution, and Rust traffic enablement remain externally gated; Asterisk remains the fallback.
+next_action: Continue the next bounded offline acceptance slice from exact implementation head `f8b871d1e` without enabling Rust traffic.
+rollback: Keep all signaling, media, and call routing on Asterisk; do not enable Rust traffic; close PR #78 or revert the bridge/media trace adapter if its contract is superseded.
+notes: Focused bridge/media tests ship with the implementation modules and are exercised by the complete ordinary hosted suite. Pull-request opened/reopened/synchronize events and pushes to `aistack/main` run that suite on hosted `ubuntu-latest`; no affected-module-only selector is configured. Scheduled/manual capacity, extended property, multi-hour soak, and credentialed provider/live-call checks remain separate gates. Docker remains limited to the pinned SIPp integration dependency. No credentials, provider configuration, production routing, or live traffic changed.
 ~~~
 
 ## 59.4 Stacked-PR Checkpoints
