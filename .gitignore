@@ -46,3 +46,6 @@ tests/CI/output
 # committed; see docker/etc-asterisk/secrets/.gitignore for the asterisk
 # side.
 .env.aistack
+
+# Rust workspace build artifacts
+/target/

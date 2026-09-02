@@ -1,0 +1,27 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/sip-types",
+  "crates/sip-parser",
+  "crates/sdp",
+  "crates/rtp",
+  "crates/rtcp",
+  "crates/dtmf",
+  "crates/media-core",
+  "crates/call-core",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.85"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"
