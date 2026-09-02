@@ -14,6 +14,7 @@ pub use media_bridge::{
 };
 
 use std::{
+    collections::HashMap,
     error::Error,
     fmt::{Display, Formatter},
     net::SocketAddr,
@@ -304,6 +305,7 @@ pub struct CallRuntime {
     transport: RuntimeTransport,
     source_policy: SourceIpPolicy,
     bridges: Option<BridgeRegistry>,
+    provider_authentication: HashMap<String, (CallId, AuthenticationPolicy)>,
 }
 
 impl CallRuntime {
@@ -325,6 +327,7 @@ impl CallRuntime {
             transport: RuntimeTransport::Udp(transport),
             source_policy,
             bridges: None,
+            provider_authentication: HashMap::new(),
         }
     }
 
@@ -347,6 +350,7 @@ impl CallRuntime {
             transport: RuntimeTransport::Tcp { transport, peer },
             source_policy,
             bridges: None,
+            provider_authentication: HashMap::new(),
         }
     }
 
@@ -465,7 +469,14 @@ impl CallRuntime {
         let destination = resolver
             .resolve(profile.signaling_host(), profile.signaling_port())
             .ok_or(RuntimeError::ProviderAddressUnavailable)?;
-        self.originate(request, destination, now)
+        let sip_call_id = request.headers.get("Call-ID").map(str::to_owned);
+        let authentication = profile.authentication().clone();
+        let result = self.originate(request, destination, now);
+        if let (Ok((call_id, _)), Some(sip_call_id)) = (&result, sip_call_id) {
+            self.provider_authentication
+                .insert(sip_call_id, (call_id.clone(), authentication));
+        }
+        result
     }
 
     /// Starts an outbound human INVITE and atomically marks a bridge as
@@ -638,6 +649,55 @@ impl CallRuntime {
         })
     }
 
+    /// Receives one transport read and resolves Digest credentials from the
+    /// authentication policy captured when a routed Rust call was originated.
+    ///
+    /// A routed call's provider policy is retained only by opaque SIP
+    /// Call-ID-to-call context while that call is active. The context is
+    /// removed when the engine emits a terminal lifecycle event. Duplicate
+    /// challenge ACK replay still bypasses the resolver.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when no routed provider context exists for a 401/407
+    /// response, credentials are unavailable, or ordinary transport/engine
+    /// processing fails. Engine and context state remain unchanged on error.
+    pub fn receive_once_with_routed_provider_digest_auth<R>(
+        &mut self,
+        now: Duration,
+        resolver: &mut R,
+        cnonce: Option<&str>,
+        nonce_count: Option<u32>,
+    ) -> Result<RuntimeOutput, RuntimeError>
+    where
+        R: DigestCredentialResolver + ?Sized,
+    {
+        let contexts = self.provider_authentication.clone();
+        self.receive_once_with_digest_handler(now, |engine, response| {
+            let sip_call_id = response
+                .headers
+                .get("Call-ID")
+                .ok_or(EngineError::DigestAuthenticationNotConfigured)?;
+            let (_, authentication) = contexts
+                .get(sip_call_id)
+                .ok_or(EngineError::DigestAuthenticationNotConfigured)?;
+            Ok(engine.receive_digest_challenge_resolved(
+                response,
+                now,
+                cnonce,
+                nonce_count,
+                || match authentication {
+                    AuthenticationPolicy::None => {
+                        Err(EngineError::DigestAuthenticationNotConfigured)
+                    }
+                    AuthenticationPolicy::Digest { credential_ref, .. } => resolver
+                        .resolve(credential_ref)
+                        .ok_or(EngineError::DigestCredentialsUnavailable),
+                },
+            )?)
+        })
+    }
+
     fn receive_once_with_digest_handler<F>(
         &mut self,
         now: Duration,
@@ -706,15 +766,18 @@ impl CallRuntime {
         mut output: RuntimeOutput,
     ) -> Result<RuntimeOutput, RuntimeError> {
         let mut working_bridges = self.bridges.clone();
+        let mut working_provider_authentication = self.provider_authentication.clone();
         if let Some(bridges) = working_bridges.as_mut() {
             synchronize_bridge_lifecycle(bridges, &output.events)?;
             output
                 .bridge_events
                 .extend(bridges.drain_events(usize::MAX)?);
         }
+        synchronize_provider_authentication(&mut working_provider_authentication, &output.events);
         self.deliver(&output)?;
         self.engine = working_engine;
         self.bridges = working_bridges;
+        self.provider_authentication = working_provider_authentication;
         Ok(output)
     }
 }
@@ -758,6 +821,17 @@ fn human_bridge_for_call(
                 .is_some_and(|human| &human.call_id == call_id)
         })
         .map(|bridge| (bridge.id, bridge.state)))
+}
+
+fn synchronize_provider_authentication(
+    contexts: &mut HashMap<String, (CallId, AuthenticationPolicy)>,
+    events: &[LifecycleEvent],
+) {
+    for event in events {
+        if matches!(event.kind, CallEventKind::Failed | CallEventKind::Hangup) {
+            contexts.retain(|_, (call_id, _)| call_id != &event.call_id);
+        }
+    }
 }
 
 fn provider_transport_matches(
@@ -879,6 +953,24 @@ mod tests {
             request,
             r#"Digest realm="runtime", nonce="runtime-nonce", qop="auth""#,
         )
+    }
+
+    fn routed_digest_routes() -> ProviderRouteTable {
+        let profile = ProviderProfile::new(
+            "routed-digest-provider",
+            "sip.provider.invalid",
+            5060,
+            SignalingTransport::Udp,
+        )
+        .unwrap()
+        .with_targets(EngineTarget::Rust, EngineTarget::Asterisk)
+        .with_authentication(AuthenticationPolicy::Digest {
+            credential_ref: "opaque-provider-reference".to_owned(),
+            algorithm: DigestAlgorithm::Md5,
+        });
+        let mut routes = ProviderRouteTable::new(RoutingConfig::default()).unwrap();
+        routes.insert(profile).unwrap();
+        routes
     }
 
     fn receive_ack(peer: &UdpTransport) {
@@ -1239,6 +1331,296 @@ mod tests {
         ));
         assert_eq!(resolver_calls.get(), 1);
         assert!(runtime.engine().list(10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn routed_provider_digest_context_resolves_and_duplicate_replays_without_resolver() {
+        let peer = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 4_096).unwrap();
+        let runtime_transport = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 4_096).unwrap();
+        let runtime_address = runtime_transport.local_addr().unwrap();
+        let mut runtime = CallRuntime::udp(
+            CallEngine::new(EngineConfig::default()).unwrap(),
+            runtime_transport,
+        );
+        let routes = routed_digest_routes();
+        let mut address_resolver = |host: &str, port: u16| {
+            assert_eq!(host, "sip.provider.invalid");
+            assert_eq!(port, 5060);
+            Some(peer.local_addr().unwrap())
+        };
+        let (call_id, _) = runtime
+            .originate_with_provider_route(
+                &routes,
+                "routed-digest-provider",
+                invite(),
+                &mut address_resolver,
+                Duration::ZERO,
+            )
+            .unwrap();
+        let (originated, _) = peer.recv().unwrap();
+        let SipMessage::Request(originated) = originated else {
+            panic!("expected originated INVITE");
+        };
+        assert_eq!(
+            runtime
+                .provider_authentication
+                .get("runtime-invite@example.com")
+                .map(|(stored_call_id, _)| stored_call_id),
+            Some(&call_id)
+        );
+
+        let credentials = DigestCredentials::new("runtime-user", "routed-runtime-secret");
+        let resolutions = std::cell::Cell::new(0);
+        let mut resolver = |credential_ref: &str| {
+            resolutions.set(resolutions.get() + 1);
+            assert_eq!(credential_ref, "opaque-provider-reference");
+            Some(credentials.clone())
+        };
+        let challenge = digest_challenge_for_invite(&originated);
+        peer.send_to(&challenge, runtime_address).unwrap();
+        let challenged = runtime
+            .receive_once_with_routed_provider_digest_auth(
+                Duration::from_millis(1),
+                &mut resolver,
+                Some("routed-cnonce"),
+                Some(1),
+            )
+            .unwrap();
+        assert_eq!(challenged.actions().len(), 2);
+        assert_eq!(resolutions.get(), 1);
+        let retry = receive_ack_and_retry(&peer);
+        assert_digest_retry(
+            &retry,
+            r#"Digest realm="runtime", nonce="runtime-nonce", qop="auth""#,
+            &credentials,
+        );
+        assert_eq!(
+            runtime.engine().snapshot(&call_id).unwrap().state,
+            CallState::Inviting
+        );
+
+        peer.send_to(&challenge, runtime_address).unwrap();
+        let duplicate = runtime
+            .receive_once_with_routed_provider_digest_auth(
+                Duration::from_millis(2),
+                &mut resolver,
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(duplicate.actions().len(), 1);
+        assert_eq!(resolutions.get(), 1);
+        receive_ack(&peer);
+
+        assert!(!format!("{runtime:?}").contains("routed-runtime-secret"));
+        assert!(!format!("{runtime:?}").contains("opaque-provider-reference"));
+    }
+
+    #[test]
+    fn routed_provider_digest_without_context_is_atomic_and_does_not_resolve() {
+        let peer = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 4_096).unwrap();
+        let runtime_transport = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 4_096).unwrap();
+        let runtime_address = runtime_transport.local_addr().unwrap();
+        let mut runtime = CallRuntime::udp(
+            CallEngine::new(EngineConfig::default()).unwrap(),
+            runtime_transport,
+        );
+        let (call_id, _) = runtime
+            .originate(invite(), peer.local_addr().unwrap(), Duration::ZERO)
+            .unwrap();
+        let (originated, _) = peer.recv().unwrap();
+        let SipMessage::Request(originated) = originated else {
+            panic!("expected originated INVITE");
+        };
+        let transaction_count = runtime.engine().transaction_count();
+        let resolutions = std::cell::Cell::new(0);
+        let mut resolver = |_: &str| {
+            resolutions.set(resolutions.get() + 1);
+            Some(DigestCredentials::new("runtime-user", "unexpected-secret"))
+        };
+
+        peer.send_to(&digest_challenge_for_invite(&originated), runtime_address)
+            .unwrap();
+        let error = runtime
+            .receive_once_with_routed_provider_digest_auth(
+                Duration::from_millis(1),
+                &mut resolver,
+                Some("missing-context-cnonce"),
+                Some(1),
+            )
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            RuntimeError::Engine(EngineError::DigestAuthenticationNotConfigured)
+        ));
+        assert_eq!(resolutions.get(), 0);
+        assert_eq!(runtime.engine().transaction_count(), transaction_count);
+        assert_eq!(
+            runtime.engine().snapshot(&call_id).unwrap().state,
+            CallState::Inviting
+        );
+        assert!(runtime.provider_authentication.is_empty());
+        assert!(!format!("{error:?}").contains("unexpected-secret"));
+    }
+
+    #[test]
+    fn routed_provider_digest_context_is_removed_after_failed_call() {
+        let peer = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 4_096).unwrap();
+        let runtime_transport = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 4_096).unwrap();
+        let runtime_address = runtime_transport.local_addr().unwrap();
+        let mut runtime = CallRuntime::udp(
+            CallEngine::new(EngineConfig::default()).unwrap(),
+            runtime_transport,
+        );
+        let routes = routed_digest_routes();
+        let mut address_resolver = |_: &str, _: u16| Some(peer.local_addr().unwrap());
+        let (call_id, _) = runtime
+            .originate_with_provider_route(
+                &routes,
+                "routed-digest-provider",
+                invite(),
+                &mut address_resolver,
+                Duration::ZERO,
+            )
+            .unwrap();
+        let (originated, _) = peer.recv().unwrap();
+        let SipMessage::Request(originated) = originated else {
+            panic!("expected originated INVITE");
+        };
+        let credentials = DigestCredentials::new("runtime-user", "failed-call-secret");
+        let mut resolver = |_: &str| Some(credentials.clone());
+        peer.send_to(&digest_challenge_for_invite(&originated), runtime_address)
+            .unwrap();
+        runtime
+            .receive_once_with_routed_provider_digest_auth(
+                Duration::from_millis(1),
+                &mut resolver,
+                Some("failed-cnonce"),
+                Some(1),
+            )
+            .unwrap();
+        let retry = receive_ack_and_retry(&peer);
+
+        peer.send_to(&response_for_invite(&retry, 486), runtime_address)
+            .unwrap();
+        let failed = runtime.receive_once(Duration::from_millis(2)).unwrap();
+        assert!(
+            failed
+                .events()
+                .iter()
+                .any(|event| { event.call_id == call_id && event.kind == CallEventKind::Failed })
+        );
+        assert_eq!(
+            runtime.engine().snapshot(&call_id).unwrap().state,
+            CallState::Ended
+        );
+        assert!(runtime.provider_authentication.is_empty());
+        let (ack, _) = peer.recv().unwrap();
+        assert!(matches!(
+            ack,
+            SipMessage::Request(SipRequest {
+                method: SipMethod::Ack,
+                ..
+            })
+        ));
+
+        let resolutions = std::cell::Cell::new(0);
+        let mut post_terminal_resolver = |_: &str| {
+            resolutions.set(resolutions.get() + 1);
+            Some(DigestCredentials::new(
+                "runtime-user",
+                "post-terminal-secret",
+            ))
+        };
+        peer.send_to(
+            &digest_challenge_for_invite_with(
+                &retry,
+                r#"Digest realm="runtime", nonce="post-terminal-nonce", qop="auth""#,
+            ),
+            runtime_address,
+        )
+        .unwrap();
+        let error = runtime
+            .receive_once_with_routed_provider_digest_auth(
+                Duration::from_millis(3),
+                &mut post_terminal_resolver,
+                Some("post-terminal-cnonce"),
+                Some(1),
+            )
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            RuntimeError::Engine(EngineError::DigestAuthenticationNotConfigured)
+        ));
+        assert_eq!(resolutions.get(), 0);
+    }
+
+    #[test]
+    fn routed_provider_digest_context_is_removed_after_remote_hangup() {
+        let peer = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 4_096).unwrap();
+        let runtime_transport = UdpTransport::bind("127.0.0.1:0".parse().unwrap(), 4_096).unwrap();
+        let runtime_address = runtime_transport.local_addr().unwrap();
+        let mut runtime = CallRuntime::udp(
+            CallEngine::new(EngineConfig::default()).unwrap(),
+            runtime_transport,
+        );
+        let routes = routed_digest_routes();
+        let mut address_resolver = |_: &str, _: u16| Some(peer.local_addr().unwrap());
+        let (call_id, _) = runtime
+            .originate_with_provider_route(
+                &routes,
+                "routed-digest-provider",
+                invite(),
+                &mut address_resolver,
+                Duration::ZERO,
+            )
+            .unwrap();
+        let (originated, _) = peer.recv().unwrap();
+        let SipMessage::Request(originated) = originated else {
+            panic!("expected originated INVITE");
+        };
+        let credentials = DigestCredentials::new("runtime-user", "hangup-secret");
+        let mut resolver = |_: &str| Some(credentials.clone());
+        peer.send_to(&digest_challenge_for_invite(&originated), runtime_address)
+            .unwrap();
+        runtime
+            .receive_once_with_routed_provider_digest_auth(
+                Duration::from_millis(1),
+                &mut resolver,
+                Some("hangup-cnonce"),
+                Some(1),
+            )
+            .unwrap();
+        let retry = receive_ack_and_retry(&peer);
+        complete_provider_digest_call(&mut runtime, &peer, runtime_address, &call_id, &retry);
+        assert!(
+            runtime
+                .provider_authentication
+                .contains_key("runtime-invite@example.com")
+        );
+
+        peer.send_to(&bye_for_invite(&retry), runtime_address)
+            .unwrap();
+        let hung_up = runtime.receive_once(Duration::from_millis(3)).unwrap();
+        assert!(
+            hung_up
+                .events()
+                .iter()
+                .any(|event| { event.call_id == call_id && event.kind == CallEventKind::Hangup })
+        );
+        assert_eq!(
+            runtime.engine().snapshot(&call_id).unwrap().state,
+            CallState::Ended
+        );
+        assert!(runtime.provider_authentication.is_empty());
+        let (response, _) = peer.recv().unwrap();
+        assert!(matches!(
+            response,
+            SipMessage::Response(SipResponse {
+                status_code: 200,
+                ..
+            })
+        ));
     }
 
     #[test]
