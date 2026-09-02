@@ -5,7 +5,7 @@
 **Last checkpoint (UTC):** 2026-09-02T03:15:29Z
 **Active phase:** Phase 1 — Rust media engine
 **Active milestone:** In-dialog SIP request interoperability and Asterisk fallback<br>
-**Next resume action:** Continue the next bounded offline acceptance slice from exact head `5a8cdefb0` without enabling Rust traffic
+**Next resume action:** Continue the next bounded offline acceptance slice from exact implementation head `f8b871d1e` without enabling Rust traffic
 **Active PR:** #78 — `bridge-trace-correlation` targets `trace-correlation` (hosted ordinary validation green; open and mergeable)
 **Stack root/base branch:** `aistack/main`  
 **Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-78-bridge-trace-correlation`
