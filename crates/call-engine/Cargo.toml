@@ -9,6 +9,7 @@ rust-version.workspace = true
 call-api = { path = "../call-api" }
 call-core = { path = "../call-core" }
 sip-dialog = { path = "../sip-dialog" }
+sip-auth = { path = "../sip-auth" }
 sdp = { path = "../sdp" }
 sip-transaction = { path = "../sip-transaction" }
 sip-types = { path = "../sip-types" }
