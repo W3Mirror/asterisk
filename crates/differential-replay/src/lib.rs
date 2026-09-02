@@ -1865,7 +1865,9 @@ mod tests {
 
         assert_eq!(
             normalized.media_packets().facts(),
-            ["media-packet 1 endpoint-1 received rtp payload-type=101 marker=false csrcs=0 extension=false payload-bytes=4"]
+            [
+                "media-packet 1 endpoint-1 received rtp payload-type=101 marker=false csrcs=0 extension=false payload-bytes=4"
+            ]
         );
     }
 
