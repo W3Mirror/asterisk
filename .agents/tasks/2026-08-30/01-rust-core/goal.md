@@ -1,14 +1,14 @@
 # Goal: Memory-Safe Programmable SIP + RTP Engine for AI Voice Applications
 
 **Status: In Progress**
-**Current checkpoint:** CP-028 — Hosted validation remains blocked by GitHub billing lock
-**Last checkpoint (UTC):** 2026-09-02T04:16:52Z
+**Current checkpoint:** CP-031 — PR #5 focused test coverage expanded
+**Last checkpoint (UTC):** 2026-09-02T04:29:24Z
 **Active phase:** Phase 2 — SIP edge shadow mode
 **Active milestone:** Milestone 4 — Dialog + SDP + Basic Calls
-**Next resume action:** Resolve the GitHub Actions billing lock, rerun hosted validation for PR #4, and only then update PR #5's base branch
-**Active PR:** [#4](https://github.com/W3Mirror/asterisk/pull/4); branch `sip-dialog-core` targets `sip-transaction-core`
+**Next resume action:** Publish the focused call-api test update, then resolve the GitHub Actions billing lock and rerun hosted validation for PR #5 before advancing to PR #6
+**Active PR:** [#5](https://github.com/W3Mirror/asterisk/pull/5); branch `call-api-core` targets `sip-dialog-core`
 **Stack root/base branch:** `aistack/main`
-**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-4-sip-dialog`
+**Active worktree:** `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-5-call-api`
 **Primary language:** Rust  
 **Migration source:** Asterisk / PJSIP-based telephony stack  
 **Primary objective:** Replace the subset of Asterisk required for AI voice applications with a memory-safe, API-driven SIP + RTP engine while retaining Asterisk as a compatibility fallback during migration.
@@ -2119,7 +2119,7 @@ Keep this table current. Link each completed row to checkpoint IDs, commits, PRs
 | --- | --- | --- | --- | --- |
 | Phase 0 — current Asterisk surface | in_progress | CP-020; PR #1 hosted run 33587135564 passed and GitHub reports CLEAN/MERGEABLE at `65e730ae3` | #1 | Keep the verified Asterisk inventory and production-evidence gate in force |
 | Phase 1 — Rust media engine | in_progress | CP-022; PR #2 hosted run 33588188166 passed and GitHub reports CLEAN/MERGEABLE at `97e35e54e` | [#2](https://github.com/W3Mirror/asterisk/pull/2) | Keep the verified Rust foundation contract in force |
-| Phase 2 — SIP edge shadow mode | in_progress | CP-028; PR #3 hosted run 33589084459 passed at `921bfe0eb`; PR #4 run 33589768292 passed at `43c8bf512`, but follow-up runs 33590033783 (`f598e5113`) and 33590166162 (`6d226aa3c`) were rejected before startup by the GitHub billing lock; local focused dialog and full workspace tests pass | [#4](https://github.com/W3Mirror/asterisk/pull/4) | Resolve the Actions billing lock and rerun PR #4 hosted validation before updating PR #5 |
+| Phase 2 — SIP edge shadow mode | in_progress | CP-031; PR #3 hosted run 33589084459 passed at `921bfe0eb`; PR #4 and PR #5 hosted validation are blocked by the billing lock; PR #5 test update `885b737cc` passes focused call-api and full workspace tests locally | [#5](https://github.com/W3Mirror/asterisk/pull/5) | Publish the test update, resolve the Actions billing lock, and rerun PR #5 hosted validation before advancing to PR #6 |
 | Phase 3 — limited production SIP | not_started | — | — | Define the first provider/test-number canary and rollback switch |
 | Phase 4 — expanded provider coverage | not_started | — | — | Add one provider compatibility suite per rollout target |
 | Phase 5 — Rust primary engine | not_started | — | — | Confirm production SLO, telemetry, and rollback gates |
@@ -2726,6 +2726,27 @@ rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain 
 notes: PR4 remains provider-neutral and stacked on PR3; the response fix is covered by the UAS in-dialog response regression test
 ```
 
+### CP-013 — Bounded call-control/API boundary published
+
+```yaml
+checkpoint_id: CP-013
+recorded_at_utc: 2026-08-30T12:36:23Z
+status: in_progress
+phase: Phase 0 — Document Current Asterisk Usage
+milestone: Milestone 4 — Dialog + SDP + Basic Calls
+scope: Add a bounded call-control/API boundary with stable application identifiers, lifecycle events, validated commands, SIP dialog binding, deterministic snapshots, and terminal call reclamation
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-5-call-api
+branch: call-api-core
+base_branch: sip-dialog-core
+pr: https://github.com/W3Mirror/asterisk/pull/5
+head_sha: 10b5a8c72bf7715bc6a691bd65de4d81797b2312
+evidence: cargo fmt --all -- --check; cargo test -p call-api --quiet (4 tests passed); cargo test --workspace (all tests passed); cargo clippy --workspace --all-targets (exit 0, existing pedantic/documentation warnings only); git diff --check; origin/call-api-core equals local HEAD; PR #5 is OPEN and CLEAN with no configured CI checks
+blockers: Production provider/call-flow evidence, sanitized SIP/SDP/RTP corpus, SIPp/live-call validation, SDP negotiation, and API/media orchestration remain unavailable or incomplete; Asterisk routing remains the fallback
+next_action: Collect redacted provider/runtime evidence and sanitized SIP/SDP/RTP fixtures on the actual Asterisk host before SDP and basic call integration
+rollback: Keep all call routing on Asterisk; do not enable Rust traffic; retain the existing Asterisk fallback
+notes: Event-queue saturation is tested to avoid consuming generated call IDs; no provider credentials, runtime configuration, or live traffic were modified
+```
+
 ### CP-021 — Reconcile PR #4 onto the validated PR #3 head
 
 ```yaml
@@ -2783,7 +2804,7 @@ base_branch: sip-transaction-core
 pr: "#4 https://github.com/W3Mirror/asterisk/pull/4"
 head_sha: e6e4f201211196a6203c0e7e4e2c7e3989bbc26e
 evidence: Merged `origin/sip-transaction-core` at `57f328b18` into PR #4. Focused `sip-dialog` tests, full workspace tests, `cargo fmt --all -- --check`, workspace Clippy, and `git diff --check` passed locally. The remote PR head was still the prior unreconciled commit when this checkpoint was recorded.
-blockers: Hosted validation and GitHub mergeability for `e6e4f2012` are pending; production deployment identity, effective configuration, provider credentials, and sanitized inbound/outbound captures remain unavailable
+blockers: Hosted validation and GitHub mergeability for `e6e4f2012` were pending; production deployment identity, effective configuration, provider credentials, and sanitized inbound/outbound captures remain unavailable
 next_action: Commit and publish this reconciled head, then verify the new hosted run and GitHub reports PR #4 OPEN, CLEAN, and MERGEABLE
 rollback: Asterisk remains the active/fallback engine; no routing was changed
 notes: This reconciliation is required before PR #5 can safely retarget to the current PR #4 head.
@@ -2808,6 +2829,90 @@ blockers: Production deployment identity, effective configuration, provider cred
 next_action: Rebase PR #5 onto `759e7bb8c`, run focused call-control API tests plus the full local/hosted suite, and record its resulting head and mergeability
 rollback: Asterisk remains the active/fallback engine; no routing was changed
 notes: The dialog stack boundary is green for offline and hosted checks; extended fuzzing, capacity, soak, provider-credential, and live-call gates remain scheduled/manual acceptance work.
+```
+
+### CP-024 — PR #5 hosted validation and mergeability confirmed
+
+```yaml
+checkpoint_id: CP-024
+recorded_at_utc: 2026-09-01T03:47:47Z
+status: in_progress
+phase: Phase 2 — SIP edge shadow mode
+milestone: Milestone 4 — Dialog + SDP + Basic Calls
+scope: Validate the reconciled PR #5 call-control/API slice on local and hosted checks
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-5-call-api
+branch: call-api-core
+base_branch: sip-dialog-core
+pr: "#5 https://github.com/W3Mirror/asterisk/pull/5"
+head_sha: 7d83ff214730f92b9b8ba637e934c5ec5b41ffbe
+evidence: Local cargo fmt --all -- --check, cargo test -p call-api --locked (4 tests passed), cargo clippy -p call-api --all-targets --locked, and git diff --check passed. Hosted pull_request run 33435184066 completed successfully for this exact head: Workspace checks, Protocol fuzz checks, and Dependency audit passed. GitHub reports PR #5 OPEN, CLEAN, and MERGEABLE; the base merge includes origin/sip-dialog-core at 64a99bd2. No provider credentials, live Asterisk route, or real-time call was exercised.
+blockers: Production deployment identity, effective configuration, provider credentials, and sanitized inbound/outbound captures remain unavailable; Asterisk routing remains the fallback
+next_action: Update PR #6's base branch in stack order, run its focused SDP/media tests and hosted checks, and record the resulting head and mergeability
+rollback: Asterisk remains the active/fallback engine; do not enable Rust traffic
+notes: The complete hosted workspace invocation exercises the focused call-api tests; scheduled/manual capacity, extended property, soak, and live-provider evidence remain separate gates.
+```
+
+### CP-025 — PR #5 final synchronized hosted validation green
+
+```yaml
+checkpoint_id: CP-025
+recorded_at_utc: 2026-09-01T03:57:02Z
+status: in_progress
+phase: Phase 2 — SIP edge shadow mode
+milestone: Milestone 4 — Dialog + SDP + Basic Calls
+scope: Reconcile the final PR #5 ledger commit with its synchronized hosted validation
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-5-call-api
+branch: call-api-core
+base_branch: sip-dialog-core
+pr: "#5 https://github.com/W3Mirror/asterisk/pull/5"
+head_sha: 126cea22b17b25df6780905dab192877dffdbcf0
+evidence: The published ledger head 126cea22b17b25df6780905dab192877dffdbcf0 is validated by hosted pull_request run 33467854993 (Workspace checks, Protocol fuzz checks, and Dependency audit all passed). GitHub reports PR #5 OPEN, CLEAN, and MERGEABLE at this synchronized head; local focused call-api fmt/test/clippy and diff checks passed before publication. No provider credentials, live Asterisk route, or real-time call was exercised.
+blockers: Production deployment identity, effective configuration, provider credentials, and sanitized inbound/outbound captures remain unavailable; Asterisk routing remains the fallback
+next_action: Update PR #6's base branch in stack order, run its focused SDP/media tests and hosted checks, and record the resulting head and mergeability
+rollback: Asterisk remains the active/fallback engine; do not enable Rust traffic
+notes: The ordinary hosted suite covers the focused call-api tests; scheduled/manual capacity, extended property, soak, and live-provider evidence remain separate gates.
+```
+
+### CP-026 — Reconcile PR #5 onto the current PR #4 head
+
+```yaml
+checkpoint_id: CP-026
+recorded_at_utc: 2026-09-01T13:35:00Z
+status: in_progress
+phase: Phase 2 — SIP edge shadow mode
+milestone: Milestone 4 — Dialog + SDP + Basic Calls
+scope: Merge the validated current PR #4 head into PR #5 while preserving the call-control/API implementation and expanded offline test contract
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-5-call-api
+branch: call-api-core
+base_branch: sip-dialog-core
+pr: "#5 https://github.com/W3Mirror/asterisk/pull/5"
+head_sha: 40baaef09
+evidence: Merged `origin/sip-dialog-core` at `0feefabe5` into the call API branch; the shared goal ledger was reconciled to retain both PR histories and the current test contract. Focused `call-api` tests, full workspace tests, `cargo fmt --all -- --check`, workspace Clippy, and `git diff --check` passed locally after the merge.
+blockers: Hosted validation and GitHub mergeability for the reconciled head are pending; production deployment identity, effective configuration, provider credentials, and sanitized inbound/outbound captures remain unavailable
+next_action: Publish the reconciled head, then verify hosted checks and PR #5 OPEN/CLEAN/MERGEABLE for the exact published SHA
+rollback: Asterisk remains the active/fallback engine; no routing was changed
+notes: PR #6 must remain paused until this updated PR #5 base is validated.
+```
+
+### CP-027 — PR #5 hosted validation and mergeability confirmed
+
+```yaml
+checkpoint_id: CP-027
+recorded_at_utc: 2026-09-01T13:41:51Z
+status: in_progress
+phase: Phase 2 — SIP edge shadow mode
+milestone: Milestone 4 — Dialog + SDP + Basic Calls
+scope: Validate the reconciled PR #5 call-control/API slice on local and hosted checks
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-5-call-api
+branch: call-api-core
+base_branch: sip-dialog-core
+pr: "#5 https://github.com/W3Mirror/asterisk/pull/5"
+head_sha: 45ff017ef6f9144f5d28e98cd65b5ad53dabb580
+evidence: Local focused `call-api` tests, full workspace tests, `cargo fmt --all -- --check`, workspace Clippy, and `git diff --check` passed. Hosted pull_request run [33514626199](https://github.com/W3Mirror/asterisk/actions/runs/33514626199) completed successfully for this exact head: Workspace checks, Protocol fuzz checks (no fuzz workspace present at this layer), and Dependency audit all passed. GitHub reports PR #5 OPEN, CLEAN, and MERGEABLE; local branch equals `origin/call-api-core`.
+blockers: Production deployment identity, effective configuration, provider credentials, and sanitized inbound/outbound captures remain unavailable; no live provider or Asterisk route was exercised
+next_action: Update PR #6 onto this validated head, run focused SDP/media tests plus full local/hosted checks, and record its resulting head and mergeability
+rollback: Asterisk remains the active/fallback engine; no routing was changed
+notes: The call-control/API stack boundary is green for offline and hosted checks; extended fuzzing, capacity, soak, provider-credential, and live-call gates remain scheduled/manual acceptance work.
 ```
 
 ### CP-018 — Validate hosted main-push test execution after contract update
@@ -3062,6 +3167,69 @@ rollback: Asterisk remains the active/fallback engine; no routing was changed
 notes: The same external billing blocker has now affected two successive ledger heads. Hosted runner selection and the focused-test/complete-workspace-suite contract remain unchanged.
 ```
 
+### CP-029 — Reconcile PR #5 onto the current PR #4 head
+
+```yaml
+checkpoint_id: CP-029
+recorded_at_utc: 2026-09-02T04:23:38Z
+status: in_progress
+phase: Phase 2 — SIP edge shadow mode
+milestone: Milestone 4 — Dialog + SDP + Basic Calls
+scope: Merge the current PR #4 head into PR #5 and verify focused call-control API coverage under the expanded offline test contract
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-5-call-api
+branch: call-api-core
+base_branch: sip-dialog-core
+pr: "#5 https://github.com/W3Mirror/asterisk/pull/5"
+head_sha: fd9c95382147bf90e483153256fbde38d355f146
+evidence: Merged `origin/sip-dialog-core` at `b78b01c1` and reconciled the goal ledger while preserving the call-api implementation and current CI test contract. Focused `cargo test -p call-api --locked` passed with 4 tests; full `cargo test --workspace --locked` passed with 50 unit tests; `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --locked`, `git diff --check`, conflict-marker checks, and Markdown-fence validation passed locally. Backup branch `backup/call-api-core-before-pr4-b78` preserves the pre-reconciliation head.
+blockers: Hosted validation is pending publication and remains subject to the GitHub Actions billing lock; production deployment identity, effective configuration, provider credentials, sanitized captures, live interoperability, and Rust traffic enablement remain unavailable
+next_action: Publish PR #5 head `fd9c95382` and verify hosted checks plus GitHub mergeability when Actions billing is restored
+rollback: Asterisk remains the active/fallback engine; no routing was changed
+notes: Focused affected-module tests remain mandatory PR content, while hosted CI runs the complete ordinary workspace suite. PR #6 stays paused until PR #5 has hosted validation and a clean merge boundary.
+```
+
+### CP-030 — PR #5 hosted validation blocked by GitHub billing lock
+
+```yaml
+checkpoint_id: CP-030
+recorded_at_utc: 2026-09-02T04:25:13Z
+status: in_progress
+phase: Phase 2 — SIP edge shadow mode
+milestone: Milestone 4 — Dialog + SDP + Basic Calls
+scope: Record the hosted validation result for the reconciled PR #5 call-control/API slice
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-5-call-api
+branch: call-api-core
+base_branch: sip-dialog-core
+pr: "#5 https://github.com/W3Mirror/asterisk/pull/5"
+head_sha: 5b457e2c700a95b8dc56df29d8e7760103a91a45
+evidence: Hosted Rust quality run [33590707462](https://github.com/W3Mirror/asterisk/actions/runs/33590707462) for the exact head completed failure before any job steps started. Workspace, Protocol fuzz, and Dependency audit annotations all state: `The job was not started because your account is locked due to a billing issue.` Local focused `call-api` tests (4), full workspace tests (50), formatting, Clippy, diff check, conflict-marker checks, and Markdown-fence validation pass.
+blockers: GitHub Actions account billing lock prevents hosted jobs from starting; production deployment identity, effective configuration, provider credentials, sanitized captures, live interoperability, and Rust traffic enablement remain unavailable
+next_action: Resolve the GitHub Actions billing lock and rerun the Rust quality workflow for PR #5 before advancing to PR #6
+rollback: Asterisk remains the active/fallback engine; no routing was changed
+notes: This is an external CI-account failure, not a runner-selection or source-code failure. Do not switch to self-hosted runners to bypass it. Focused affected-module tests remain mandatory PR content and the hosted workflow contract remains the complete ordinary workspace suite.
+```
+
+### CP-031 — PR #5 focused test coverage expanded
+
+```yaml
+checkpoint_id: CP-031
+recorded_at_utc: 2026-09-02T04:29:24Z
+status: in_progress
+phase: Phase 2 — SIP edge shadow mode
+milestone: Milestone 4 — Dialog + SDP + Basic Calls
+scope: Add call-api lifecycle/event ordering, failure reclamation, custom identifier, duplicate, and deterministic listing tests
+worktree: /home/ashutosh/.worktrees/w3mirror/asterisk/pr-5-call-api
+branch: call-api-core
+base_branch: sip-dialog-core
+pr: "#5 https://github.com/W3Mirror/asterisk/pull/5"
+head_sha: 885b737cc39744c19d8520002f772defa01d88dd
+evidence: Added two focused tests in `crates/call-api/src/lib.rs`: the complete lifecycle/event sequence plus failed-call reclamation, and custom-ID duplicate rejection plus deterministic listing. `cargo fmt --all -- --check`, `cargo test -p call-api --locked` (6 passed), `cargo test --workspace --locked` (52 unit tests passed), `cargo clippy --workspace --all-targets --locked`, and `git diff --check` all pass locally.
+blockers: Hosted validation remains blocked by the GitHub Actions account billing lock; production deployment identity, effective configuration, provider credentials, sanitized captures, live interoperability, and Rust traffic enablement remain unavailable
+next_action: Publish the test update, resolve the GitHub Actions billing lock, and rerun hosted validation for PR #5 before advancing to PR #6
+rollback: Asterisk remains the active/fallback engine; no routing was changed
+notes: The new tests satisfy the goal's requirement that implementation slices carry relevant state-machine, event, recovery, duplicate, and deterministic contract coverage in the same change. Hosted CI still runs the complete workspace suite rather than a changed-module-only subset.
+```
+
 ### Checkpoint template
 
 Copy this template, assign the next checkpoint ID, fill every field, and append it after each meaningful state change:
@@ -3146,7 +3314,8 @@ Populate one row per PR before implementation begins, then update it at every ch
 | 1 | [#1](https://github.com/W3Mirror/asterisk/pull/1) | `sip-rtp-engine-rust` | `aistack/main` | `/home/ashutosh/.worktrees/w3mirror/asterisk/sip-rtp-engine-rust` | Phase 0 repository surface inventory and evidence boundary | in_progress | `65e730ae3091188986f8168ccec6c3363a8d2650` | Hosted run [33587135564](https://github.com/W3Mirror/asterisk/actions/runs/33587135564) passed; GitHub reports CLEAN/MERGEABLE; Rust checks skipped because this docs-only stack layer has no Cargo manifests | Validate PR #2 on this base |
 | 2 | [#2](https://github.com/W3Mirror/asterisk/pull/2) | `rust-core-foundation` | `sip-rtp-engine-rust` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-2-rust-foundation` | Provider-neutral bounded SIP/SDP/RTP/RTCP/DTMF/media/call foundations | in_progress | `97e35e54e52561cc917bb570f02a27519b481dff` | Hosted run [33588188166](https://github.com/W3Mirror/asterisk/actions/runs/33588188166) passed; GitHub reports CLEAN/MERGEABLE; local focused/full workspace tests pass | Validate PR #3 on this base |
 | 3 | [#3](https://github.com/W3Mirror/asterisk/pull/3) | `sip-transaction-core` | `rust-core-foundation` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-3-sip-transactions` | SIP transaction state machines and bounded transport adapters | in_progress | `921bfe0ebaa73266b2a5f8d44aa5e7002199734c` | Hosted run [33589084459](https://github.com/W3Mirror/asterisk/actions/runs/33589084459) passed; GitHub reports CLEAN/MERGEABLE; local focused transaction tests (12), full workspace tests (41), formatting, Clippy, and diff check passed | Update PR #4 onto this validated base |
-| 4 | [#4](https://github.com/W3Mirror/asterisk/pull/4) | `sip-dialog-core` | `sip-transaction-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-4-sip-dialog` | Dialog identity and state: bounded tags, route sets, remote targets, CSeq sequencing, UAC/UAS lifecycle | in_progress | `6d226aa3c7137390099a0e53de3636ff0242c370` | Prior hosted run [33589768292](https://github.com/W3Mirror/asterisk/actions/runs/33589768292) passed at `43c8bf512`; follow-up runs [33590033783](https://github.com/W3Mirror/asterisk/actions/runs/33590033783) and [33590166162](https://github.com/W3Mirror/asterisk/actions/runs/33590166162) were blocked before job startup because the account is locked for a billing issue; local focused dialog tests (5), full workspace tests (46), format, Clippy, and diff check passed | Resolve billing lock and rerun hosted validation before updating PR #5 |
+| 4 | [#4](https://github.com/W3Mirror/asterisk/pull/4) | `sip-dialog-core` | `sip-transaction-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-4-sip-dialog` | Dialog identity and state: bounded tags, route sets, remote targets, CSeq sequencing, UAC/UAS lifecycle | in_progress | `b78b01c1ac6bbb4291df18fafcd22bcc944c5422` | Prior hosted run [33589768292](https://github.com/W3Mirror/asterisk/actions/runs/33589768292) passed at `43c8bf512`; follow-up runs were blocked before startup because the account is locked for a billing issue; local focused dialog tests (5), full workspace tests (46), format, Clippy, and diff check passed | Keep PR #5 based on this current head |
+| 5 | [#5](https://github.com/W3Mirror/asterisk/pull/5) | `call-api-core` | `sip-dialog-core` | `/home/ashutosh/.worktrees/w3mirror/asterisk/pr-5-call-api` | Call-control/API boundary: bounded registry, validated lifecycle commands, stable IDs/events, dialog binding, deterministic snapshots, and terminal reclamation | in_progress | `885b737cc39744c19d8520002f772defa01d88dd` | Reconciled onto PR #4 `b78b01c1`; focused `call-api` tests (6), full workspace tests (52), format, Clippy, and diff check pass locally; hosted validation remains blocked by the billing lock | Publish test update, resolve billing lock, and rerun hosted validation |
 
 ## 59.4 Stacked-PR Checkpoints
 
